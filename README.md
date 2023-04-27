@@ -1,5 +1,7 @@
 # Kubernetes Component Operator Runtime
 
+[![REUSE status](https://api.reuse.software/badge/github.com/SAP/component-operator-runtime)](https://api.reuse.software/info/github.com/SAP/component-operator-runtime)
+
 ## About this project
 
 A framework to support development of Kubernetes operators managing Kubernetes components.
