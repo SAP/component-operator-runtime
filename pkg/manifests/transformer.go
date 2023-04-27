@@ -24,9 +24,11 @@ import (
 	"text/template"
 
 	"github.com/Masterminds/sprig/v3"
+
+	kyaml "sigs.k8s.io/yaml"
+
 	"github.com/sap/component-operator-runtime/internal/templatex"
 	"github.com/sap/component-operator-runtime/pkg/types"
-	kyaml "sigs.k8s.io/yaml"
 )
 
 type TemplateParameterTransformer struct {

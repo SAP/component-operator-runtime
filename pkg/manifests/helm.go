@@ -29,13 +29,13 @@ import (
 	"text/template"
 
 	"github.com/Masterminds/sprig/v3"
+	"github.com/sap/go-generics/slices"
+
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	utilyaml "k8s.io/apimachinery/pkg/util/yaml"
 	"k8s.io/client-go/discovery"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	kyaml "sigs.k8s.io/yaml"
-
-	"github.tools.sap/cs-devops/go-generics/slices"
 
 	"github.com/sap/component-operator-runtime/internal/helm"
 	"github.com/sap/component-operator-runtime/internal/templatex"

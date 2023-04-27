@@ -16,7 +16,7 @@ After installing the scaffolder, a new project can be created like this:
 scaffold \
   --kind MyComponent \
   --operator-name mycomponent-manager.kyma-project.io \
-  --go-module github.tools.sap/myorg/mycomponent-manager \
+  --go-module github.com/myorg/mycomponent-manager \
   --image mycomponent-manager-operator:latest \
   <output-directory>
 ```

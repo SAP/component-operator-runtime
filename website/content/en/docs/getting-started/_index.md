@@ -13,7 +13,7 @@ and how to start with the implementation of the operator.
 First of all, you have to download the component-operator-runtime scaffolding tool from the [releases page](https://github.com/sap/component-operator-runtime/releases/). In the following we assume that the downloaded `scaffold` executable
 is somehwere in your path (for example, as /usr/local/bin/scaffold-component-operator).
 
-Then, you need a git repository for the operator code; in this example, we call it github.tools.sap/myorg/mycomponent-manager.
+Then, you need a git repository for the operator code; in this example, we call it github.com/myorg/mycomponent-manager.
 We assume that you have cloned the empty repository to your local desktop, and have changed the current directory
 to the checked out repository.
 
@@ -26,7 +26,7 @@ scaffold-component-operator \
   --group-version v1alpha1 \
   --kind MyComponent \
   --operator-name mycomponent-manager.kyma-project.io \
-  --go-module github.tools.sap/myorg/mycomponent-manager \
+  --go-module github.com/myorg/mycomponent-manager \
   --image mycomponent-manager-operator:latest \
   .
 ```

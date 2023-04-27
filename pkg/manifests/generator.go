@@ -18,6 +18,7 @@ package manifests
 
 import (
 	"github.com/pkg/errors"
+
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/sap/component-operator-runtime/pkg/types"

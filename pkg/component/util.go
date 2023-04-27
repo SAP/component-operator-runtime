@@ -20,14 +20,16 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 
-	"github.com/sap/component-operator-runtime/pkg/types"
-	"github.tools.sap/cs-devops/go-generics/slices"
+	"github.com/sap/go-generics/slices"
+
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	apiregistrationv1 "k8s.io/kube-aggregator/pkg/apis/apiregistration/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	"github.com/sap/component-operator-runtime/pkg/types"
 )
 
 func sha256hash(data []byte) string {

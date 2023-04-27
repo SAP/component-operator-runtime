@@ -14,7 +14,7 @@ project, such as
 ```bash
 kubebuilder init \
   --domain kyma-project.io \
-  --repo github.tools.sap/myorg/mycomponent-manager \
+  --repo github.com/myorg/mycomponent-manager \
   --project-name=mycomponent-manager \
   --plugins=go/v4-alpha
 

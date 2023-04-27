@@ -17,9 +17,10 @@ limitations under the License.
 package component
 
 import (
-	"github.com/sap/component-operator-runtime/pkg/types"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	"github.com/sap/component-operator-runtime/pkg/types"
 )
 
 // Component is the central interface that component operators have to implement.

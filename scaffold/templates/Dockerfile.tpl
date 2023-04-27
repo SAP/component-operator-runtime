@@ -3,20 +3,13 @@ FROM golang:{{ .goVersion }} as builder
 ARG TARGETOS
 ARG TARGETARCH
 
-# Flag github.tools.sap as private source
-ENV GOPRIVATE=github.tools.sap
-
-# Setup git credential helper
-RUN git config --global credential.helper '!f(){ printf "username=%s\npassword=%s\n" token "$(cat /run/secrets/github-token)"; };f'
-RUN --mount=type=secret,id=github-token,required=true test -s /run/secrets/github-token
-
 WORKDIR /workspace
 # Copy the Go Modules manifests
 COPY go.mod go.mod
 COPY go.sum go.sum
 # cache deps before building and copying source so that we don't need to re-download as much
 # and so that source changes don't invalidate our downloaded layer
-RUN --mount=type=secret,id=github-token,required=true go mod download
+RUN go mod download
 
 # Copy the go source
 COPY main.go main.go

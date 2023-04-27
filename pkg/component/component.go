@@ -19,9 +19,10 @@ package component
 import (
 	"reflect"
 
-	"github.com/sap/component-operator-runtime/pkg/types"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+
+	"github.com/sap/component-operator-runtime/pkg/types"
 )
 
 // Instantiate given Component type T; panics unless T is a pointer type.

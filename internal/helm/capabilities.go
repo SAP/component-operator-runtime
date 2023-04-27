@@ -17,7 +17,8 @@ limitations under the License.
 package helm
 
 import (
-	"github.tools.sap/cs-devops/go-generics/slices"
+	"github.com/sap/go-generics/slices"
+
 	"k8s.io/client-go/discovery"
 )
 
