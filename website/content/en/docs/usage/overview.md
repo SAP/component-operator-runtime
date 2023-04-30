@@ -14,8 +14,8 @@ project, such as
 ```bash
 kubebuilder init \
   --domain kyma-project.io \
-  --repo github.com/myorg/mycomponent-manager \
-  --project-name=mycomponent-manager \
+  --repo github.com/myorg/mycomponent-operator \
+  --project-name=mycomponent-operator \
   --plugins=go/v4-alpha
 
 kubebuilder create api \
@@ -99,10 +99,10 @@ if err != nil {
 }
 
 if err := component.NewReconciler[*operatorv1alpha1.MyComponent](
-  "mycomponent-manager.kyma-project.io",
+  "mycomponent-operator.kyma-project.io",
   mgr.GetClient(),
   discoveryClient,
-  mgr.GetEventRecorderFor("mycomponent-manager.kyma-project.io"),
+  mgr.GetEventRecorderFor("mycomponent-operator.kyma-project.io"),
   mgr.GetScheme(),
   resourceGenerator,
 ).SetupWithManager(mgr); err != nil {
