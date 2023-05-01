@@ -1,0 +1,67 @@
+name: Run Tests
+
+on:
+  push:
+    branches:
+    - main
+
+  pull_request:
+    branches:
+    - main
+    
+  workflow_dispatch:
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  check-generate:
+    runs-on: ubuntu-22.04
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v3
+    - name: Check that generated artifacts are up-to-date
+      run: |
+        make generate
+        echo "Running 'git status' ..."
+        git status --porcelain | tee status.out
+        if [[ -s status.out ]]; then
+          echo "Generated artifacts are not up-to-date; probably 'make generate' was not run before commiting"
+          exit 1
+        else
+          echo "Generated artifacts are up-to-date"
+        fi
+
+  test-scaffold:
+    runs-on: ubuntu-22.04
+    needs: check-generate
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v3
+    - name: Setup go
+      uses: actions/setup-go@v3
+      with:
+        go-version-file: 'go.mod'
+    - name: Build scaffold
+      run: |
+        repository=github.com/${{ github.repository }}
+        version=$(TZ=UTC git --no-pager show --quiet --abbrev=12 --date='format-local:%Y%m%d%H%M%S' --format="v0.0.0-%cd-%h")
+        go build -o bin/scaffold -ldflags "-X \"main.version=$repository $version\"" ./scaffold
+        echo "Running 'scaffold --version' ..."
+        bin/scaffold --version
+    - name: Run scaffold
+      run: |
+        mkdir $RUNNER_TEMP/src
+        ./bin/scaffold \
+          --group-name example.io \
+          --group-version v1alpha1 \
+          --kind MyComponent \
+          --operator-name mycomponent-operator.example.io \
+          --go-module example.io/mycomponent-operator \
+          --image mycomponent-operator:latest \
+          $RUNNER_TEMP/src
+    - name: Build generated operator
+      run: |
+        cd $RUNNER_TEMP/src
+        make
