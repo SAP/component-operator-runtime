@@ -5,7 +5,27 @@
 ## About this project
 
 A framework to support development of Kubernetes operators managing Kubernetes components.
-Documentation can be found [here](https://sap.github.io/component-operator-runtime).
+
+The operators implemented through this framework are strongly opiniated in the sense that instances
+of the managed component are described through a dedicated, specific custom resource type.
+
+The key features are:
+- Efficient and smart handling of Kubernetes API extensions (realized through custom resource definitions or API aggregation).
+- Ability to fully take over rendering of the component's resources by implmenting
+  ```go
+    type Generator interface {
+        Generate(namespace string, name string, parameters types.Unstructurable) ([]client.Object, error)
+    }
+  ```
+  (where parameters correspond to the `spec` of the describing custom resource component object).
+- Projects having existing Helm charts or Kustomizations describing the component's lifecylce can reuse these by bundling them into the
+  component operator, leveraging the included ready-to-use `HelmGenerator` resp. `KustomizeGenerator` implementations.
+- Scaffolding tool to bootstrap new component operators in minutes, see the [Getting Started](https://sap.github.io/component-operator-runtime/docs/getting-started/) documentation.
+
+## Documentation
+
+The project's documentation can be found here: [https://sap.github.io/component-operator-runtime](https://sap.github.io/component-operator-runtime).  
+The API reference is here: [https://pkg.go.dev/github.com/sap/component-operator-runtime](https://pkg.go.dev/github.com/sap/component-operator-runtime).
 
 ## Support, Feedback, Contributing
 
