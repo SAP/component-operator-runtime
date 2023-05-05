@@ -18,9 +18,11 @@ defaults:
 jobs:
   check-generate:
     runs-on: ubuntu-22.04
+
     steps:
     - name: Checkout
       uses: actions/checkout@v3
+
     - name: Check that generated artifacts are up-to-date
       run: |
         make generate
@@ -36,13 +38,16 @@ jobs:
   test-scaffold:
     runs-on: ubuntu-22.04
     needs: check-generate
+
     steps:
     - name: Checkout
       uses: actions/checkout@v3
+
     - name: Setup go
       uses: actions/setup-go@v3
       with:
         go-version-file: 'go.mod'
+
     - name: Build scaffold
       run: |
         repository=github.com/${{ github.repository }}
@@ -50,6 +55,7 @@ jobs:
         go build -o bin/scaffold -ldflags "-X \"main.version=$repository $version\"" ./scaffold
         echo "Running 'scaffold --version' ..."
         bin/scaffold --version
+
     - name: Run scaffold
       run: |
         mkdir $RUNNER_TEMP/src
@@ -61,6 +67,7 @@ jobs:
           --go-module example.io/mycomponent-operator \
           --image mycomponent-operator:latest \
           $RUNNER_TEMP/src
+
     - name: Build generated operator
       run: |
         cd $RUNNER_TEMP/src

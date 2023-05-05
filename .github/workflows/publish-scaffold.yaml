@@ -7,13 +7,16 @@ on:
 jobs:
   deploy:
     runs-on: [ubuntu-22.04]
+
     steps:
     - name: Checkout
       uses: actions/checkout@v3
+
     - name: Setup go
       uses: actions/setup-go@v3
       with:
         go-version-file: 'go.mod'
+
     - name: Build
       run: |
         mkdir -p bin
@@ -24,6 +27,7 @@ jobs:
             GOOS=$os GOARCH=$arch go build -o $file -ldflags "-X main.version=${{ github.event.release.tag_name }}" ./scaffold
           done
         done
+
     - name: Upload
       run: |
         for os in linux darwin; do
