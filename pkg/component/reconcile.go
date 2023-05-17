@@ -62,6 +62,12 @@ import (
 
 // TODO: in general add more retry to overcome 409 update errors (also etcd storage errors because of missed precondition on delete)
 
+// TODO: it might be desirable to run the component operator outside the target cluster;
+// maybe even in a 1:n layout (where one component operator manages multiple target clusters);
+// in this case, we would need a way to specify a kubeconfig per operator CRO;
+// the difficulty in implementing this lies mostly with the complex generators (helm, kustomize)
+// which currently expect a client/discoveryClient at creation time (instead of generation time)
+
 const (
 	readyConditionReasonNew                = "FirstSeen"
 	readyConditionReasonProcessing         = "Processing"

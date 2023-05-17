@@ -4,11 +4,19 @@ on:
   push:
     branches:
     - main
+    paths-ignore:
+    - website/**
+    - .github/workflows/publish-website.yaml
+    - README.md
 
   pull_request:
     branches:
     - main
-    
+    paths-ignore:
+    - website/**
+    - .github/workflows/publish-website.yaml
+    - README.md
+
   workflow_dispatch:
 
 defaults:
@@ -50,9 +58,7 @@ jobs:
 
     - name: Build scaffold
       run: |
-        repository=github.com/${{ github.repository }}
-        version=$(TZ=UTC git --no-pager show --quiet --abbrev=12 --date='format-local:%Y%m%d%H%M%S' --format="v0.0.0-%cd-%h")
-        go build -o bin/scaffold -ldflags "-X \"main.version=$repository $version\"" ./scaffold
+        go build -o bin/scaffold -ldflags "-X \"main.version=$(pwd)\"" ./scaffold
         echo "Running 'scaffold --version' ..."
         bin/scaffold --version
 
