@@ -32,9 +32,10 @@ A few differences and restrictions arise from this:
 - One level of library subcharts is supported; application subcharts, and nested subcharts are not supported as of now.
 - Not all Helm template functions are supported. To be exact, `toToml`, `fromYamlArray`, `fromJsonArray` are not supported;
   the functions `toYaml`, `fromYaml`, `toJson`, `fromJson` are supported, but will behave more strictly in error situtations.
-- Not all builtin variables are supported;
-  for the `.Release` builtin, only `.Release.Namespace`, `.Release.Name`, `.Release.Service`, `.Release.IsInstall`, `.Release.IsUpgrade` are supported;
-  for the `.Chart` builtin, only `.Chart.Name`, `.Chart.Version`, `.Chart.Type`, `.Chart.AppVersion` are supported;
-  for the `.Capabilities` builtin, only `.Capabilities.KubeVersion` and `.Capabilities.APIVersions` are supported;
-  the `.Template` builtin is fully supported; the `.Files` builtin is not supported at all.
+- Not all builtin variables are supported; the following restrictions apply:
+  - for the `.Release` builtin, only `.Release.Namespace`, `.Release.Name`, `.Release.Service`, `.Release.IsInstall`, `.Release.IsUpgrade` are supported; note that - since this framework does not really distinguish between installations and upgrades - `Release.IsInstall` is always set to `true`, and `Release.IsUpgrade` is always set to `false`
+  - for the `.Chart` builtin, only `.Chart.Name`, `.Chart.Version`, `.Chart.Type`, `.Chart.AppVersion` are supported
+  - for the `.Capabilities` builtin, only `.Capabilities.KubeVersion` and `.Capabilities.APIVersions` are supported
+  - the `.Template` builtin is fully supported
+  - the `.Files` builtin is not supported at all.
 - Regarding hooks, `pre-delete` and `post-delete` hooks are not allowed; test and rollback hooks are ignored, and `pre-install`,  `post-install`, `pre-upgrade`, `post-upgrade` hooks might be handled in a sligthly different way; hook weights will be handled in a compatible way; hook deletion policy `hook-failed` is not allowed, but `before-hook-creation` and `hook-succeeded` should work as expected.
