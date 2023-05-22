@@ -117,8 +117,6 @@ func (o *Operator) Setup(mgr ctrl.Manager, discoveryClient discovery.DiscoveryIn
 		mgr.GetEventRecorderFor(o.options.Name),
 		mgr.GetScheme(),
 		resourceGenerator,
-	).WithPostReadHook(
-		operatorv1alpha1.PostReadHook,
 	).SetupWithManager(mgr); err != nil {
 		return errors.Wrapf(err, "unable to create controller")
 	}
