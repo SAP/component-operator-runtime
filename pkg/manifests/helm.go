@@ -48,7 +48,7 @@ import (
 type HelmGenerator struct {
 	name            string
 	discoveryClient discovery.DiscoveryInterface
-	files           [][]byte
+	crds            [][]byte
 	templates       []*template.Template
 	data            map[string]any
 }
@@ -73,12 +73,17 @@ func NewHelmGenerator(name string, fsys fs.FS, chartPath string, client client.C
 	if err != nil {
 		return nil, err
 	}
-	g.data["Chart"] = &helm.ChartData{}
-	if err := kyaml.Unmarshal(chartRaw, g.data["Chart"]); err != nil {
+	chartData := &helm.ChartData{}
+	if err := kyaml.Unmarshal(chartRaw, chartData); err != nil {
 		return nil, err
 	}
-	// TODO: validate that dependencies is not set in Chart.yaml
-	// TODO: validate that ./charts does not exist
+	if chartData.Type == "" {
+		chartData.Type = helm.ChartTypeApplication
+	}
+	if chartData.Type != helm.ChartTypeApplication {
+		return nil, fmt.Errorf("only application charts are supported")
+	}
+	g.data["Chart"] = chartData
 
 	valuesRaw, err := fs.ReadFile(fsys, chartPath+"/values.yaml")
 	if err == nil {
@@ -92,43 +97,68 @@ func NewHelmGenerator(name string, fsys fs.FS, chartPath string, client client.C
 		return nil, err
 	}
 
-	files, err := fs.Glob(fsys, chartPath+"/crds/*.yaml")
+	crds, err := find(fsys, chartPath+"/crds", "*.yaml", fileTypeRegular, 0)
 	if err != nil {
-		panic("this cannot happen")
-		// because an error would occur only if the pattern is malformed, which is not the case
+		return nil, err
 	}
-	for _, file := range files {
-		raw, err := fs.ReadFile(fsys, file)
+	for _, crd := range crds {
+		raw, err := fs.ReadFile(fsys, crd)
 		if err != nil {
 			return nil, err
 		}
-		g.files = append(g.files, raw)
+		g.crds = append(g.crds, raw)
 	}
 
-	includes, err := fs.Glob(fsys, chartPath+"/templates/_*")
+	includes, err := find(fsys, chartPath+"/templates", "_*", fileTypeRegular, 0)
 	if err != nil {
-		panic("this cannot happen")
-		// because an error would occur only if the pattern is malformed, which is not the case
+		return nil, err
 	}
-	sources, err := fs.Glob(fsys, chartPath+"/templates/[^_]*.yaml")
+
+	manifests, err := find(fsys, chartPath+"/templates", "[^_]*.yaml", fileTypeRegular, 0)
 	if err != nil {
-		panic("this cannot happen")
-		// because an error would occur only if the pattern is malformed, which is not the case
+		return nil, err
 	}
-	if len(sources) == 0 {
+	if len(manifests) == 0 {
 		return &g, nil
 	}
 
-	var t *template.Template
-	for _, source := range sources {
-		raw, err := fs.ReadFile(fsys, source)
+	// TODO: for now, one level of library subcharts is supported
+	// we should enhance the support of subcharts (nested charts, application charts)
+	subChartPaths, err := find(fsys, chartPath+"/charts", "*", fileTypeDir, 1)
+	if err != nil {
+		return nil, err
+	}
+	for _, subChartPath := range subChartPaths {
+		subChartRaw, err := fs.ReadFile(fsys, subChartPath+"/Chart.yaml")
 		if err != nil {
 			return nil, err
 		}
+		var subChartData helm.ChartData
+		if err := kyaml.Unmarshal(subChartRaw, &subChartData); err != nil {
+			return nil, err
+		}
+		if subChartData.Type != helm.ChartTypeLibrary {
+			return nil, fmt.Errorf("only library subcharts are supported (path: %s)", subChartPath)
+		}
+		subIncludes, err := find(fsys, subChartPath+"/templates", "_*", fileTypeRegular, 0)
+		if err != nil {
+			return nil, err
+		}
+		includes = append(includes, subIncludes...)
+	}
+
+	var t *template.Template
+	for _, manifest := range manifests {
+		raw, err := fs.ReadFile(fsys, manifest)
+		if err != nil {
+			return nil, err
+		}
+		// Note: we use absolute paths (instead of relative ones) as template names
+		// because the 'Template' builtin needs that to work properly
 		if t == nil {
-			t = template.New(source)
+			t = template.New(manifest)
 		} else {
-			t = t.New(source)
+			t = t.New(manifest)
 		}
 		t.Option("missingkey=zero").
 			Funcs(sprig.TxtFuncMap()).
@@ -145,6 +175,8 @@ func NewHelmGenerator(name string, fsys fs.FS, chartPath string, client client.C
 		if err != nil {
 			return nil, err
 		}
+		// Note: we use absolute paths (instead of relative ones) as template names
+		// because the 'Template' builtin needs that to work properly
 		t = t.New(include)
 		t.Option("missingkey=zero").
 			Funcs(sprig.TxtFuncMap()).
@@ -202,11 +234,15 @@ func (g *HelmGenerator) Generate(namespace string, name string, parameters types
 		Namespace: namespace,
 		Name:      name,
 		Service:   g.name,
+		// TODO: probably IsInstall and IsUpgrade should be set in a more differentiated way;
+		// but we don't know how, since this framework does not really distinguish between installation and upgrade ...
+		IsInstall: true,
+		IsUpgrade: false,
 	}
 
 	data["Values"] = MergeMaps(*data["Values"].(*map[string]any), parameters.ToUnstructured())
 
-	for _, f := range g.files {
+	for _, f := range g.crds {
 		decoder := utilyaml.NewYAMLToJSONDecoder(bytes.NewBuffer(f))
 		for {
 			object := &unstructured.Unstructured{}
@@ -225,8 +261,17 @@ func (g *HelmGenerator) Generate(namespace string, name string, parameters types
 
 	for _, t := range g.templates {
 		data["Template"] = &helm.TemplateData{
-			Name:     t.Name(),
-			BasePath: filepath.Dir(t.Name()),
+			Name: t.Name(),
+			BasePath: func(path string) string {
+				for path != "." && path != "/" {
+					path = filepath.Dir(path)
+					if filepath.Base(path) == "templates" {
+						return path
+					}
+				}
+				panic("this cannot happen")
+				// because templates were selected such that reside under 'templates' directory
+			}(t.Name()),
 		}
 		var buf bytes.Buffer
 		if err := t.Execute(&buf, data); err != nil {

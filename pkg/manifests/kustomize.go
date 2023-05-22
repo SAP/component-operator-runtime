@@ -22,7 +22,6 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"strings"
 	"text/template"
 
 	"github.com/Masterminds/sprig/v3"
@@ -66,46 +65,36 @@ func NewKustomizeGenerator(fsys fs.FS, kustomizationPath string, templateSuffix 
 	g.kustomizer = krusty.MakeKustomizer(options)
 
 	var t *template.Template
-	if err := fs.WalkDir(
-		fsys,
-		kustomizationPath,
-		func(path string, dirEntry fs.DirEntry, err error) error {
-			if err != nil {
-				return err
-			}
-			if !dirEntry.Type().IsRegular() {
-				return nil
-			}
-			if !strings.HasSuffix(path, templateSuffix) {
-				return nil
-			}
-			raw, err := fs.ReadFile(fsys, path)
-			if err != nil {
-				return err
-			}
-			name, err := filepath.Rel(kustomizationPath, path)
-			if err != nil {
-				// TODO: is it ok to panic here in case of error ?
-				panic(err)
-			}
-			if t == nil {
-				t = template.New(name)
-			} else {
-				t = t.New(name)
-			}
-			t.Option("missingkey=zero").
-				Funcs(sprig.TxtFuncMap()).
-				Funcs(templatex.FuncMap()).
-				Funcs(templatex.FuncMapForTemplate(t)).
-				Funcs(templatex.FuncMapForClient(client))
-			if _, err := t.Parse(string(raw)); err != nil {
-				return err
-			}
-			g.templates = append(g.templates, t)
-			return nil
-		},
-	); err != nil {
+	files, err := find(fsys, kustomizationPath, "*"+templateSuffix, fileTypeRegular, 0)
+	if err != nil {
 		return nil, err
+	}
+	for _, file := range files {
+		raw, err := fs.ReadFile(fsys, file)
+		if err != nil {
+			return nil, err
+		}
+		// Note: we use relative paths as templates names to make it easier to copy the kustomization
+		// content into the ephemeral in-memory filesystem used by krusty in Generate()
+		name, err := filepath.Rel(kustomizationPath, file)
+		if err != nil {
+			// TODO: is it ok to panic here in case of error ?
+			panic(err)
+		}
+		if t == nil {
+			t = template.New(name)
+		} else {
+			t = t.New(name)
+		}
+		t.Option("missingkey=zero").
+			Funcs(sprig.TxtFuncMap()).
+			Funcs(templatex.FuncMap()).
+			Funcs(templatex.FuncMapForTemplate(t)).
+			Funcs(templatex.FuncMapForClient(client))
+		if _, err := t.Parse(string(raw)); err != nil {
+			return nil, err
+		}
+		g.templates = append(g.templates, t)
 	}
 
 	return &g, nil
