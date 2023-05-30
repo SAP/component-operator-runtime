@@ -26,6 +26,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"text/template"
 
@@ -36,18 +37,21 @@ import (
 )
 
 type Config struct {
-	Owner                    string `json:"owner,omitempty"`
-	GroupName                string `json:"groupName,omitempty"`
-	GroupVersion             string `json:"groupVersion,omitempty"`
-	Kind                     string `json:"kind,omitempty"`
-	Resource                 string `json:"resource,omitempty"`
-	OperatorName             string `json:"operatorName,omitempty"`
-	GoVersion                string `json:"goVersion,omitempty"`
-	GoModule                 string `json:"goModule,omitempty"`
-	Version                  string `json:"version,omitempty"`
-	KubernetesVersion        string `json:"kubernetesVersion,omitempty"`
-	ControllerRuntimeVersion string `json:"controllerRuntimeVersion,omitempty"`
-	Image                    string `json:"image,omitempty"`
+	Owner                          string `json:"owner,omitempty"`
+	GroupName                      string `json:"groupName,omitempty"`
+	GroupVersion                   string `json:"groupVersion,omitempty"`
+	Kind                           string `json:"kind,omitempty"`
+	Resource                       string `json:"resource,omitempty"`
+	OperatorName                   string `json:"operatorName,omitempty"`
+	ValidatingWebhookEnabled       bool   `json:"validatingWebhookEnabled"`
+	MutatingWebhookEnabled         bool   `json:"mutatingWebhookEnabled"`
+	GoVersion                      string `json:"goVersion,omitempty"`
+	GoModule                       string `json:"goModule,omitempty"`
+	Version                        string `json:"version,omitempty"`
+	KubernetesVersion              string `json:"kubernetesVersion,omitempty"`
+	ControllerRuntimeVersion       string `json:"controllerRuntimeVersion,omitempty"`
+	AdmissionWebhookRuntimeVersion string `json:"admissionWebhookRuntimeVersion,omitempty"`
+	Image                          string `json:"image,omitempty"`
 }
 
 func (c Config) StringMap() map[string]any {
@@ -72,10 +76,11 @@ var templates embed.FS
 
 // default verions
 var (
-	goVersion                = "1.19"
-	version                  = "latest"
-	kubernetesVersion        = "v0.26.1"
-	controllerRuntimeVersion = "v0.14.2"
+	goVersion                      = "1.19"
+	version                        = "latest"
+	kubernetesVersion              = "v0.27.2"
+	controllerRuntimeVersion       = "v0.15.0"
+	admissionWebhookRuntimeVersion = "v0.1.0"
 )
 
 func main() {
@@ -84,6 +89,7 @@ func main() {
 	showVersion := false
 	config := Config{Version: version}
 	outputDir := ""
+	skipPostProcessing := false
 
 	pflag.BoolVar(&showVersion, "version", false, "Show version")
 	pflag.StringVar(&config.Owner, "owner", "SAP SE", "Owner of this project, as written to the license header")
@@ -92,11 +98,15 @@ func main() {
 	pflag.StringVar(&config.Kind, "kind", "", "API kind for the component")
 	pflag.StringVar(&config.Resource, "resource", "", "API resource (plural) for the component; if empty, it will be the pluralized kind")
 	pflag.StringVar(&config.OperatorName, "operator-name", "", "Unique name for this operator, used e.g. for leader election and labels; should be a valid DNS hostname")
+	pflag.BoolVar(&config.ValidatingWebhookEnabled, "with-validating-webhook", false, "Whether to scaffold validating webhook")
+	pflag.BoolVar(&config.MutatingWebhookEnabled, "with-mutating-webhook", false, "Whether to scaffold mutating webhook")
 	pflag.StringVar(&config.GoVersion, "go-version", goVersion, "Go version to be used")
 	pflag.StringVar(&config.GoModule, "go-module", "", "Name of the Go module, as written to the go.mod file")
 	pflag.StringVar(&config.KubernetesVersion, "kubernetes-version", kubernetesVersion, "Kubernetes go-client version to be used")
 	pflag.StringVar(&config.ControllerRuntimeVersion, "controller-runtime-version", controllerRuntimeVersion, "Controller-runtime version to be used")
+	pflag.StringVar(&config.AdmissionWebhookRuntimeVersion, "admission-webhook-runtime-version", admissionWebhookRuntimeVersion, "Admission-webhook-runtime version to be used")
 	pflag.StringVar(&config.Image, "image", "controller:latest", "Name of the Docker/OCI image produced by this project")
+	pflag.BoolVar(&skipPostProcessing, "skip-post-processing", false, "Skip post-processing")
 	pflag.CommandLine.SortFlags = false
 	pflag.Usage = func() {
 		errlog.Printf("Usage: %s [options] [output directory]\n", filepath.Base(os.Args[0]))
@@ -127,26 +137,28 @@ func main() {
 		errlog.Fatal(err)
 	}
 
-	// TODO: beautify the following a bit (e.g. only print the stdout/stderr in case of errors)
-	fmt.Println(">>> Post-processing: go get")
-	if err := run(outputDir, "go", "get"); err != nil {
-		errlog.Fatal(err)
-	}
-	fmt.Println(">>> Post-processing: make generate")
-	if err := run(outputDir, "make", "generate"); err != nil {
-		errlog.Fatal(err)
-	}
-	fmt.Println(">>> Post-processing: make manifests")
-	if err := run(outputDir, "make", "manifests"); err != nil {
-		errlog.Fatal(err)
-	}
-	fmt.Println(">>> Post-processing: make fmt")
-	if err := run(outputDir, "make", "fmt"); err != nil {
-		errlog.Fatal(err)
-	}
-	fmt.Println(">>> Post-processing: make vet")
-	if err := run(outputDir, "make", "vet"); err != nil {
-		errlog.Fatal(err)
+	if !skipPostProcessing {
+		// TODO: beautify the following a bit (e.g. only print the stdout/stderr in case of errors)
+		fmt.Println(">>> Post-processing: go get")
+		if err := run(outputDir, "go", "get"); err != nil {
+			errlog.Fatal(err)
+		}
+		fmt.Println(">>> Post-processing: make generate")
+		if err := run(outputDir, "make", "generate"); err != nil {
+			errlog.Fatal(err)
+		}
+		fmt.Println(">>> Post-processing: make manifests")
+		if err := run(outputDir, "make", "manifests"); err != nil {
+			errlog.Fatal(err)
+		}
+		fmt.Println(">>> Post-processing: make fmt")
+		if err := run(outputDir, "make", "fmt"); err != nil {
+			errlog.Fatal(err)
+		}
+		fmt.Println(">>> Post-processing: make vet")
+		if err := run(outputDir, "make", "vet"); err != nil {
+			errlog.Fatal(err)
+		}
 	}
 }
 
@@ -216,15 +228,11 @@ func processTemplates(fsys FS, config *Config, outputDir string) error {
 	}
 	for _, entry := range entries {
 		path := entry.Name()
-		outputPath := outputDir + "/" + path
-		fsinfo, err := entry.Info()
+		outputPath := outputDir + "/" + substitutePath(path, config.StringMap())
 		if err != nil {
 			return err
 		}
 		if entry.IsDir() {
-			if err := os.Mkdir(outputPath, 0755); err != nil {
-				return err
-			}
 			if err := processTemplates(subFS(fsys, path), config, outputPath); err != nil {
 				return err
 			}
@@ -246,12 +254,32 @@ func processTemplates(fsys FS, config *Config, outputDir string) error {
 					return err
 				}
 			}
-			if err := os.WriteFile(outputPath, output, (fsinfo.Mode().Perm()|0600)&0755); err != nil {
+			if strings.TrimSpace(string(output)) == "" {
+				continue
+			}
+			if err := os.MkdirAll(filepath.Dir(outputPath), 0755); err != nil {
+				return err
+			}
+			mode := fs.FileMode(0644)
+			if strings.HasSuffix(outputPath, ".sh") {
+				mode = 0755
+			}
+			if err := os.WriteFile(outputPath, output, mode); err != nil {
 				return err
 			}
 		}
 	}
 	return nil
+}
+
+func substitutePath(path string, data any) string {
+	re := regexp.MustCompile(`__(.+?)__`)
+	t := template.Must(template.New("gotpl").Option("missingkey=error").Parse(re.ReplaceAllString(path, "{{ .$1 }}")))
+	var out bytes.Buffer
+	if err := t.Execute(&out, data); err != nil {
+		panic(err)
+	}
+	return out.String()
 }
 
 func renderTemplate(name string, tpl []byte, data any) ([]byte, error) {

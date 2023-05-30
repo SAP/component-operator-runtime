@@ -19,8 +19,14 @@ package helm
 type ChartData struct {
 	Name       string `json:"name,omitempty"`
 	Version    string `json:"version,omitempty"`
+	Type       string `json:"type,omitempty"`
 	AppVersion string `json:"appVersion,omitempty"`
 }
+
+const (
+	ChartTypeApplication = "application"
+	ChartTypeLibrary     = "library"
+)
 
 type TemplateData struct {
 	Name     string `json:"name,omitempty"`
@@ -31,6 +37,8 @@ type ReleaseData struct {
 	Namespace string `json:"namespace,omitempty"`
 	Name      string `json:"name,omitempty"`
 	Service   string `json:"service,omitempty"`
+	IsInstall bool   `json:"isInstall,omitempty"`
+	IsUpgrade bool   `json:"isUpgrade,omitempty"`
 }
 
 type CapabilitiesData struct {
@@ -53,6 +61,8 @@ type KubeVersionData struct {
 	Version string `json:"version,omitempty"`
 	Major   string `json:"major,omitempty"`
 	Minor   string `json:"minor,omitempty"`
+	// GitVersion is actually deprecated, but some charts still use it
+	GitVersion string `json:"gitVersion,omitempty"`
 }
 
 func (kubeVersion *KubeVersionData) String() string {
