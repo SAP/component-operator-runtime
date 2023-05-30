@@ -12,6 +12,9 @@
             "program": "${workspaceFolder}",
             "args": [
                 "--kubeconfig=${workspaceFolder}/tmp/kubeconfig",
+                {{- if or .validatingWebhookEnabled .mutatingWebhookEnabled }}
+                "--webhook-tls-directory=${workspaceFolder}/tmp/ssl",
+                {{- end }}
                 "--zap-log-level=debug"
             ]
         }
