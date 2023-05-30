@@ -100,22 +100,31 @@ func NewKustomizeGenerator(fsys fs.FS, kustomizationPath string, templateSuffix 
 	return &g, nil
 }
 
-// Create a new KustomizeGenerator with a ParameterTransformer attached (further transformers can be attached to the reeturned generator object).
-func NewKustomizeGeneratorWithParameterTransformer(fsys fs.FS, kustomizationPath string, templateSuffix string, client client.Client, transformer ParameterTransformer) (TransformableGenerator, error) {
+// Create a new KustomizeGenerator as TransformableGenerator
+func NewTransformableKustomizeGenerator(fsys fs.FS, kustomizationPath string, templateSuffix string, client client.Client) (TransformableGenerator, error) {
 	g, err := NewKustomizeGenerator(fsys, kustomizationPath, templateSuffix, client)
 	if err != nil {
 		return nil, err
 	}
-	return NewGenerator(g).WithParameterTransformer(transformer), nil
+	return NewGenerator(g), nil
+}
+
+// Create a new KustomizeGenerator with a ParameterTransformer attached (further transformers can be attached to the reeturned generator object).
+func NewKustomizeGeneratorWithParameterTransformer(fsys fs.FS, kustomizationPath string, templateSuffix string, client client.Client, transformer ParameterTransformer) (TransformableGenerator, error) {
+	g, err := NewTransformableKustomizeGenerator(fsys, kustomizationPath, templateSuffix, client)
+	if err != nil {
+		return nil, err
+	}
+	return g.WithParameterTransformer(transformer), nil
 }
 
 // Create a new KustomizeGenerator with an ObjectTransformer attached (further transformers can be attached to the reeturned generator object).
 func NewKustomizeGeneratorWithObjectTransformer(fsys fs.FS, kustomizationPath string, templateSuffix string, client client.Client, transformer ObjectTransformer) (TransformableGenerator, error) {
-	g, err := NewKustomizeGenerator(fsys, kustomizationPath, templateSuffix, client)
+	g, err := NewTransformableKustomizeGenerator(fsys, kustomizationPath, templateSuffix, client)
 	if err != nil {
 		return nil, err
 	}
-	return NewGenerator(g).WithObjectTransformer(transformer), nil
+	return g.WithObjectTransformer(transformer), nil
 }
 
 // Generate resource descriptors.

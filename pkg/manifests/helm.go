@@ -191,22 +191,31 @@ func NewHelmGenerator(name string, fsys fs.FS, chartPath string, client client.C
 	return &g, nil
 }
 
-// Create a new HelmGenerator with a ParameterTransformer attached (further transformers can be attached to the reeturned generator object).
-func NewHelmGeneratorWithParameterTransformer(name string, fsys fs.FS, chartPath string, client client.Client, discoveryClient discovery.DiscoveryInterface, transformer ParameterTransformer) (TransformableGenerator, error) {
+// Create a new HelmGenerator as TransformableGenerator
+func NewTransformableHelmGenerator(name string, fsys fs.FS, chartPath string, client client.Client, discoveryClient discovery.DiscoveryInterface) (TransformableGenerator, error) {
 	g, err := NewHelmGenerator(name, fsys, chartPath, client, discoveryClient)
 	if err != nil {
 		return nil, err
 	}
-	return NewGenerator(g).WithParameterTransformer(transformer), nil
+	return NewGenerator(g), nil
+}
+
+// Create a new HelmGenerator with a ParameterTransformer attached (further transformers can be attached to the reeturned generator object).
+func NewHelmGeneratorWithParameterTransformer(name string, fsys fs.FS, chartPath string, client client.Client, discoveryClient discovery.DiscoveryInterface, transformer ParameterTransformer) (TransformableGenerator, error) {
+	g, err := NewTransformableHelmGenerator(name, fsys, chartPath, client, discoveryClient)
+	if err != nil {
+		return nil, err
+	}
+	return g.WithParameterTransformer(transformer), nil
 }
 
 // Create a new HelmGenerator with an ObjectTransformer attached (further transformers can be attached to the reeturned generator object).
 func NewHelmGeneratorWithObjectTransformer(name string, fsys fs.FS, chartPath string, client client.Client, discoveryClient discovery.DiscoveryInterface, transformer ObjectTransformer) (TransformableGenerator, error) {
-	g, err := NewHelmGenerator(name, fsys, chartPath, client, discoveryClient)
+	g, err := NewTransformableHelmGenerator(name, fsys, chartPath, client, discoveryClient)
 	if err != nil {
 		return nil, err
 	}
-	return NewGenerator(g).WithObjectTransformer(transformer), nil
+	return g.WithObjectTransformer(transformer), nil
 }
 
 // Generate resource descriptors.
