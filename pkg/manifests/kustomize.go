@@ -22,7 +22,6 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"strings"
 	"text/template"
 
 	"github.com/Masterminds/sprig/v3"
@@ -66,67 +65,66 @@ func NewKustomizeGenerator(fsys fs.FS, kustomizationPath string, templateSuffix 
 	g.kustomizer = krusty.MakeKustomizer(options)
 
 	var t *template.Template
-	if err := fs.WalkDir(
-		fsys,
-		kustomizationPath,
-		func(path string, dirEntry fs.DirEntry, err error) error {
-			if err != nil {
-				return err
-			}
-			if !dirEntry.Type().IsRegular() {
-				return nil
-			}
-			if !strings.HasSuffix(path, templateSuffix) {
-				return nil
-			}
-			raw, err := fs.ReadFile(fsys, path)
-			if err != nil {
-				return err
-			}
-			name, err := filepath.Rel(kustomizationPath, path)
-			if err != nil {
-				// TODO: is it ok to panic here in case of error ?
-				panic(err)
-			}
-			if t == nil {
-				t = template.New(name)
-			} else {
-				t = t.New(name)
-			}
-			t.Option("missingkey=zero").
-				Funcs(sprig.TxtFuncMap()).
-				Funcs(templatex.FuncMap()).
-				Funcs(templatex.FuncMapForTemplate(t)).
-				Funcs(templatex.FuncMapForClient(client))
-			if _, err := t.Parse(string(raw)); err != nil {
-				return err
-			}
-			g.templates = append(g.templates, t)
-			return nil
-		},
-	); err != nil {
+	files, err := find(fsys, kustomizationPath, "*"+templateSuffix, fileTypeRegular, 0)
+	if err != nil {
 		return nil, err
+	}
+	for _, file := range files {
+		raw, err := fs.ReadFile(fsys, file)
+		if err != nil {
+			return nil, err
+		}
+		// Note: we use relative paths as templates names to make it easier to copy the kustomization
+		// content into the ephemeral in-memory filesystem used by krusty in Generate()
+		name, err := filepath.Rel(kustomizationPath, file)
+		if err != nil {
+			// TODO: is it ok to panic here in case of error ?
+			panic(err)
+		}
+		if t == nil {
+			t = template.New(name)
+		} else {
+			t = t.New(name)
+		}
+		t.Option("missingkey=zero").
+			Funcs(sprig.TxtFuncMap()).
+			Funcs(templatex.FuncMap()).
+			Funcs(templatex.FuncMapForTemplate(t)).
+			Funcs(templatex.FuncMapForClient(client))
+		if _, err := t.Parse(string(raw)); err != nil {
+			return nil, err
+		}
+		g.templates = append(g.templates, t)
 	}
 
 	return &g, nil
 }
 
-// Create a new KustomizeGenerator with a ParameterTransformer attached (further transformers can be attached to the reeturned generator object).
-func NewKustomizeGeneratorWithParameterTransformer(fsys fs.FS, kustomizationPath string, templateSuffix string, client client.Client, transformer ParameterTransformer) (TransformableGenerator, error) {
+// Create a new KustomizeGenerator as TransformableGenerator
+func NewTransformableKustomizeGenerator(fsys fs.FS, kustomizationPath string, templateSuffix string, client client.Client) (TransformableGenerator, error) {
 	g, err := NewKustomizeGenerator(fsys, kustomizationPath, templateSuffix, client)
 	if err != nil {
 		return nil, err
 	}
-	return NewGenerator(g).WithParameterTransformer(transformer), nil
+	return NewGenerator(g), nil
+}
+
+// Create a new KustomizeGenerator with a ParameterTransformer attached (further transformers can be attached to the reeturned generator object).
+func NewKustomizeGeneratorWithParameterTransformer(fsys fs.FS, kustomizationPath string, templateSuffix string, client client.Client, transformer ParameterTransformer) (TransformableGenerator, error) {
+	g, err := NewTransformableKustomizeGenerator(fsys, kustomizationPath, templateSuffix, client)
+	if err != nil {
+		return nil, err
+	}
+	return g.WithParameterTransformer(transformer), nil
 }
 
 // Create a new KustomizeGenerator with an ObjectTransformer attached (further transformers can be attached to the reeturned generator object).
 func NewKustomizeGeneratorWithObjectTransformer(fsys fs.FS, kustomizationPath string, templateSuffix string, client client.Client, transformer ObjectTransformer) (TransformableGenerator, error) {
-	g, err := NewKustomizeGenerator(fsys, kustomizationPath, templateSuffix, client)
+	g, err := NewTransformableKustomizeGenerator(fsys, kustomizationPath, templateSuffix, client)
 	if err != nil {
 		return nil, err
 	}
-	return NewGenerator(g).WithObjectTransformer(transformer), nil
+	return g.WithObjectTransformer(transformer), nil
 }
 
 // Generate resource descriptors.

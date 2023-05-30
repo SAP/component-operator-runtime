@@ -30,7 +30,7 @@ import (
 	"github.com/sap/component-operator-runtime/pkg/manifests"
 	"github.com/sap/component-operator-runtime/pkg/operator"
 
-	operatorv1alpha1 "{{ .goModule }}/api/v1alpha1"
+	operator{{ .groupVersion }} "{{ .goModule }}/api/{{ .groupVersion }}"
 )
 
 const Name = "{{ .operatorName }}"
@@ -87,40 +87,45 @@ func (o *Operator) GetName() string {
 }
 
 func (o *Operator) InitScheme(scheme *runtime.Scheme) {
-	utilruntime.Must(operatorv1alpha1.AddToScheme(scheme))
+	utilruntime.Must(operator{{ .groupVersion }}.AddToScheme(scheme))
 }
 
 func (o *Operator) InitFlags(flagset *flag.FlagSet) {
-	// Add logic to initialize flags (if running in a combined controller you might want to evaluate o.options.FlagPrefix)
+	// Add logic to initialize flags (if running in a combined controller you might want to evaluate o.options.FlagPrefix).
 }
 
 func (o *Operator) ValidateFlags() error {
-	// Add logic to validate flags (if running in a combined controller you might want to evaluate o.options.FlagPrefix)
+	// Add logic to validate flags (if running in a combined controller you might want to evaluate o.options.FlagPrefix).
 	return nil
 }
 
 func (o *Operator) GetUncacheableTypes() []client.Object {
-	// Add types which should bypass informer caching
-	return []client.Object{&operatorv1alpha1.{{ .kind }}{}}
+	// Add types which should bypass informer caching.
+	return []client.Object{&operator{{ .groupVersion }}.{{ .kind }}{}}
 }
 
 func (o *Operator) Setup(mgr ctrl.Manager, discoveryClient discovery.DiscoveryInterface) error {
-	// Replace this by a real resource generator (e.g. manifests.HelmGenerator, or your own one)
+	// Replace this by a real resource generator (e.g. manifests.HelmGenerator, or your own one).
 	resourceGenerator, err := manifests.NewDummyGenerator()
 	if err != nil {
 		return errors.Wrap(err, "error initializing resource generator")
 	}
-	if err := component.NewReconciler[*operatorv1alpha1.{{ .kind }}](
+
+	if err := component.NewReconciler[*operator{{ .groupVersion }}.{{ .kind }}](
 		o.options.Name,
 		mgr.GetClient(),
 		discoveryClient,
 		mgr.GetEventRecorderFor(o.options.Name),
 		mgr.GetScheme(),
 		resourceGenerator,
-	).WithPostReadHook(
-		operatorv1alpha1.PostReadHook,
 	).SetupWithManager(mgr); err != nil {
 		return errors.Wrapf(err, "unable to create controller")
 	}
+
+	{{- if or .validatingWebhookEnabled .mutatingWebhookEnabled }}
+
+	operator{{ .groupVersion }}.NewWebhook().SetupWithManager(mgr)
+	{{- end }}
+
 	return nil
 }

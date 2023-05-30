@@ -8,6 +8,9 @@ replace github.com/sap/component-operator-runtime => {{ .version }}
 {{- end }}
 
 require (
+	{{ if or .validatingWebhookEnabled .mutatingWebhookEnabled }}
+	github.com/sap/admission-webhook-runtime {{ .admissionWebhookRuntimeVersion }}
+	{{- end }}
 	{{- if contains "/" .version }}
 	github.com/sap/component-operator-runtime v0.0.0
 	{{- else }}

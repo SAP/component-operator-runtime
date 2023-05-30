@@ -27,22 +27,27 @@ In this example, some options were left out, using the according default values;
 Usage: scaffold [options] [output directory]
   [output directory]: Target directory for the generated scaffold; must exist
   [options]:
-      --version                             Show version
-      --owner string                        Owner of this project, as written to the license header
-                                            (default "SAP SE")
-      --group-name string                   API group name (default "operator.kyma-project.io")
-      --group-version string                API group version (default "v1alpha1")
-      --kind string                         API kind for the component
-      --resource string                     API resource (plural) for the component;
-                                            if empty, it will be the pluralized kind
-      --operator-name string                Unique name for this operator, used e.g. for leader election and labels;
-                                            should be a valid DNS hostname
-      --go-version string                   Go version to be used (default "1.19")
-      --go-module string                    Name of the Go module, as written to the go.mod file
-      --kubernetes-version string           Kubernetes go-client version to be used (default "v0.26.1")
-      --controller-runtime-version string   Controller-runtime version to be used (default "v0.14.2")
-      --image string                        Name of the Docker/OCI image produced by this project
-                                            (default "controller:latest")
+      --version                                    Show version
+      --owner string                               Owner of this project, as written to the license header
+                                                   (default "SAP SE")
+      --group-name string                          API group name (default "operator.kyma-project.io")
+      --group-version string                       API group version (default "v1alpha1")
+      --kind string                                API kind for the component
+      --resource string                            API resource (plural) for the component;
+                                                   if empty, it will be the pluralized kind
+      --operator-name string                       Unique name for this operator;
+                                                   used e.g. for leader election and labels;
+                                                   should be a valid DNS hostname
+      --with-validating-webhook                    Whether to scaffold validating webhook
+      --with-mutating-webhook                      Whether to scaffold mutating webhook
+      --go-version string                          Go version to be used (default "1.19")
+      --go-module string                           Name of the Go module, as written to the go.mod file
+      --kubernetes-version string                  Kubernetes go-client version to be used (default "v0.27.2")
+      --controller-runtime-version string          Controller-runtime version to be used (default "v0.15.0")
+      --admission-webhook-runtime-version string   Admission-webhook-runtime version to be used (default "v0.1.0")
+      --image string                               Name of the Docker/OCI image produced by this project
+                                                   (default "controller:latest")
+      --skip-post-processing                       Skip post-processing
 ```
 
 After generating the scaffold, the next steps are:
