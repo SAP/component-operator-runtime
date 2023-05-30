@@ -24,7 +24,7 @@ import (
 	componentoperatorruntimetypes "github.com/sap/component-operator-runtime/pkg/types"
 )
 
-// {{ .kind }}Spec defines the desired state of {{ .kind }}
+// {{ .kind }}Spec defines the desired state of {{ .kind }}.
 type {{ .kind }}Spec struct {
 	// Uncomment the following if you want to make deployment namespace and name configurable
 	// here in the spec (independently of the component's metadata.namespace and metadata.name);
@@ -34,7 +34,7 @@ type {{ .kind }}Spec struct {
 	// Add your own fields here, describing the deployment of the managed component.
 }
 
-// {{ .kind }}Status defines the observed state of {{ .kind }}
+// {{ .kind }}Status defines the observed state of {{ .kind }}.
 type {{ .kind }}Status struct {
 	component.Status `json:",inline"`
 
@@ -46,7 +46,7 @@ type {{ .kind }}Status struct {
 // +kubebuilder:printcolumn:name="State",type=string,JSONPath=`.status.state`
 // +kubebuilder:printcolumn:name="Age",type="date",JSONPath=".metadata.creationTimestamp"
 
-// {{ .kind }} is the Schema for the {{ .resource }} API
+// {{ .kind }} is the Schema for the {{ .resource }} API.
 type {{ .kind }} struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
@@ -60,7 +60,7 @@ var _ component.Component = &{{ .kind }}{}
 
 // +kubebuilder:object:root=true
 
-// {{ .kind }}List contains a list of {{ .kind }}
+// {{ .kind }}List contains a list of {{ .kind }}.
 type {{ .kind }}List struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitempty"`
