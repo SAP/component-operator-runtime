@@ -8,10 +8,10 @@ require (
 	github.com/sap/go-generics v0.1.0
 	github.com/spf13/pflag v1.0.5
 	k8s.io/api v0.27.1
-	k8s.io/apiextensions-apiserver v0.26.2
+	k8s.io/apiextensions-apiserver v0.27.1
 	k8s.io/apimachinery v0.27.1
 	k8s.io/client-go v0.27.1
-	k8s.io/kube-aggregator v0.27.1
+	k8s.io/kube-aggregator v0.26.2
 	sigs.k8s.io/cli-utils v0.34.0
 	sigs.k8s.io/controller-runtime v0.14.2
 	sigs.k8s.io/kustomize/api v0.13.2
