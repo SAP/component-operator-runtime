@@ -62,9 +62,12 @@ func NewTemplateParameterTransformer(fsys fs.FS, path string) (*TemplateParamete
 	return t, nil
 }
 
-func (t *TemplateParameterTransformer) TransformParameters(parameters types.Unstructurable) (types.Unstructurable, error) {
+func (t *TemplateParameterTransformer) TransformParameters(namespace string, name string, parameters types.Unstructurable) (types.Unstructurable, error) {
+	data := parameters.ToUnstructured()
+	data["Namespace"] = namespace
+	data["Name"] = name
 	var buf bytes.Buffer
-	if err := t.template.Execute(&buf, parameters.ToUnstructured()); err != nil {
+	if err := t.template.Execute(&buf, data); err != nil {
 		return nil, err
 	}
 	var transformedParameters types.UnstructurableMap

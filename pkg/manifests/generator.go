@@ -46,7 +46,7 @@ func (g *tranformableGenerator) WithObjectTransformer(transformer ObjectTransfor
 
 func (g *tranformableGenerator) Generate(namespace string, name string, parameters types.Unstructurable) ([]client.Object, error) {
 	for i, transformer := range g.parameterTransformers {
-		_parameters, err := transformer.TransformParameters(parameters)
+		_parameters, err := transformer.TransformParameters(namespace, name, parameters)
 		if err != nil {
 			return nil, errors.Wrapf(err, "error calling parameter transformer (%d)", i)
 		}
@@ -57,7 +57,7 @@ func (g *tranformableGenerator) Generate(namespace string, name string, paramete
 		return nil, err
 	}
 	for i, transformer := range g.objectTransformers {
-		_objects, err := transformer.TransformObjects(objects)
+		_objects, err := transformer.TransformObjects(namespace, name, objects)
 		if err != nil {
 			return nil, errors.Wrapf(err, "error calling object transformer (%d)", i)
 		}

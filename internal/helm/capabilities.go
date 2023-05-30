@@ -40,9 +40,10 @@ func GetCapabilities(client discovery.DiscoveryInterface) (*CapabilitiesData, er
 	}
 	capabilities := &CapabilitiesData{
 		KubeVersion: KubeVersionData{
-			Version: kubeVersion.GitVersion,
-			Major:   kubeVersion.Major,
-			Minor:   kubeVersion.Minor,
+			Version:    kubeVersion.GitVersion,
+			Major:      kubeVersion.Major,
+			Minor:      kubeVersion.Minor,
+			GitVersion: kubeVersion.GitVersion,
 		},
 		APIVersions: slices.Uniq(apiVersions),
 	}

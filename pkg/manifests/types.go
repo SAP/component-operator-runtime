@@ -41,11 +41,11 @@ type TransformableGenerator interface {
 // Parameter transformer interface.
 // Allows to manipulate the parameters passed to an existing generator.
 type ParameterTransformer interface {
-	TransformParameters(parameters types.Unstructurable) (types.Unstructurable, error)
+	TransformParameters(namespace string, name string, parameters types.Unstructurable) (types.Unstructurable, error)
 }
 
 // Object transformer interface.
 // Allows to manipulate the parameters returned by an existing generator.
 type ObjectTransformer interface {
-	TransformObjects(objects []client.Object) ([]client.Object, error)
+	TransformObjects(namespace string, name string, objects []client.Object) ([]client.Object, error)
 }
