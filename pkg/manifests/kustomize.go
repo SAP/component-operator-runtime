@@ -79,7 +79,7 @@ func NewKustomizeGenerator(fsys fs.FS, kustomizationPath string, templateSuffix 
 		name, err := filepath.Rel(kustomizationPath, file)
 		if err != nil {
 			// TODO: is it ok to panic here in case of error ?
-			panic(err)
+			panic("this cannot happen")
 		}
 		if t == nil {
 			t = template.New(name)
