@@ -51,6 +51,7 @@ type Config struct {
 	KubernetesVersion              string `json:"kubernetesVersion,omitempty"`
 	ControllerRuntimeVersion       string `json:"controllerRuntimeVersion,omitempty"`
 	AdmissionWebhookRuntimeVersion string `json:"admissionWebhookRuntimeVersion,omitempty"`
+	EnvtestKubernetesVersion       string `json:"envtestKubernetesVersion,omitempty"`
 	Image                          string `json:"image,omitempty"`
 }
 
@@ -81,6 +82,7 @@ var (
 	kubernetesVersion              = "v0.27.2"
 	controllerRuntimeVersion       = "v0.15.0"
 	admissionWebhookRuntimeVersion = "v0.1.0"
+	envtestKubernetesVersion       = "1.26.1"
 )
 
 func main() {
@@ -105,6 +107,7 @@ func main() {
 	pflag.StringVar(&config.KubernetesVersion, "kubernetes-version", kubernetesVersion, "Kubernetes go-client version to be used")
 	pflag.StringVar(&config.ControllerRuntimeVersion, "controller-runtime-version", controllerRuntimeVersion, "Controller-runtime version to be used")
 	pflag.StringVar(&config.AdmissionWebhookRuntimeVersion, "admission-webhook-runtime-version", admissionWebhookRuntimeVersion, "Admission-webhook-runtime version to be used")
+	pflag.StringVar(&config.EnvtestKubernetesVersion, "envtest-kubernetes-version", envtestKubernetesVersion, "Kubernetes version to be used by envtest")
 	pflag.StringVar(&config.Image, "image", "controller:latest", "Name of the Docker/OCI image produced by this project")
 	pflag.BoolVar(&skipPostProcessing, "skip-post-processing", false, "Skip post-processing")
 	pflag.CommandLine.SortFlags = false
