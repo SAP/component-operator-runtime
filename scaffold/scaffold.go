@@ -34,6 +34,7 @@ import (
 	"github.com/spf13/pflag"
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"sigs.k8s.io/yaml"
 )
 
 type Config struct {
@@ -55,13 +56,25 @@ type Config struct {
 	Image                          string `json:"image,omitempty"`
 }
 
-func (c Config) StringMap() map[string]any {
+func (c Config) ToJson() []byte {
 	raw, err := json.Marshal(c)
 	if err != nil {
 		panic(err)
 	}
+	return raw
+}
+
+func (c Config) ToYaml() []byte {
+	raw, err := yaml.Marshal(c)
+	if err != nil {
+		panic(err)
+	}
+	return raw
+}
+
+func (c Config) ToStringMap() map[string]any {
 	var result map[string]any
-	if err := json.Unmarshal(raw, &result); err != nil {
+	if err := json.Unmarshal(c.ToJson(), &result); err != nil {
 		panic(err)
 	}
 	return result
@@ -133,6 +146,10 @@ func main() {
 	}
 
 	if err := validateAndDefaultConfig(&config); err != nil {
+		errlog.Fatal(err)
+	}
+
+	if err := createProjectFile(&config, outputDir); err != nil {
 		errlog.Fatal(err)
 	}
 
@@ -224,6 +241,20 @@ func validateAndDefaultConfig(config *Config) error {
 	return nil
 }
 
+func createProjectFile(config *Config, outputDir string) error {
+	projectFile, err := os.OpenFile(outputDir+"/.project", os.O_RDWR|os.O_CREATE|os.O_EXCL, 0644)
+	if err != nil {
+		return err
+	}
+	if _, err := projectFile.Write(config.ToYaml()); err != nil {
+		return err
+	}
+	if err := projectFile.Close(); err != nil {
+		return err
+	}
+	return nil
+}
+
 func processTemplates(fsys FS, config *Config, outputDir string) error {
 	entries, err := fsys.ReadDir(".")
 	if err != nil {
@@ -231,7 +262,7 @@ func processTemplates(fsys FS, config *Config, outputDir string) error {
 	}
 	for _, entry := range entries {
 		path := entry.Name()
-		outputPath := outputDir + "/" + substitutePath(path, config.StringMap())
+		outputPath := outputDir + "/" + substitutePath(path, config.ToStringMap())
 		if err != nil {
 			return err
 		}
@@ -246,7 +277,7 @@ func processTemplates(fsys FS, config *Config, outputDir string) error {
 				if err != nil {
 					return err
 				}
-				output, err = renderTemplate(path, tpl, config.StringMap())
+				output, err = renderTemplate(path, tpl, config.ToStringMap())
 				if err != nil {
 					return err
 				}
