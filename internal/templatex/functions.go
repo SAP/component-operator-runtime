@@ -8,7 +8,6 @@ package templatex
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"strings"
 	"text/template"
 
@@ -91,21 +90,9 @@ func required(warn string, data any) (any, error) {
 }
 
 func makeFuncInclude(t *template.Template) func(string, any) (string, error) {
-	includedNames := make(map[string]int)
-	recursionMaxNums := 1000
-
 	return func(name string, data any) (string, error) {
 		var buf strings.Builder
-		if v, ok := includedNames[name]; ok {
-			if v > recursionMaxNums {
-				return "", errors.Wrapf(fmt.Errorf("unable to execute template"), "rendering template has a nested reference name: %s", name)
-			}
-			includedNames[name]++
-		} else {
-			includedNames[name] = 1
-		}
 		err := t.ExecuteTemplate(&buf, name, data)
-		includedNames[name]--
 		return buf.String(), err
 	}
 }
