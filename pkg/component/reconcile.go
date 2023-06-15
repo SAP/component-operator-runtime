@@ -49,6 +49,8 @@ import (
 // TODO: simplify the manager's client creation (do not force it to uncache T and the apiextensions/apiregistration types)
 // TODO: the default client does not cache unstructured objects; from the perspective of this package it should be fine to cache unstructured ...
 
+// TODO: we should disallow generators to produce manifests using metadata.generatName (it would break the whole inventory logic)
+
 // TODO: in general add more retry to overcome 409 update errors (also etcd storage errors because of missed precondition on delete)
 
 // TODO: it might be desirable to run the component operator outside the target cluster;
