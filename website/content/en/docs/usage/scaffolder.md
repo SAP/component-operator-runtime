@@ -45,6 +45,7 @@ Usage: scaffold [options] [output directory]
       --kubernetes-version string                  Kubernetes go-client version to be used (default "v0.27.2")
       --controller-runtime-version string          Controller-runtime version to be used (default "v0.15.0")
       --admission-webhook-runtime-version string   Admission-webhook-runtime version to be used (default "v0.1.0")
+      --envtest-kubernetes-version string          Kubernetes version to be used by envtest (default "1.26.1")
       --image string                               Name of the Docker/OCI image produced by this project
                                                    (default "controller:latest")
       --skip-post-processing                       Skip post-processing
