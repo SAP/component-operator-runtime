@@ -37,7 +37,7 @@ jobs:
         echo "Running 'git status' ..."
         git status --porcelain | tee status.out
         if [[ -s status.out ]]; then
-          echo "Generated artifacts are not up-to-date; probably 'make generate' was not run before commiting"
+          echo "Generated artifacts are not up-to-date; probably 'make generate' was not run before committing"
           exit 1
         else
           echo "Generated artifacts are up-to-date"
