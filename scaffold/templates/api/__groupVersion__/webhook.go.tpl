@@ -19,7 +19,6 @@ package {{ .groupVersion }}
 
 import (
 	"context"
-	"fmt"
 
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 
@@ -72,13 +71,13 @@ func (w *Webhook) MutateUpdate(ctx context.Context, oldComponent *{{ .kind }}, c
 func (w *Webhook) SetupWithManager(mgr manager.Manager) {
 	{{- if .validatingWebhookEnabled }}
 	mgr.GetWebhookServer().Register(
-		fmt.Sprintf("/admission/%s/{{ .resource }}/validate", GroupVersion),
+		"/admission/{{ .groupName }}/{{ .groupVersion }}/{{ .resource }}/validate",
 		admission.NewValidatingWebhookHandler[*{{ .kind }}](w, mgr.GetScheme(), mgr.GetLogger().WithName("webhook-runtime")),
 	)
 	{{- end }}
 	{{- if .mutatingWebhookEnabled }}
 	mgr.GetWebhookServer().Register(
-		fmt.Sprintf("/admission/%s/{{ .resource }}/mutate", GroupVersion),
+		"/admission/{{ .groupName }}/{{ .groupVersion }}/{{ .resource }}/mutate",
 		admission.NewMutatingWebhookHandler[*{{ .kind }}](w, mgr.GetScheme(), mgr.GetLogger().WithName("webhook-runtime")),
 	)
 	{{- end }}
