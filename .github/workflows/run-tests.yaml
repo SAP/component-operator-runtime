@@ -89,7 +89,8 @@ jobs:
         cd $RUNNER_TEMP/src
         make generate-client
 
-    - name: Validate docker build
-      run: |
-        cd $RUNNER_TEMP/src
-        make docker-build
+    # commented out until github runners have docker 23.0
+    # - name: Validate docker build
+    #   run: |
+    #     cd $RUNNER_TEMP/src
+    #     make docker-build
