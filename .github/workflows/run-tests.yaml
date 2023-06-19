@@ -77,4 +77,19 @@ jobs:
     - name: Build generated operator
       run: |
         cd $RUNNER_TEMP/src
-        make
+        make build
+
+    - name: Test generated operator
+      run: |
+        cd $RUNNER_TEMP/src
+        make test
+
+    - name: Validate generation of typed client
+      run: |
+        cd $RUNNER_TEMP/src
+        make generate-client
+
+    - name: Validate docker build
+      run: |
+        cd $RUNNER_TEMP/src
+        make docker-build
