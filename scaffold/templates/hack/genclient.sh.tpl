@@ -38,7 +38,7 @@ ln -s "$BASEDIR"/api/{{ .groupVersion }} "$TEMPDIR"/apis/{{ .groupName }}/{{ .gr
   --plural-exceptions {{ .kind }}:{{ .resource }}
 
 find "$TEMPDIR"/pkg/client -name "*.go" -exec \
-  sed -i "" "s#{{ .goModule | regexQuoteMeta }}/tmp/gen/apis/{{ .groupName | regexQuoteMeta }}/{{ .groupVersion | regexQuoteMeta }}#{{ .goModule }}/api/{{ .groupVersion }}#g" \
+  sed -i -e "s#{{ .goModule | regexQuoteMeta }}/tmp/gen/apis/{{ .groupName | regexQuoteMeta }}/{{ .groupVersion | regexQuoteMeta }}#{{ .goModule }}/api/{{ .groupVersion }}#g" \
   {} +
 
 rm -rf "$BASEDIR"/pkg/client
