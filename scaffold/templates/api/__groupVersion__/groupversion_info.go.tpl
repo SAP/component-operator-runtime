@@ -14,9 +14,10 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-// Package {{ .groupVersion }} contains API Schema definitions for the {{ .groupName | splitList "." | first }} {{ .groupVersion }} API group.
 // +kubebuilder:object:generate=true
 // +groupName={{ .groupName }}
+
+// Package {{ .groupVersion }} contains API Schema definitions for the {{ .groupName | splitList "." | first }} {{ .groupVersion }} API group.
 package {{ .groupVersion }}
 
 import (
