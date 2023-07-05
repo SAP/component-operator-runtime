@@ -13,7 +13,7 @@ import (
 )
 
 // Component is the central interface that component operators have to implement.
-// Besides being a conroller-runtime client.Object, the implmenting type has to include
+// Besides being a conroller-runtime client.Object, the implementing type has to include
 // the Spec and Status structs defined in this package, and has to define according accessor methods,
 // called GetComponentSpec() and GetComponentStatus(). In addition it has to expose its whole spec and status
 // as Unstructurable objects, via methods GetSpec() and GetStatus().

@@ -11,7 +11,7 @@ of the managed component are described through a dedicated, specific custom reso
 
 The key features are:
 - Efficient and smart handling of Kubernetes API extensions (realized through custom resource definitions or API aggregation).
-- Ability to fully take over rendering of the component's resources by implmenting
+- Ability to fully take over rendering of the component's resources by implementing
   ```go
     type Generator interface {
         Generate(namespace string, name string, parameters types.Unstructurable) ([]client.Object, error)

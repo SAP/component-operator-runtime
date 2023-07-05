@@ -19,7 +19,7 @@ In the programming model proposed by component-operator-runtime, the declared an
 package component
 
 // Component is the central interface that component operators have to implement.
-// Besides being a conroller-runtime client.Object, the implmenting type has to include
+// Besides being a conroller-runtime client.Object, the implementing type has to include
 // the Spec and Status structs defined in this package, and has to define according accessor methods,
 // called GetComponentSpec() and GetComponentStatus(). In addition it has to expose its whole spec and status
 // as Unstructurable objects, via methods GetSpec() and GetStatus().
@@ -96,4 +96,4 @@ When called by the framework, the arguments passed to `Generate()` are the retur
 `GetDeploymentNamespace()`, `GetDeploymentName()` and `GetSpec()` methods of the component.
 
 Component controllers can of course implement their own generator. In some cases (for example if there exists a 
-Helm chart for the component), one of the [generators bundled with this repository](../../generators) can be used. 
+Helm chart for the component), one of the [generators bundled with this repository](../../generators) can be used.
