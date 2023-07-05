@@ -5,7 +5,7 @@ kind: MutatingWebhookConfiguration
 metadata:
   name: {{ (split "." .operatorName)._0 }}
 webhooks:
-- name: {{ .operatorName }}
+- name: mutate.{{ .resource }}.{{ .groupName }}
   admissionReviewVersions:
   - v1
   clientConfig:

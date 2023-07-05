@@ -77,7 +77,7 @@ metadata:
     cert-manager.io/inject-ca-from: {{`{{`}} .Release.Namespace {{`}}`}}/{{`{{`}} include "{{ $operator }}.fullname" . {{`}}`}}
   {{`{{`}}- end {{`}}`}}
 webhooks:
-- name: {{ .operatorName }}
+- name: validate.{{ .resource }}.{{ .groupName }}
   admissionReviewVersions:
   - v1
   clientConfig:
@@ -101,9 +101,10 @@ webhooks:
     resources:
     - {{ .resource }}
     scope: Namespaced
-  failurePolicy: Fail
+  matchPolicy: Equivalent
   sideEffects: None
   timeoutSeconds: 10
+  failurePolicy: Fail
 {{- end }}
 {{- if .mutatingWebhookEnabled }}
 ---
@@ -118,7 +119,7 @@ metadata:
     cert-manager.io/inject-ca-from: {{`{{`}} .Release.Namespace {{`}}`}}/{{`{{`}} include "{{ $operator }}.fullname" . {{`}}`}}
   {{`{{`}}- end {{`}}`}}
 webhooks:
-- name: {{ .operatorName }}
+- name: mutate.{{ .resource }}.{{ .groupName }}
   admissionReviewVersions:
   - v1
   clientConfig:
@@ -141,8 +142,9 @@ webhooks:
     resources:
     - {{ .resource }}
     scope: Namespaced
-  failurePolicy: Fail
+  matchPolicy: Equivalent
   sideEffects: None
-  reinvocationPolicy: Never
   timeoutSeconds: 10
+  failurePolicy: Fail
+  reinvocationPolicy: Never
 {{- end }}

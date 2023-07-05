@@ -5,7 +5,7 @@ kind: ValidatingWebhookConfiguration
 metadata:
   name: {{ (split "." .operatorName)._0 }}
 webhooks:
-- name: {{ .operatorName }}
+- name: validate.{{ .resource }}.{{ .groupName }}
   admissionReviewVersions:
   - v1
   clientConfig:
