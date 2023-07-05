@@ -72,5 +72,12 @@ service:
 
 webhook:
   certManager:
+    # -- Whether to use cert-manager to manage webhook tls
     enabled: false
+    # -- Issuer group (only relevant if enabled is true; if unset, the default cert-manager group is used)
+    issuerGroup: ""
+    # -- Issuer kind (only relevant if enabled is true; if unset, the default cert-manager type 'Issuer' is used)
+    issuerKind: ""
+    # -- Issuer name (only relevant if enabled is true; if unset, a self-signed issuer is used)
+    issuerName: ""
 {{- end }}
