@@ -30,6 +30,7 @@ Usage: scaffold [options] [output directory]
       --version                                    Show version
       --owner string                               Owner of this project, as written to the license header
                                                    (default "SAP SE")
+      --spdx-license-header                        Whether to write license headers in SPDX format
       --group-name string                          API group name (default "operator.kyma-project.io")
       --group-version string                       API group version (default "v1alpha1")
       --kind string                                API kind for the component
