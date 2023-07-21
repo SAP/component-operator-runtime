@@ -1,4 +1,4 @@
-{{- if .spdxLicenseHeader -}}
+{{- if .spdxLicenseHeaders -}}
 /*
 SPDX-FileCopyrightText: {{ now.Year }} {{ .owner }}
 SPDX-License-Identifier: Apache-2.0
