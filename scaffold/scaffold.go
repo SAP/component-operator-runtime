@@ -28,6 +28,7 @@ import (
 
 type Config struct {
 	Owner                          string `json:"owner,omitempty"`
+	SpdxLicenseHeader              bool   `json:"spdxLicenseHeader"`
 	GroupName                      string `json:"groupName,omitempty"`
 	GroupVersion                   string `json:"groupVersion,omitempty"`
 	Kind                           string `json:"kind,omitempty"`
@@ -97,6 +98,7 @@ func main() {
 
 	pflag.BoolVar(&showVersion, "version", false, "Show version")
 	pflag.StringVar(&config.Owner, "owner", "SAP SE", "Owner of this project, as written to the license header")
+	pflag.BoolVar(&config.SpdxLicenseHeader, "spdx-license-header", false, "Whether to write license headers in SPDX format")
 	pflag.StringVar(&config.GroupName, "group-name", "operator.kyma-project.io", "API group name")
 	pflag.StringVar(&config.GroupVersion, "group-version", "v1alpha1", "API group version")
 	pflag.StringVar(&config.Kind, "kind", "", "API kind for the component")
