@@ -1,6 +1,8 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "labels": ["dependencies"],
+  "labels": [
+    "dependencies"
+  ],
   "extends": [
     "config:base"
   ],
@@ -12,44 +14,65 @@
   ],
   "packageRules": [
     {
-      "matchPackageNames": [ "k8s.io/client-go" ],
+      "matchPackageNames": [
+        "k8s.io/client-go"
+      ],
       "allowedVersions": "<1.4.0"
     },
     {
-      "matchUpdateTypes": [ "patch", "pin", "digest" ],
+      "matchUpdateTypes": [
+        "patch",
+        "pin",
+        "digest"
+      ],
       "automerge": true,
       "groupName": "non-minor dependencies",
       "groupSlug": "non-minor-deps"
     },
     {
-      "matchUpdateTypes": [ "minor" ],
+      "matchUpdateTypes": [
+        "minor"
+      ],
       "automerge": true,
       "groupName": "minor dependencies",
       "groupSlug": "minor-deps"
     },
     {
-      "matchUpdateTypes": [ "minor" ],
-      "matchLanguages": [ "go", "golang" ],
+      "matchUpdateTypes": [
+        "minor"
+      ],
+      "matchLanguages": [
+        "go",
+        "golang"
+      ],
       "groupName": "minor dependencies (golang)",
       "groupSlug": "minor-deps-golang",
       "semanticCommitScope": "go.mod/go.sum"
     },
     {
-      "matchUpdateTypes": [ "minor" ],
-      "matchLanguages": [ "docker" ],
+      "matchUpdateTypes": [
+        "minor"
+      ],
+      "matchLanguages": [
+        "docker"
+      ],
       "groupName": "minor dependencies (Dockerfile)",
       "groupSlug": "minor-deps-dockerfile",
       "semanticCommitScope": "Dockerfile"
     },
     {
-      "matchUpdateTypes": [ "major" ],
+      "matchUpdateTypes": [
+        "major"
+      ],
       "automerge": false,
       "groupName": "major dependencies",
       "groupSlug": "major-deps",
       "semanticCommitScope": "major deps"
     },
-    { 
-      "matchManagers": ["github-actions"],
+    {
+      "matchManagers": [
+        "github-actions"
+      ],
       "groupName": "github-actions",
       "semanticCommitScope": "actions"
     }
