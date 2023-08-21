@@ -44,7 +44,7 @@ spec:
       {{`{{`}}- with .Values.topologySpreadConstraints {{`}}`}}
       topologySpreadConstraints:
       {{`{{`}}- range . {{`}}`}}
-      - {{`{{`}} toYaml . | trim | nindent 8 {{`}}`}}
+      - {{`{{`}} toYaml . | nindent 8 | trim {{`}}`}}
         {{`{{`}}- if not .labelSelector {{`}}`}}
         labelSelector:
           matchLabels:
