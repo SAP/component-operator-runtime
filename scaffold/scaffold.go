@@ -41,6 +41,8 @@ type Config struct {
 	Version                        string `json:"version,omitempty"`
 	KubernetesVersion              string `json:"kubernetesVersion,omitempty"`
 	ControllerRuntimeVersion       string `json:"controllerRuntimeVersion,omitempty"`
+	ControllerToolsVersion         string `json:"controllerToolsVersion,omitempty"`
+	CodeGeneratorVersion           string `json:"codeGeneratorVersion,omitempty"`
 	AdmissionWebhookRuntimeVersion string `json:"admissionWebhookRuntimeVersion,omitempty"`
 	EnvtestKubernetesVersion       string `json:"envtestKubernetesVersion,omitempty"`
 	Image                          string `json:"image,omitempty"`
@@ -80,12 +82,14 @@ var templates embed.FS
 
 // default verions
 var (
-	goVersion                      = "1.19"
+	goVersion                      = "1.21"
 	version                        = "latest"
-	kubernetesVersion              = "v0.27.2"
-	controllerRuntimeVersion       = "v0.15.0"
+	kubernetesVersion              = "v0.28.0"
+	controllerRuntimeVersion       = "v0.15.1"
+	controllerToolsVersion         = "v0.13.0"
+	codeGeneratorVersion           = "v0.28.0"
 	admissionWebhookRuntimeVersion = "v0.1.0"
-	envtestKubernetesVersion       = "1.26.1"
+	envtestKubernetesVersion       = "1.27.1"
 )
 
 func main() {
@@ -110,6 +114,8 @@ func main() {
 	pflag.StringVar(&config.GoModule, "go-module", "", "Name of the Go module, as written to the go.mod file")
 	pflag.StringVar(&config.KubernetesVersion, "kubernetes-version", kubernetesVersion, "Kubernetes go-client version to be used")
 	pflag.StringVar(&config.ControllerRuntimeVersion, "controller-runtime-version", controllerRuntimeVersion, "Controller-runtime version to be used")
+	pflag.StringVar(&config.ControllerToolsVersion, "controller-tools-version", controllerToolsVersion, "Controller-tools version to be used")
+	pflag.StringVar(&config.CodeGeneratorVersion, "code-generator-version", codeGeneratorVersion, "Code-generator version to be used")
 	pflag.StringVar(&config.AdmissionWebhookRuntimeVersion, "admission-webhook-runtime-version", admissionWebhookRuntimeVersion, "Admission-webhook-runtime version to be used")
 	pflag.StringVar(&config.EnvtestKubernetesVersion, "envtest-kubernetes-version", envtestKubernetesVersion, "Kubernetes version to be used by envtest")
 	pflag.StringVar(&config.Image, "image", "controller:latest", "Name of the Docker/OCI image produced by this project")

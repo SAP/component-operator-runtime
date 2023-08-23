@@ -89,8 +89,8 @@ LISTER_GEN ?= $(LOCALBIN)/lister-gen
 SETUP_ENVTEST ?= $(LOCALBIN)/setup-envtest
 
 ## Tool Versions
-CONTROLLER_TOOLS_VERSION ?= v0.9.2
-CODE_GENERATOR_VERSION ?= v0.27.3
+CONTROLLER_TOOLS_VERSION ?= {{ .controllerToolsVersion }}
+CODE_GENERATOR_VERSION ?= {{ .codeGeneratorVersion }}
 SETUP_ENVTEST_VERSION ?= latest
 
 .PHONY: controller-gen
