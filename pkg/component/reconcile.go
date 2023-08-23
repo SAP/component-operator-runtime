@@ -229,41 +229,36 @@ func (r *Reconciler[T]) Reconcile(ctx context.Context, req ctrl.Request) (result
 			return ctrl.Result{Requeue: true}, nil
 		}
 
-		// note: with the logic implemented below, annotation changes on the component object will *not* trigger a reconciliation!
-		if status.AppliedGeneration < component.GetGeneration() || status.LastAppliedAt.Before(&metav1.Time{Time: now.Add(-60 * time.Second)}) {
-			log.V(2).Info("reconciling dependent resources")
-			for hookOrder, hook := range r.preReconcileHooks {
-				if err := hook(ctx, r.client, component.(T)); err != nil {
-					return ctrl.Result{}, errors.Wrapf(err, "error running pre-reconcile hook (%d)", hookOrder)
-				}
-			}
-			ok, err := r.reconcileDependentResources(ctx, component)
-			if err != nil {
-				log.V(1).Info("error while reconciling dependent resources")
-				return ctrl.Result{}, errors.Wrap(err, "error reconciling dependent resources")
-			}
-			if ok {
-				for hookOrder, hook := range r.postReconcileHooks {
-					if err := hook(ctx, r.client, component.(T)); err != nil {
-						return ctrl.Result{}, errors.Wrapf(err, "error running post-reconcile hook (%d)", hookOrder)
-					}
-				}
-				log.V(1).Info("all dependent resources successfully reconciled")
-				status.SetState(StateReady, readyConditionReasonReady, "Dependent resources successfully reconciled")
-				status.AppliedGeneration = component.GetGeneration()
-				status.LastAppliedAt = &now
-				return ctrl.Result{RequeueAfter: 10 * time.Minute}, nil
-			} else {
-				log.V(1).Info("not all dependent resources successfully reconciled")
-				status.SetState(StateProcessing, readyConditionReasonProcessing, "Reconcilation of dependent resources triggered; waiting until all dependent resources are ready")
-				if !reflect.DeepEqual(status.Inventory, savedStatus.Inventory) {
-					r.backoff.Forget(req)
-				}
-				return ctrl.Result{RequeueAfter: r.backoff.Next(req, readyConditionReasonProcessing)}, nil
+		log.V(2).Info("reconciling dependent resources")
+		for hookOrder, hook := range r.preReconcileHooks {
+			if err := hook(ctx, r.client, component.(T)); err != nil {
+				return ctrl.Result{}, errors.Wrapf(err, "error running pre-reconcile hook (%d)", hookOrder)
 			}
 		}
-
-		return ctrl.Result{}, nil
+		ok, err := r.reconcileDependentResources(ctx, component)
+		if err != nil {
+			log.V(1).Info("error while reconciling dependent resources")
+			return ctrl.Result{}, errors.Wrap(err, "error reconciling dependent resources")
+		}
+		if ok {
+			for hookOrder, hook := range r.postReconcileHooks {
+				if err := hook(ctx, r.client, component.(T)); err != nil {
+					return ctrl.Result{}, errors.Wrapf(err, "error running post-reconcile hook (%d)", hookOrder)
+				}
+			}
+			log.V(1).Info("all dependent resources successfully reconciled")
+			status.SetState(StateReady, readyConditionReasonReady, "Dependent resources successfully reconciled")
+			status.AppliedGeneration = component.GetGeneration()
+			status.LastAppliedAt = &now
+			return ctrl.Result{RequeueAfter: 10 * time.Minute}, nil
+		} else {
+			log.V(1).Info("not all dependent resources successfully reconciled")
+			status.SetState(StateProcessing, readyConditionReasonProcessing, "Reconcilation of dependent resources triggered; waiting until all dependent resources are ready")
+			if !reflect.DeepEqual(status.Inventory, savedStatus.Inventory) {
+				r.backoff.Forget(req)
+			}
+			return ctrl.Result{RequeueAfter: r.backoff.Next(req, readyConditionReasonProcessing)}, nil
+		}
 	} else if allowed, msg, err := r.deletionAllowed(ctx, component); err != nil || !allowed {
 		// deletion is blocked because of existing managed CROs and so on
 		// TODO: eliminate this msg logic
