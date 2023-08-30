@@ -84,10 +84,10 @@ var templates embed.FS
 var (
 	goVersion                      = "1.21"
 	version                        = "latest"
-	kubernetesVersion              = "v0.28.0"
-	controllerRuntimeVersion       = "v0.15.1"
+	kubernetesVersion              = "v0.28.1"
+	controllerRuntimeVersion       = "v0.16.0"
 	controllerToolsVersion         = "v0.13.0"
-	codeGeneratorVersion           = "v0.28.0"
+	codeGeneratorVersion           = "v0.28.1"
 	admissionWebhookRuntimeVersion = "v0.1.0"
 	envtestKubernetesVersion       = "1.27.1"
 )
@@ -345,9 +345,9 @@ func checkDirectoryExists(path string) error {
 	return nil
 }
 
-func run(pwd string, cmd string, args ...string) error {
+func run(cwd string, cmd string, args ...string) error {
 	command := exec.Command(cmd, args...)
-	command.Dir = pwd
+	command.Dir = cwd
 	command.Stdout = os.Stdout
 	command.Stderr = os.Stderr
 	return command.Run()

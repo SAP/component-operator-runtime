@@ -40,8 +40,13 @@ import (
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	apiregistrationv1 "k8s.io/kube-aggregator/pkg/apis/apiregistration/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
+	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
+	{{- if $webhooksEnabled }}
+	"sigs.k8s.io/controller-runtime/pkg/webhook"
+	{{- end }}
 
 	"{{ .goModule }}/pkg/operator"
 )
@@ -123,22 +128,32 @@ func main() {
 
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
 		Scheme:                        scheme,
-		MetricsBindAddress:            metricsAddr,
-		HealthProbeBindAddress:        probeAddr,
-		{{- if $webhooksEnabled }}
-		Host:                          webhookHost,
-		Port:                          webhookPort,
-		CertDir:                       webhookCertDir,
-		{{- else }}
-		// Uncomment the following lines to enable webhooks.
-		// Host:                          webhookHost,
-		// Port:                          webhookPort,
-		// CertDir:                       webhookCertDir,
-		{{- end }}
+		Client: client.Options{
+			Cache: &client.CacheOptions{
+				DisableFor: append(operator.GetUncacheableTypes(), &apiextensionsv1.CustomResourceDefinition{}, &apiregistrationv1.APIService{}),
+			},
+		},
 		LeaderElection:                enableLeaderElection,
 		LeaderElectionID:              operator.GetName(),
 		LeaderElectionReleaseOnCancel: true,
-		ClientDisableCacheFor:         append(operator.GetUncacheableTypes(), &apiextensionsv1.CustomResourceDefinition{}, &apiregistrationv1.APIService{}),
+		{{- if $webhooksEnabled }}
+		WebhookServer: webhook.NewServer(webhook.Options{
+			Host:    webhookHost,
+			Port:    webhookPort,
+			CertDir: webhookCertDir,
+		}),
+		{{- else }}
+		// Uncomment the following lines to enable webhooks.
+		// WebhookServer: webhook.NewServer(webhook.Options{
+		// 	Host:    webhookHost,
+		//	Port:    webhookPort,
+		//	CertDir: webhookCertDir,
+		// }),
+		{{- end }}
+		Metrics: metricsserver.Options{
+			BindAddress: metricsAddr,
+		},
+		HealthProbeBindAddress: probeAddr,
 	})
 	if err != nil {
 		setupLog.Error(err, "unable to start manager")
@@ -148,7 +163,7 @@ func main() {
 	// Uncomment to enable conversion webhook (in case additional api versions are added in ./api).
 	// Note: to make conversion work, additional changes are necessary:
 	// - additional api versions have to be added to InitScheme() in pkg/operator/operator.go
-	// - one of the api versions has to marked as Hub, all other versions need to implement the 
+	// - one of the api versions has to marked as Hub, all other versions need to implement the
 	//   conversion.Convertible interface (see https://book.kubebuilder.io/multiversion-tutorial/conversion.html)
 	// - one of the api versions has to be marked as storage version (+kubebuilder:storageversion)
 	// - the crd resource has to be enhanced with a conversion section, telling the Kubernetes API server how to
