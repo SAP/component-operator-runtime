@@ -54,8 +54,9 @@ jobs:
         echo "Running 'scaffold --version' ..."
         bin/scaffold --version
 
-    - name: Run scaffold
+    - name: Run scaffold (without admission webhooks)
       run: |
+        rm -rf $RUNNER_TEMP/src
         mkdir $RUNNER_TEMP/src
         ./bin/scaffold \
           --group-name example.io \
@@ -66,17 +67,47 @@ jobs:
           --image mycomponent-operator:latest \
           $RUNNER_TEMP/src
 
-    - name: Build generated operator
+    - name: Build generated operator (without admission webhooks)
       run: |
         cd $RUNNER_TEMP/src
         make build
 
-    - name: Test generated operator
+    - name: Test generated operator (without admission webhooks)
       run: |
         cd $RUNNER_TEMP/src
         make test
 
-    - name: Validate generation of typed client
+    - name: Validate generation of typed client (without admission webhooks)
+      run: |
+        cd $RUNNER_TEMP/src
+        make generate-client
+
+    - name: Run scaffold (with admission webhooks)
+      run: |
+        rm -rf $RUNNER_TEMP/src
+        mkdir $RUNNER_TEMP/src
+        ./bin/scaffold \
+          --group-name example.io \
+          --group-version v1alpha1 \
+          --kind MyComponent \
+          --with-validating-webhook \
+          --with-mutating-webhook \
+          --operator-name mycomponent-operator.example.io \
+          --go-module example.io/mycomponent-operator \
+          --image mycomponent-operator:latest \
+          $RUNNER_TEMP/src
+
+    - name: Build generated operator (with admission webhooks)
+      run: |
+        cd $RUNNER_TEMP/src
+        make build
+
+    - name: Test generated operator (with admission webhooks)
+      run: |
+        cd $RUNNER_TEMP/src
+        make test
+
+    - name: Validate generation of typed client (with admission webhooks)
       run: |
         cd $RUNNER_TEMP/src
         make generate-client
