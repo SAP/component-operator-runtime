@@ -40,7 +40,7 @@ jobs:
         sudo snap install dart-sass-embedded
 
     - name: Checkout
-      uses: actions/checkout@3df4ab11eba7bda6032a0b82a6bb43b11571feac # v4
+      uses: actions/checkout@v4
       with:
         submodules: recursive
         fetch-depth: 0
@@ -53,7 +53,7 @@ jobs:
       id: get_node_version
       run: |
         node_version=$(cat website/package.json | jq -r '.dependencies.node')
-        echo "::set-output name=node_version::${node_version}"
+        echo "node_version=${node_version}" >> $GITHUB_OUTPUT
 
     - name: Setup Node
       uses: actions/setup-node@v3
