@@ -8,7 +8,7 @@ description: >
 ---
 
 This framework is based on the [controller-runtime](https://github.com/kubernetes-sigs/controller-runtime/) project.
-Therefore one way of consuming it would be to bootstrap a [kubebuidler](https://github.com/kubernetes-sigs/kubebuilder)
+Therefore one way of consuming it would be to bootstrap a [kubebuilder](https://github.com/kubernetes-sigs/kubebuilder)
 project, such as
 
 ```bash
