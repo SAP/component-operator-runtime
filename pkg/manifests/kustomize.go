@@ -72,14 +72,15 @@ func NewKustomizeGenerator(fsys fs.FS, kustomizationPath string, templateSuffix 
 		}
 		if t == nil {
 			t = template.New(name)
+			t.Option("missingkey=zero").
+				Funcs(sprig.TxtFuncMap()).
+				Funcs(templatex.FuncMap()).
+				Funcs(templatex.FuncMapForTemplate(t)).
+				Funcs(templatex.FuncMapForClient(client)).
+				Funcs(funcMapForGenerateContext("", ""))
 		} else {
 			t = t.New(name)
 		}
-		t.Option("missingkey=zero").
-			Funcs(sprig.TxtFuncMap()).
-			Funcs(templatex.FuncMap()).
-			Funcs(templatex.FuncMapForTemplate(t)).
-			Funcs(templatex.FuncMapForClient(client))
 		if _, err := t.Parse(string(raw)); err != nil {
 			return nil, err
 		}
@@ -89,7 +90,7 @@ func NewKustomizeGenerator(fsys fs.FS, kustomizationPath string, templateSuffix 
 	return &g, nil
 }
 
-// Create a new KustomizeGenerator as TransformableGenerator
+// Create a new KustomizeGenerator as TransformableGenerator.
 func NewTransformableKustomizeGenerator(fsys fs.FS, kustomizationPath string, templateSuffix string, client client.Client) (TransformableGenerator, error) {
 	g, err := NewKustomizeGenerator(fsys, kustomizationPath, templateSuffix, client)
 	if err != nil {
@@ -123,9 +124,19 @@ func (g *KustomizeGenerator) Generate(namespace string, name string, parameters 
 	data := parameters.ToUnstructured()
 	fsys := kustfsys.MakeFsInMemory()
 
+	var t0 *template.Template
+	var err error
+	if len(g.templates) > 0 {
+		t0, err = g.templates[0].Clone()
+		if err != nil {
+			return nil, err
+		}
+		t0.Option("missingkey=zero").
+			Funcs(funcMapForGenerateContext(namespace, name))
+	}
 	for _, t := range g.templates {
 		var buf bytes.Buffer
-		if err := t.Execute(&buf, data); err != nil {
+		if err := t0.ExecuteTemplate(&buf, t.Name(), data); err != nil {
 			return nil, err
 		}
 		if err := fsys.WriteFile(t.Name(), buf.Bytes()); err != nil {
@@ -159,4 +170,11 @@ func (g *KustomizeGenerator) Generate(namespace string, name string, parameters 
 	}
 
 	return objects, nil
+}
+
+func funcMapForGenerateContext(namespace string, name string) template.FuncMap {
+	return template.FuncMap{
+		"namespace": func() string { return namespace },
+		"name":      func() string { return name },
+	}
 }

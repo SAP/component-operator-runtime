@@ -12,10 +12,8 @@ import (
 )
 
 // Resource generator interface.
-// When called from the reconciler, namespace and name will match the respective values in the
-// reconciled Component's spec, and parameters will be a pointer to the whole Component spec.
-// Therefore, implementations which are directly called from the reconciler,
-// can safely cast parameters back to their concrete spec struct.
+// When called from the reconciler, the arguments namespace, name and parameters will match the return values
+// of the component's GetDeploymentNamespace(), GetDeploymentName() and GetSpec() methods, respectively.
 type Generator interface {
 	Generate(namespace string, name string, parameters types.Unstructurable) ([]client.Object, error)
 }

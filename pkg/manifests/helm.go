@@ -146,14 +146,14 @@ func NewHelmGenerator(name string, fsys fs.FS, chartPath string, client client.C
 		// because the 'Template' builtin needs that to work properly
 		if t == nil {
 			t = template.New(manifest)
+			t.Option("missingkey=zero").
+				Funcs(sprig.TxtFuncMap()).
+				Funcs(templatex.FuncMap()).
+				Funcs(templatex.FuncMapForTemplate(t)).
+				Funcs(templatex.FuncMapForClient(client))
 		} else {
 			t = t.New(manifest)
 		}
-		t.Option("missingkey=zero").
-			Funcs(sprig.TxtFuncMap()).
-			Funcs(templatex.FuncMap()).
-			Funcs(templatex.FuncMapForTemplate(t)).
-			Funcs(templatex.FuncMapForClient(client))
 		if _, err := t.Parse(string(raw)); err != nil {
 			return nil, err
 		}
@@ -167,11 +167,6 @@ func NewHelmGenerator(name string, fsys fs.FS, chartPath string, client client.C
 		// Note: we use absolute paths (instead of relative ones) as template names
 		// because the 'Template' builtin needs that to work properly
 		t = t.New(include)
-		t.Option("missingkey=zero").
-			Funcs(sprig.TxtFuncMap()).
-			Funcs(templatex.FuncMap()).
-			Funcs(templatex.FuncMapForTemplate(t)).
-			Funcs(templatex.FuncMapForClient(client))
 		if _, err := t.Parse(string(raw)); err != nil {
 			return nil, err
 		}
@@ -180,7 +175,7 @@ func NewHelmGenerator(name string, fsys fs.FS, chartPath string, client client.C
 	return &g, nil
 }
 
-// Create a new HelmGenerator as TransformableGenerator
+// Create a new HelmGenerator as TransformableGenerator.
 func NewTransformableHelmGenerator(name string, fsys fs.FS, chartPath string, client client.Client, discoveryClient discovery.DiscoveryInterface) (TransformableGenerator, error) {
 	g, err := NewHelmGenerator(name, fsys, chartPath, client, discoveryClient)
 	if err != nil {
@@ -257,6 +252,14 @@ func (g *HelmGenerator) Generate(namespace string, name string, parameters types
 		}
 	}
 
+	var t0 *template.Template
+	if len(g.templates) > 0 {
+		t0, err = g.templates[0].Clone()
+		if err != nil {
+			return nil, err
+		}
+		t0.Option("missingkey=zero")
+	}
 	for _, t := range g.templates {
 		data["Template"] = &helm.TemplateData{
 			Name: t.Name(),
@@ -272,7 +275,7 @@ func (g *HelmGenerator) Generate(namespace string, name string, parameters types
 			}(t.Name()),
 		}
 		var buf bytes.Buffer
-		if err := t.Execute(&buf, data); err != nil {
+		if err := t0.ExecuteTemplate(&buf, t.Name(), data); err != nil {
 			return nil, err
 		}
 		decoder := utilyaml.NewYAMLToJSONDecoder(&buf)

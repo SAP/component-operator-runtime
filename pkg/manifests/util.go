@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io/fs"
 	"path"
+	"path/filepath"
 	"strings"
 
 	"k8s.io/apimachinery/pkg/runtime"
@@ -84,6 +85,9 @@ func fileTypeFromMode(mode fs.FileMode) uint {
 }
 
 func find(fsys fs.FS, dir string, namePattern string, fileType uint, maxDepth uint) ([]string, error) {
+	if dir == "" {
+		dir = "."
+	}
 	if strings.Contains(namePattern, "/") {
 		return nil, fmt.Errorf("invalid name pattern; must not contain slashes")
 	}
@@ -113,15 +117,16 @@ func find(fsys fs.FS, dir string, namePattern string, fileType uint, maxDepth ui
 	for _, entry := range entries {
 		entryName := entry.Name()
 		entryType := entry.Type()
+		entryPath := filepath.Clean(dir + "/" + entryName)
 		match, err := path.Match(namePattern, entryName)
 		if err != nil {
 			return nil, err
 		}
 		if match && (fileTypeFromMode(entryType)&fileType != 0) {
-			result = append(result, dir+"/"+entryName)
+			result = append(result, entryPath)
 		}
 		if entry.IsDir() && maxDepth > 1 {
-			entryResult, err := find(fsys, dir+"/"+entryName, namePattern, fileType, maxDepth-1)
+			entryResult, err := find(fsys, entryPath, namePattern, fileType, maxDepth-1)
 			if err != nil {
 				return nil, err
 			}
