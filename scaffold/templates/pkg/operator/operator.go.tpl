@@ -118,10 +118,10 @@ func (o *Operator) Setup(mgr ctrl.Manager, discoveryClient discovery.DiscoveryIn
 
 	if err := component.NewReconciler[*operator{{ .groupVersion }}.{{ .kind }}](
 		o.options.Name,
-		mgr.GetClient(),
-		discoveryClient,
-		mgr.GetEventRecorderFor(o.options.Name),
-		mgr.GetScheme(),
+		nil,
+		nil,
+		nil,
+		nil,
 		resourceGenerator,
 	).SetupWithManager(mgr); err != nil {
 		return errors.Wrapf(err, "unable to create controller")

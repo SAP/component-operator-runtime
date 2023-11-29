@@ -15,7 +15,7 @@ import (
 )
 
 // Instantiate given Component type T; panics unless T is a pointer type.
-func newComponent[T Component]() Component {
+func newComponent[T Component]() T {
 	var component T
 	v := reflect.ValueOf(&component).Elem()
 	v.Set(reflect.New(v.Type().Elem()))

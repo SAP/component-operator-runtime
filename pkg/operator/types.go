@@ -20,5 +20,7 @@ type Operator interface {
 	InitFlags(flagset *flag.FlagSet)
 	ValidateFlags() error
 	GetUncacheableTypes() []client.Object
+	// Deprecation warning: the parameter discoveryClient will be removed;
+	// implementations should not use it, and build a discoveryClient from mgr.GetConfig() and mgr.GetHTTPClient() instead.
 	Setup(mgr ctrl.Manager, discoveryClient discovery.DiscoveryInterface) error
 }

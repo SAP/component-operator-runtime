@@ -102,51 +102,51 @@ type HookFunc[T Component] func(ctx context.Context, client client.Client, compo
 
 // Reconciler provides the implementation of controller-runtime's Reconciler interface, for a given Component type T.
 type Reconciler[T Component] struct {
-	name                         string
-	client                       client.Client
-	discoveryClient              discovery.DiscoveryInterface
-	recorder                     record.EventRecorder
-	scheme                       *runtime.Scheme
-	resourceGenerator            manifests.Generator
-	backoff                      *backoff.Backoff
-	postReadHooks                []HookFunc[T]
-	preReconcileHooks            []HookFunc[T]
-	postReconcileHooks           []HookFunc[T]
-	preDeleteHooks               []HookFunc[T]
-	postDeleteHooks              []HookFunc[T]
-	labelKeyOwnerId              string
-	annotationKeyDigest          string
-	annotationKeyReconcilePolicy string
-	annotationKeyUpdatePolicy    string
-	annotationKeyOrder           string
-	annotationKeyPurgeOrder      string
-	annotationKeyOwnerId         string
+	name               string
+	client             client.Client
+	discoveryClient    discovery.DiscoveryInterface
+	eventRecorder      record.EventRecorder
+	scheme             *runtime.Scheme
+	resourceGenerator  manifests.Generator
+	backoff            *backoff.Backoff
+	postReadHooks      []HookFunc[T]
+	preReconcileHooks  []HookFunc[T]
+	postReconcileHooks []HookFunc[T]
+	preDeleteHooks     []HookFunc[T]
+	postDeleteHooks    []HookFunc[T]
 }
 
 // Create a new Reconciler. Here:
 //   - name should be a meaningful and unique name identifying this reconciler with the Kubernetes cluster; it will be used in annotations, finalizers, and so on
-//   - client should be a controller-runtime client for the current cluster; it should have informer caching disabled for the reconciled type T, as well as
-//     for apiextensionsv1.CustomResourceDefinition and apiregistrationv1.APIService
-//   - discoveryClient should be a discovery client for the current cluster
+//   - client should be a controller-runtime client for the current cluster, typically it is mgr.GetClient();
+//     it should have informer caching disabled for the reconciled type T, as well as for apiextensionsv1.CustomResourceDefinition and apiregistrationv1.APIService
+//   - discoveryClient should be a discovery client for the current cluster, typically built from mgr.GetConfig() and mgr.GetHTTPClient()
+//   - eventRecorder should be an event recorder for the current cluster, typically it is mgr.GetEventRecorderFor(name)
 //   - scheme is required to recognize the core group (corev1), the api group containing T, and apiextensionsv1 and apiregistrationv1;
 //     in addition, scheme must know about all concrete (i.e. non-unstructured) types returned by the given resource generator
 //   - resourceGenerator must be an implementation of the manifests.Generator interface.
-func NewReconciler[T Component](name string, client client.Client, discoveryClient discovery.DiscoveryInterface, recorder record.EventRecorder, scheme *runtime.Scheme, resourceGenerator manifests.Generator) *Reconciler[T] {
+//
+// Deprecation warning: the parameters client, discoveryClient, eventRecorder, scheme will be removed; the deprecation will happen in three phases:
+//   - Phase 1: the current behavior remains unchanged, but consumers should ensure to pass the deprecated parameters exactly as follows:
+//     client: mgr.GetClient()
+//     discoveryClient: a discovery client instantiated through mgr.GetConfig() and mgr.GetHTTPClient()
+//     eventRecorder: mgr.GetEventRecorderFor(name)
+//     scheme: mgr.GetScheme()
+//     here, mgr is the owning manager;
+//     as an alternative the above parameters can be passed as nil, in which case they will be defaulted as just described;
+//     the returned Reconciler object must not be used before SetupWithManager() was called.
+//   - Phase 2: the parameters client, discoveryClient, eventRecorder, scheme will be ignored (can be passed as nil);
+//     the reconcile logic will infer client, discoveryClient, eventRecorder and scheme from the Manager instance passed to SetupWithManager(), as described above.
+//   - Phase 3: the deprecated parameters will be removed.
+func NewReconciler[T Component](name string, client client.Client, discoveryClient discovery.DiscoveryInterface, eventRecorder record.EventRecorder, scheme *runtime.Scheme, resourceGenerator manifests.Generator) *Reconciler[T] {
 	return &Reconciler[T]{
-		name:                         name,
-		client:                       client,
-		discoveryClient:              discoveryClient,
-		recorder:                     recorder,
-		scheme:                       scheme,
-		resourceGenerator:            resourceGenerator,
-		backoff:                      backoff.NewBackoff(5 * time.Second),
-		labelKeyOwnerId:              name + "/owner-id",
-		annotationKeyDigest:          name + "/digest",
-		annotationKeyReconcilePolicy: name + "/reconcile-policy",
-		annotationKeyUpdatePolicy:    name + "/update-policy",
-		annotationKeyOrder:           name + "/order",
-		annotationKeyPurgeOrder:      name + "/purge-order",
-		annotationKeyOwnerId:         name + "/owner-id",
+		name:              name,
+		client:            client,
+		discoveryClient:   discoveryClient,
+		eventRecorder:     eventRecorder,
+		scheme:            scheme,
+		resourceGenerator: resourceGenerator,
+		backoff:           backoff.NewBackoff(5 * time.Second),
 	}
 }
 
@@ -184,9 +184,9 @@ func (r *Reconciler[T]) Reconcile(ctx context.Context, req ctrl.Request) (result
 		}
 		state, reason, message := status.GetState()
 		if state == StateError {
-			r.recorder.Event(component, corev1.EventTypeWarning, reason, message)
+			r.eventRecorder.Event(component, corev1.EventTypeWarning, reason, message)
 		} else {
-			r.recorder.Event(component, corev1.EventTypeNormal, reason, message)
+			r.eventRecorder.Event(component, corev1.EventTypeNormal, reason, message)
 		}
 		if skipStatusUpdate {
 			return
@@ -205,7 +205,7 @@ func (r *Reconciler[T]) Reconcile(ctx context.Context, req ctrl.Request) (result
 	// run post-read hooks
 	// note: it's important that this happens after deferring the status handler
 	for hookOrder, hook := range r.postReadHooks {
-		if err := hook(ctx, r.client, component.(T)); err != nil {
+		if err := hook(ctx, r.client, component); err != nil {
 			return ctrl.Result{}, errors.Wrapf(err, "error running post-read hook (%d)", hookOrder)
 		}
 	}
@@ -215,6 +215,9 @@ func (r *Reconciler[T]) Reconcile(ctx context.Context, req ctrl.Request) (result
 		status.SetState(StateProcessing, readyConditionReasonNew, "First seen")
 		return ctrl.Result{Requeue: true}, nil
 	}
+
+	// setup target
+	target := newReconcileTarget[T](r.name, r.client, r.discoveryClient, r.eventRecorder, r.scheme, r.resourceGenerator)
 
 	// do the reconciliation
 	if component.GetDeletionTimestamp().IsZero() {
@@ -231,18 +234,18 @@ func (r *Reconciler[T]) Reconcile(ctx context.Context, req ctrl.Request) (result
 
 		log.V(2).Info("reconciling dependent resources")
 		for hookOrder, hook := range r.preReconcileHooks {
-			if err := hook(ctx, r.client, component.(T)); err != nil {
+			if err := hook(ctx, r.client, component); err != nil {
 				return ctrl.Result{}, errors.Wrapf(err, "error running pre-reconcile hook (%d)", hookOrder)
 			}
 		}
-		ok, err := r.reconcileDependentResources(ctx, component)
+		ok, err := target.Reconcile(ctx, component)
 		if err != nil {
 			log.V(1).Info("error while reconciling dependent resources")
 			return ctrl.Result{}, errors.Wrap(err, "error reconciling dependent resources")
 		}
 		if ok {
 			for hookOrder, hook := range r.postReconcileHooks {
-				if err := hook(ctx, r.client, component.(T)); err != nil {
+				if err := hook(ctx, r.client, component); err != nil {
 					return ctrl.Result{}, errors.Wrapf(err, "error running post-reconcile hook (%d)", hookOrder)
 				}
 			}
@@ -259,7 +262,7 @@ func (r *Reconciler[T]) Reconcile(ctx context.Context, req ctrl.Request) (result
 			}
 			return ctrl.Result{RequeueAfter: r.backoff.Next(req, readyConditionReasonProcessing)}, nil
 		}
-	} else if allowed, msg, err := r.deletionAllowed(ctx, component); err != nil || !allowed {
+	} else if allowed, msg, err := target.IsDeletionAllowed(ctx, component); err != nil || !allowed {
 		// deletion is blocked because of existing managed CROs and so on
 		// TODO: eliminate this msg logic
 		if err != nil {
@@ -278,18 +281,18 @@ func (r *Reconciler[T]) Reconcile(ctx context.Context, req ctrl.Request) (result
 		// deletion case
 		log.V(2).Info("deleting dependent resources")
 		for hookOrder, hook := range r.preDeleteHooks {
-			if err := hook(ctx, r.client, component.(T)); err != nil {
+			if err := hook(ctx, r.client, component); err != nil {
 				return ctrl.Result{}, errors.Wrapf(err, "error running pre-delete hook (%d)", hookOrder)
 			}
 		}
-		ok, err := r.deleteDependentResources(ctx, component)
+		ok, err := target.Delete(ctx, component)
 		if err != nil {
 			log.V(1).Info("error while deleting dependent resources")
 			return ctrl.Result{}, errors.Wrap(err, "error deleting dependent resources")
 		}
 		if ok {
 			for hookOrder, hook := range r.postDeleteHooks {
-				if err := hook(ctx, r.client, component.(T)); err != nil {
+				if err := hook(ctx, r.client, component); err != nil {
 					return ctrl.Result{}, errors.Wrapf(err, "error running post-delete hook (%d)", hookOrder)
 				}
 			}
@@ -358,6 +361,25 @@ func (r *Reconciler[T]) WithPostDeleteHook(hook HookFunc[T]) *Reconciler[T] {
 
 // Register the reconciler with a given controller-runtime Manager.
 func (r *Reconciler[T]) SetupWithManager(mgr ctrl.Manager) error {
+	// TODO: add some check (and lock?) to prevent SetupWithManager() being called more than once
+	// TODO: proceed with the deprecation of NewReconciler() arguments (see comments there); that is, remove the below if statements ...
+	if r.client == nil {
+		r.client = mgr.GetClient()
+	}
+	if r.discoveryClient == nil {
+		discoveryClient, err := discovery.NewDiscoveryClientForConfigAndClient(mgr.GetConfig(), mgr.GetHTTPClient())
+		if err != nil {
+			return errors.Wrap(err, "error creating discovery client")
+		}
+		r.discoveryClient = discoveryClient
+	}
+	if r.eventRecorder == nil {
+		r.eventRecorder = mgr.GetEventRecorderFor(r.name)
+	}
+	if r.scheme == nil {
+		r.scheme = mgr.GetScheme()
+	}
+
 	component := newComponent[T]()
 	return ctrl.NewControllerManagedBy(mgr).
 		For(component).
@@ -366,14 +388,55 @@ func (r *Reconciler[T]) SetupWithManager(mgr ctrl.Manager) error {
 		Complete(r)
 }
 
-func (r *Reconciler[T]) reconcileDependentResources(ctx context.Context, component Component) (bool, error) {
+// ReconcileTarget describes the deployment target of a reconcile run.
+type reconcileTarget[T Component] struct {
+	name                         string
+	client                       client.Client
+	discoveryClient              discovery.DiscoveryInterface
+	eventRecorder                record.EventRecorder
+	scheme                       *runtime.Scheme
+	resourceGenerator            manifests.Generator
+	labelKeyOwnerId              string
+	annotationKeyDigest          string
+	annotationKeyReconcilePolicy string
+	annotationKeyUpdatePolicy    string
+	annotationKeyOrder           string
+	annotationKeyPurgeOrder      string
+	annotationKeyOwnerId         string
+}
+
+func newReconcileTarget[T Component](
+	name string,
+	client client.Client,
+	discoveryClient discovery.DiscoveryInterface,
+	eventRecorder record.EventRecorder,
+	scheme *runtime.Scheme, resourceGenerator manifests.Generator,
+) *reconcileTarget[T] {
+	return &reconcileTarget[T]{
+		name:                         name,
+		client:                       client,
+		discoveryClient:              discoveryClient,
+		eventRecorder:                eventRecorder,
+		scheme:                       scheme,
+		resourceGenerator:            resourceGenerator,
+		labelKeyOwnerId:              name + "/owner-id",
+		annotationKeyDigest:          name + "/digest",
+		annotationKeyReconcilePolicy: name + "/reconcile-policy",
+		annotationKeyUpdatePolicy:    name + "/update-policy",
+		annotationKeyOrder:           name + "/order",
+		annotationKeyPurgeOrder:      name + "/purge-order",
+		annotationKeyOwnerId:         name + "/owner-id",
+	}
+}
+
+func (t *reconcileTarget[T]) Reconcile(ctx context.Context, component T) (bool, error) {
 	namespace := component.GetDeploymentNamespace()
 	name := component.GetDeploymentName()
 	ownerId := component.GetNamespace() + "/" + component.GetName()
 	status := component.GetStatus()
 
 	// render manifests
-	objects, err := r.resourceGenerator.Generate(namespace, name, component.GetSpec())
+	objects, err := t.resourceGenerator.Generate(namespace, name, component.GetSpec())
 	if err != nil {
 		return false, errors.Wrap(err, "error rendering manifests")
 	}
@@ -388,8 +451,8 @@ func (r *Reconciler[T]) reconcileDependentResources(ctx context.Context, compone
 			if gvk.Version == "" || gvk.Kind == "" {
 				return false, fmt.Errorf("unstructured object %s is missing type information", types.ObjectKeyToString(object))
 			}
-			if r.scheme.Recognizes(gvk) {
-				typedObject, err := r.scheme.New(gvk)
+			if t.scheme.Recognizes(gvk) {
+				typedObject, err := t.scheme.New(gvk)
 				if err != nil {
 					return false, errors.Wrapf(err, "error instantiating type for object %s", types.ObjectKeyToString(object))
 				}
@@ -407,7 +470,7 @@ func (r *Reconciler[T]) reconcileDependentResources(ctx context.Context, compone
 				normalizedObjects[i] = object
 			}
 		} else {
-			_gvk, err := apiutil.GVKForObject(object, r.scheme)
+			_gvk, err := apiutil.GVKForObject(object, t.scheme)
 			if err != nil {
 				return false, errors.Wrapf(err, "error retrieving scheme type information for object %s", types.ObjectKeyToString(object))
 			}
@@ -427,7 +490,7 @@ func (r *Reconciler[T]) reconcileDependentResources(ctx context.Context, compone
 		gvk := object.GetObjectKind().GroupVersionKind()
 
 		scope := scopeUnknown
-		restMapping, err := r.client.RESTMapper().RESTMapping(gvk.GroupKind(), gvk.Version)
+		restMapping, err := t.client.RESTMapper().RESTMapping(gvk.GroupKind(), gvk.Version)
 		if err == nil {
 			scope = scopeFromRestMapping(restMapping)
 		} else if !meta.IsNoMatchError(err) {
@@ -471,22 +534,22 @@ func (r *Reconciler[T]) reconcileDependentResources(ctx context.Context, compone
 		}
 	}
 	for _, object := range objects {
-		if _, err := getAnnotationInt(object, r.annotationKeyOrder, math.MinInt16, math.MaxInt16, 0); err != nil {
-			return false, errors.Wrapf(err, "invalid value for annotation %s", r.annotationKeyOrder)
+		if _, err := getAnnotationInt(object, t.annotationKeyOrder, math.MinInt16, math.MaxInt16, 0); err != nil {
+			return false, errors.Wrapf(err, "invalid value for annotation %s", t.annotationKeyOrder)
 		}
-		if _, err := getAnnotationInt(object, r.annotationKeyPurgeOrder, math.MinInt16, math.MaxInt16, math.MaxInt); err != nil {
-			return false, errors.Wrapf(err, "invalid value for annotation %s", r.annotationKeyPurgeOrder)
+		if _, err := getAnnotationInt(object, t.annotationKeyPurgeOrder, math.MinInt16, math.MaxInt16, math.MaxInt); err != nil {
+			return false, errors.Wrapf(err, "invalid value for annotation %s", t.annotationKeyPurgeOrder)
 		}
 	}
 	getOrder := func(object client.Object) int {
-		order, err := getAnnotationInt(object, r.annotationKeyOrder, math.MinInt16, math.MaxInt16, 0)
+		order, err := getAnnotationInt(object, t.annotationKeyOrder, math.MinInt16, math.MaxInt16, 0)
 		if err != nil {
 			panic("this cannot happen")
 		}
 		return order
 	}
 	getPurgeOrder := func(object client.Object) int {
-		order, err := getAnnotationInt(object, r.annotationKeyPurgeOrder, math.MinInt16, math.MaxInt16, math.MaxInt)
+		order, err := getAnnotationInt(object, t.annotationKeyPurgeOrder, math.MinInt16, math.MaxInt16, math.MaxInt)
 		if err != nil {
 			panic("this cannot happen")
 		}
@@ -506,7 +569,7 @@ func (r *Reconciler[T]) reconcileDependentResources(ctx context.Context, compone
 		}
 		digest := sha256hash(raw)
 
-		reconcilePolicy := object.GetAnnotations()[r.annotationKeyReconcilePolicy]
+		reconcilePolicy := object.GetAnnotations()[t.annotationKeyReconcilePolicy]
 		switch reconcilePolicy {
 		case reconcilePolicyOnObjectChange, "":
 			reconcilePolicy = reconcilePolicyOnObjectChange
@@ -516,19 +579,19 @@ func (r *Reconciler[T]) reconcileDependentResources(ctx context.Context, compone
 			// note: if the object already existed with a different reconcile policy, then it will get reconciled one (and only one) more time
 			digest = "__once__"
 		default:
-			return false, fmt.Errorf("invalid value for annotation %s: %s", r.annotationKeyReconcilePolicy, reconcilePolicy)
+			return false, fmt.Errorf("invalid value for annotation %s: %s", t.annotationKeyReconcilePolicy, reconcilePolicy)
 		}
 
 		// if item was not found, append an empty item
 		if item == nil {
 			// fetch object (if existing)
-			existingObject, err := r.readObject(ctx, object)
+			existingObject, err := t.readObject(ctx, object)
 			if err != nil {
 				return false, errors.Wrapf(err, "error reading object %s", types.ObjectKeyToString(object))
 			}
 			// check ownership
 			if existingObject != nil {
-				existingOwnerId := existingObject.GetAnnotations()[r.annotationKeyOwnerId]
+				existingOwnerId := existingObject.GetAnnotations()[t.annotationKeyOwnerId]
 				if existingOwnerId == "" {
 					// TODO: make this configurable by some switch on Reconciler (or even per Component instance)
 					processForeign := true
@@ -589,7 +652,7 @@ func (r *Reconciler[T]) reconcileDependentResources(ctx context.Context, compone
 	numManagedToBeDeleted := 0
 	for _, item := range status.Inventory {
 		if item.Phase == PhaseScheduledForDeletion || item.Phase == PhaseScheduledForCompletion || item.Phase == PhaseDeleting || item.Phase == PhaseCompleting {
-			if r.isManaged(item, component) {
+			if t.isManaged(item, component) {
 				numManagedToBeDeleted++
 			}
 		}
@@ -601,17 +664,17 @@ func (r *Reconciler[T]) reconcileDependentResources(ctx context.Context, compone
 	for _, item := range status.Inventory {
 		if item.Phase == PhaseScheduledForDeletion || item.Phase == PhaseScheduledForCompletion || item.Phase == PhaseDeleting || item.Phase == PhaseCompleting {
 			// fetch object (if existing)
-			existingObject, err := r.readObject(ctx, item)
+			existingObject, err := t.readObject(ctx, item)
 			if err != nil {
 				return false, errors.Wrapf(err, "error reading object %s", item)
 			}
 
 			switch item.Phase {
 			case PhaseScheduledForDeletion:
-				if numManagedToBeDeleted == 0 || r.isManaged(item, component) {
+				if numManagedToBeDeleted == 0 || t.isManaged(item, component) {
 					// note: here is a theoretical risk that we delete an existing foreign object, because informers are not yet synced
 					// however not sending the delete request is also not an option, because this might lead to orphaned own dependents
-					if err := r.deleteObject(ctx, item, existingObject); err != nil {
+					if err := t.deleteObject(ctx, item, existingObject); err != nil {
 						return false, errors.Wrapf(err, "error deleting object %s", item)
 					}
 					item.Phase = PhaseDeleting
@@ -619,10 +682,10 @@ func (r *Reconciler[T]) reconcileDependentResources(ctx context.Context, compone
 				}
 				numToBeDeleted++
 			case PhaseScheduledForCompletion:
-				if numManagedToBeDeleted == 0 || r.isManaged(item, component) {
+				if numManagedToBeDeleted == 0 || t.isManaged(item, component) {
 					// note: here is a theoretical risk that we delete an existing foreign object, because informers are not yet synced
 					// however not sending the delete request is also not an option, because this might lead to orphaned own dependents
-					if err := r.deleteObject(ctx, item, existingObject); err != nil {
+					if err := t.deleteObject(ctx, item, existingObject); err != nil {
 						return false, errors.Wrapf(err, "error deleting object %s", item)
 					}
 					item.Phase = PhaseCompleting
@@ -664,11 +727,11 @@ func (r *Reconciler[T]) reconcileDependentResources(ctx context.Context, compone
 	// create missing namespaces
 	// TODO: make this more configurable
 	for _, namespace := range findMissingNamespaces(objects) {
-		if err := r.client.Get(ctx, apitypes.NamespacedName{Name: namespace}, &corev1.Namespace{}); err != nil {
+		if err := t.client.Get(ctx, apitypes.NamespacedName{Name: namespace}, &corev1.Namespace{}); err != nil {
 			if !apierrors.IsNotFound(err) {
 				return false, errors.Wrapf(err, "error reading namespace %s", namespace)
 			}
-			if err := r.client.Create(ctx, &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: namespace}}); err != nil {
+			if err := t.client.Create(ctx, &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: namespace}}); err != nil {
 				return false, errors.Wrapf(err, "error creating namespace %s", namespace)
 			}
 		}
@@ -682,13 +745,13 @@ func (r *Reconciler[T]) reconcileDependentResources(ctx context.Context, compone
 	numNotManagedToBeApplied := 0
 	for k, object := range objects {
 		// retreive update policy
-		updatePolicy := object.GetAnnotations()[r.annotationKeyUpdatePolicy]
+		updatePolicy := object.GetAnnotations()[t.annotationKeyUpdatePolicy]
 		switch updatePolicy {
 		case updatePolicyDefault, "":
 			updatePolicy = updatePolicyDefault
 		case updatePolicyRecreate:
 		default:
-			return false, fmt.Errorf("invalid value for annotation %s: %s", r.annotationKeyUpdatePolicy, updatePolicy)
+			return false, fmt.Errorf("invalid value for annotation %s: %s", t.annotationKeyUpdatePolicy, updatePolicy)
 		}
 
 		// retrieve object order
@@ -704,7 +767,7 @@ func (r *Reconciler[T]) reconcileDependentResources(ctx context.Context, compone
 			for j := k; j < len(objects) && getOrder(objects[j]) == order; j++ {
 				_object := objects[j]
 				_item := mustGetItem(status.Inventory, _object)
-				if _item.Phase != PhaseReady && _item.Phase != PhaseCompleted && !r.isManaged(_object, component) {
+				if _item.Phase != PhaseReady && _item.Phase != PhaseCompleted && !t.isManaged(_object, component) {
 					// that means: _item.Phase is one of PhaseScheduledForApplication, PhaseCreating, PhaseUpdating
 					numNotManagedToBeApplied++
 				}
@@ -713,32 +776,32 @@ func (r *Reconciler[T]) reconcileDependentResources(ctx context.Context, compone
 
 		// for non-completed objects, compute and update status, and apply (create or update) the object if necessary
 		if item.Phase != PhaseCompleted {
-			if numNotManagedToBeApplied == 0 || !r.isManaged(object, component) {
+			if numNotManagedToBeApplied == 0 || !t.isManaged(object, component) {
 				// fetch object (if existing)
-				existingObject, err := r.readObject(ctx, item)
+				existingObject, err := t.readObject(ctx, item)
 				if err != nil {
 					return false, errors.Wrapf(err, "error reading object %s", item)
 				}
 
-				setLabel(object, r.labelKeyOwnerId, strings.Replace(ownerId, "/", "_", -1))
-				setAnnotation(object, r.annotationKeyOwnerId, ownerId)
-				setAnnotation(object, r.annotationKeyDigest, item.Digest)
+				setLabel(object, t.labelKeyOwnerId, strings.Replace(ownerId, "/", "_", -1))
+				setAnnotation(object, t.annotationKeyOwnerId, ownerId)
+				setAnnotation(object, t.annotationKeyDigest, item.Digest)
 
 				if existingObject == nil {
-					if err := r.createObject(ctx, object); err != nil {
+					if err := t.createObject(ctx, object); err != nil {
 						return false, errors.Wrapf(err, "error creating object %s", item)
 					}
 					item.Phase = PhaseCreating
 					item.Status = kstatus.InProgressStatus.String()
 					numUnready++
-				} else if existingObject.GetAnnotations()[r.annotationKeyDigest] != item.Digest {
+				} else if existingObject.GetAnnotations()[t.annotationKeyDigest] != item.Digest {
 					switch updatePolicy {
 					case updatePolicyDefault:
-						if err := r.updateObject(ctx, object, existingObject); err != nil {
+						if err := t.updateObject(ctx, object, existingObject); err != nil {
 							return false, errors.Wrapf(err, "error creating object %s", item)
 						}
 					case updatePolicyRecreate:
-						if err := r.deleteObject(ctx, object, existingObject); err != nil {
+						if err := t.deleteObject(ctx, object, existingObject); err != nil {
 							return false, errors.Wrapf(err, "error deleting (while recreating) object %s", item)
 						}
 					default:
@@ -793,13 +856,13 @@ func (r *Reconciler[T]) reconcileDependentResources(ctx context.Context, compone
 	return numUnready == 0, nil
 }
 
-func (r *Reconciler[T]) deleteDependentResources(ctx context.Context, component Component) (bool, error) {
+func (t *reconcileTarget[T]) Delete(ctx context.Context, component T) (bool, error) {
 	status := component.GetStatus()
 
 	// count instances of managed types
 	numManaged := 0
 	for _, item := range status.Inventory {
-		if r.isManaged(item, component) {
+		if t.isManaged(item, component) {
 			numManaged++
 		}
 	}
@@ -808,7 +871,7 @@ func (r *Reconciler[T]) deleteDependentResources(ctx context.Context, component 
 	var inventory []*InventoryItem
 	for _, item := range status.Inventory {
 		// fetch object (if existing)
-		existingObject, err := r.readObject(ctx, item)
+		existingObject, err := t.readObject(ctx, item)
 		if err != nil {
 			return false, errors.Wrapf(err, "error reading object %s", item)
 		}
@@ -818,11 +881,11 @@ func (r *Reconciler[T]) deleteDependentResources(ctx context.Context, component 
 			continue
 		}
 
-		if numManaged == 0 || r.isManaged(item, component) {
+		if numManaged == 0 || t.isManaged(item, component) {
 			// delete the object
 			// note: here is a theoretical risk that we delete an existing (foreign) object, because informers are not yet synced
 			// however not sending the delete request is also not an option, because this might lead to orphaned own dependents
-			if err := r.deleteObject(ctx, item, existingObject); err != nil {
+			if err := t.deleteObject(ctx, item, existingObject); err != nil {
 				return false, errors.Wrapf(err, "error deleting object %s", item)
 			}
 			item.Phase = PhaseDeleting
@@ -835,21 +898,21 @@ func (r *Reconciler[T]) deleteDependentResources(ctx context.Context, component 
 	return len(status.Inventory) == 0, nil
 }
 
-func (r *Reconciler[T]) deletionAllowed(ctx context.Context, component Component) (bool, string, error) {
+func (t *reconcileTarget[T]) IsDeletionAllowed(ctx context.Context, component T) (bool, string, error) {
 	status := component.GetStatus()
 
 	for _, item := range status.Inventory {
 		switch {
 		case isCrd(item):
 			crd := &apiextensionsv1.CustomResourceDefinition{}
-			if err := r.client.Get(ctx, apitypes.NamespacedName{Name: item.GetName()}, crd); err != nil {
+			if err := t.client.Get(ctx, apitypes.NamespacedName{Name: item.GetName()}, crd); err != nil {
 				if apierrors.IsNotFound(err) {
 					continue
 				} else {
 					return false, "", errors.Wrapf(err, "error retrieving crd %s", item.GetName())
 				}
 			}
-			used, err := r.isCrdUsed(ctx, crd, true)
+			used, err := t.isCrdUsed(ctx, crd, true)
 			if err != nil {
 				return false, "", errors.Wrapf(err, "error checking usage of crd %s", item.GetName())
 			}
@@ -858,14 +921,14 @@ func (r *Reconciler[T]) deletionAllowed(ctx context.Context, component Component
 			}
 		case isApiService(item):
 			apiService := &apiregistrationv1.APIService{}
-			if err := r.client.Get(ctx, apitypes.NamespacedName{Name: item.GetName()}, apiService); err != nil {
+			if err := t.client.Get(ctx, apitypes.NamespacedName{Name: item.GetName()}, apiService); err != nil {
 				if apierrors.IsNotFound(err) {
 					continue
 				} else {
 					return false, "", errors.Wrapf(err, "error retrieving api service %s", item.GetName())
 				}
 			}
-			used, err := r.isApiServiceUsed(ctx, apiService, true)
+			used, err := t.isApiServiceUsed(ctx, apiService, true)
 			if err != nil {
 				return false, "", errors.Wrapf(err, "error checking usage of api service %s", item.GetName())
 			}
@@ -879,80 +942,80 @@ func (r *Reconciler[T]) deletionAllowed(ctx context.Context, component Component
 	return true, "", nil
 }
 
-func (r *Reconciler[T]) readObject(ctx context.Context, key types.ObjectKey) (*unstructured.Unstructured, error) {
-	obj := &unstructured.Unstructured{}
-	obj.SetGroupVersionKind(key.GetObjectKind().GroupVersionKind())
-	if err := r.client.Get(ctx, apitypes.NamespacedName{Namespace: key.GetNamespace(), Name: key.GetName()}, obj); err != nil {
+func (t *reconcileTarget[T]) readObject(ctx context.Context, key types.ObjectKey) (*unstructured.Unstructured, error) {
+	object := &unstructured.Unstructured{}
+	object.SetGroupVersionKind(key.GetObjectKind().GroupVersionKind())
+	if err := t.client.Get(ctx, apitypes.NamespacedName{Namespace: key.GetNamespace(), Name: key.GetName()}, object); err != nil {
 		if meta.IsNoMatchError(err) || apierrors.IsNotFound(err) {
-			obj = nil
+			object = nil
 		} else {
 			return nil, err
 		}
 	}
-	return obj, nil
+	return object, nil
 }
 
-func (r *Reconciler[T]) createObject(ctx context.Context, object client.Object) (err error) {
+func (t *reconcileTarget[T]) createObject(ctx context.Context, object client.Object) (err error) {
 	defer func() {
 		if err == nil {
-			r.recorder.Event(object, corev1.EventTypeNormal, objectReasonCreated, "Object successfully created")
+			t.eventRecorder.Event(object, corev1.EventTypeNormal, objectReasonCreated, "Object successfully created")
 		}
 	}()
 	data, err := runtime.DefaultUnstructuredConverter.ToUnstructured(object)
 	if err != nil {
 		return err
 	}
-	obj := &unstructured.Unstructured{Object: data}
-	if isCrd(obj) || isApiService(obj) {
-		controllerutil.AddFinalizer(obj, r.name)
+	object = &unstructured.Unstructured{Object: data}
+	if isCrd(object) || isApiService(object) {
+		controllerutil.AddFinalizer(object, t.name)
 	}
-	return r.client.Create(ctx, obj)
+	return t.client.Create(ctx, object)
 }
 
-func (r *Reconciler[T]) updateObject(ctx context.Context, object client.Object, existingObject *unstructured.Unstructured) (err error) {
+func (t *reconcileTarget[T]) updateObject(ctx context.Context, object client.Object, existingObject *unstructured.Unstructured) (err error) {
 	defer func() {
 		if err == nil {
-			r.recorder.Event(object, corev1.EventTypeNormal, objectReasonUpdated, "Object successfully updated")
+			t.eventRecorder.Event(object, corev1.EventTypeNormal, objectReasonUpdated, "Object successfully updated")
 		} else {
-			r.recorder.Eventf(object, corev1.EventTypeWarning, objectReasonUpdateError, "Error updating object: %s", err)
+			t.eventRecorder.Eventf(existingObject, corev1.EventTypeWarning, objectReasonUpdateError, "Error updating object: %s", err)
 		}
 	}()
 	data, err := runtime.DefaultUnstructuredConverter.ToUnstructured(object)
 	if err != nil {
 		return err
 	}
-	obj := &unstructured.Unstructured{Object: data}
-	if isCrd(obj) || isApiService(obj) {
-		controllerutil.AddFinalizer(obj, r.name)
+	object = &unstructured.Unstructured{Object: data}
+	if isCrd(object) || isApiService(object) {
+		controllerutil.AddFinalizer(object, t.name)
 	}
-	obj.SetResourceVersion((existingObject.GetResourceVersion()))
-	return r.client.Update(ctx, obj)
+	object.SetResourceVersion((existingObject.GetResourceVersion()))
+	return t.client.Update(ctx, object)
 }
 
-func (r *Reconciler[T]) deleteObject(ctx context.Context, key types.ObjectKey, existingObject *unstructured.Unstructured) (err error) {
+func (t *reconcileTarget[T]) deleteObject(ctx context.Context, key types.ObjectKey, existingObject *unstructured.Unstructured) (err error) {
 	defer func() {
 		if existingObject == nil {
 			return
 		}
 		if err == nil {
-			r.recorder.Event(existingObject, corev1.EventTypeNormal, objectReasonDeleted, "Object successfully deleted")
+			t.eventRecorder.Event(existingObject, corev1.EventTypeNormal, objectReasonDeleted, "Object successfully deleted")
 		} else {
-			r.recorder.Eventf(existingObject, corev1.EventTypeWarning, objectReasonDeleteError, "Error deleting object: %s", err)
+			t.eventRecorder.Eventf(existingObject, corev1.EventTypeWarning, objectReasonDeleteError, "Error deleting object: %s", err)
 		}
 	}()
 	log := log.FromContext(ctx)
 
-	obj := &unstructured.Unstructured{}
-	obj.SetGroupVersionKind(key.GetObjectKind().GroupVersionKind())
-	obj.SetNamespace(key.GetNamespace())
-	obj.SetName(key.GetName())
+	object := &unstructured.Unstructured{}
+	object.SetGroupVersionKind(key.GetObjectKind().GroupVersionKind())
+	object.SetNamespace(key.GetNamespace())
+	object.SetName(key.GetName())
 	deleteOptions := &client.DeleteOptions{PropagationPolicy: &[]metav1.DeletionPropagation{metav1.DeletePropagationBackground}[0]}
 	if existingObject != nil {
 		deleteOptions.Preconditions = &metav1.Preconditions{
 			ResourceVersion: &[]string{existingObject.GetResourceVersion()}[0],
 		}
 	}
-	if err := r.client.Delete(ctx, obj, deleteOptions); err != nil {
+	if err := t.client.Delete(ctx, object, deleteOptions); err != nil {
 		if meta.IsNoMatchError(err) || apierrors.IsNotFound(err) {
 			return nil
 		}
@@ -962,21 +1025,21 @@ func (r *Reconciler[T]) deleteObject(ctx context.Context, key types.ObjectKey, e
 	case isCrd(key):
 		for i := 1; i <= 2; i++ {
 			crd := &apiextensionsv1.CustomResourceDefinition{}
-			if err := r.client.Get(ctx, apitypes.NamespacedName{Name: key.GetName()}, crd); err != nil {
+			if err := t.client.Get(ctx, apitypes.NamespacedName{Name: key.GetName()}, crd); err != nil {
 				return client.IgnoreNotFound(err)
 			}
-			used, err := r.isCrdUsed(ctx, crd, false)
+			used, err := t.isCrdUsed(ctx, crd, false)
 			if err != nil {
 				return err
 			}
 			if used {
 				return fmt.Errorf("error deleting custom resource definition %s, existing instances found", types.ObjectKeyToString(key))
 			}
-			if ok := controllerutil.RemoveFinalizer(crd, r.name); ok {
+			if ok := controllerutil.RemoveFinalizer(crd, t.name); ok {
 				// note: 409 error is very likely here (because of concurrent updates happening through the API server); this is why we retry once
-				if err := r.client.Update(ctx, crd); err != nil {
+				if err := t.client.Update(ctx, crd); err != nil {
 					if i == 1 && apierrors.IsConflict(err) {
-						log.V(1).Info("error while updating CustomResourcedefinition (409 conflict); doing one retry", "name", r.name, "error", err.Error())
+						log.V(1).Info("error while updating CustomResourcedefinition (409 conflict); doing one retry", "name", t.name, "error", err.Error())
 						continue
 					}
 					return err
@@ -987,21 +1050,21 @@ func (r *Reconciler[T]) deleteObject(ctx context.Context, key types.ObjectKey, e
 	case isApiService(key):
 		for i := 1; i <= 2; i++ {
 			apiService := &apiregistrationv1.APIService{}
-			if err := r.client.Get(ctx, apitypes.NamespacedName{Name: key.GetName()}, apiService); err != nil {
+			if err := t.client.Get(ctx, apitypes.NamespacedName{Name: key.GetName()}, apiService); err != nil {
 				return client.IgnoreNotFound(err)
 			}
-			used, err := r.isApiServiceUsed(ctx, apiService, false)
+			used, err := t.isApiServiceUsed(ctx, apiService, false)
 			if err != nil {
 				return err
 			}
 			if used {
 				return fmt.Errorf("error deleting api service %s, existing instances found", types.ObjectKeyToString(key))
 			}
-			if ok := controllerutil.RemoveFinalizer(apiService, r.name); ok {
+			if ok := controllerutil.RemoveFinalizer(apiService, t.name); ok {
 				// note: 409 error is very likely here (because of concurrent updates happening through the API server); this is why we retry once
-				if err := r.client.Update(ctx, apiService); err != nil {
+				if err := t.client.Update(ctx, apiService); err != nil {
 					if i == 1 && apierrors.IsConflict(err) {
-						log.V(1).Info("error while updating APIService (409 conflict); doing one retry", "name", r.name, "error", err.Error())
+						log.V(1).Info("error while updating APIService (409 conflict); doing one retry", "name", t.name, "error", err.Error())
 						continue
 					}
 					return err
@@ -1013,7 +1076,7 @@ func (r *Reconciler[T]) deleteObject(ctx context.Context, key types.ObjectKey, e
 	return nil
 }
 
-func (r *Reconciler[T]) isCrdUsed(ctx context.Context, crd *apiextensionsv1.CustomResourceDefinition, onlyForeign bool) (bool, error) {
+func (t *reconcileTarget[T]) isCrdUsed(ctx context.Context, crd *apiextensionsv1.CustomResourceDefinition, onlyForeign bool) (bool, error) {
 	gvk := schema.GroupVersionKind{
 		Group:   crd.Spec.Group,
 		Version: crd.Spec.Versions[0].Name,
@@ -1023,17 +1086,17 @@ func (r *Reconciler[T]) isCrdUsed(ctx context.Context, crd *apiextensionsv1.Cust
 	list.SetGroupVersionKind(gvk)
 	labelSelector := labels.Everything()
 	if onlyForeign {
-		labelSelector = mustParseLabelSelector(r.labelKeyOwnerId + "!=" + crd.Labels[r.labelKeyOwnerId])
+		labelSelector = mustParseLabelSelector(t.labelKeyOwnerId + "!=" + crd.Labels[t.labelKeyOwnerId])
 	}
-	if err := r.client.List(ctx, list, &client.ListOptions{LabelSelector: labelSelector, Limit: 1}); err != nil {
+	if err := t.client.List(ctx, list, &client.ListOptions{LabelSelector: labelSelector, Limit: 1}); err != nil {
 		return false, err
 	}
 	return len(list.Items) > 0, nil
 }
 
-func (r *Reconciler[T]) isApiServiceUsed(ctx context.Context, apiService *apiregistrationv1.APIService, onlyForeign bool) (bool, error) {
+func (t *reconcileTarget[T]) isApiServiceUsed(ctx context.Context, apiService *apiregistrationv1.APIService, onlyForeign bool) (bool, error) {
 	gv := schema.GroupVersion{Group: apiService.Spec.Group, Version: apiService.Spec.Version}
-	resList, err := r.discoveryClient.ServerResourcesForGroupVersion(gv.String())
+	resList, err := t.discoveryClient.ServerResourcesForGroupVersion(gv.String())
 	if err != nil {
 		return false, err
 	}
@@ -1045,7 +1108,7 @@ func (r *Reconciler[T]) isApiServiceUsed(ctx context.Context, apiService *apireg
 	}
 	labelSelector := labels.Everything()
 	if onlyForeign {
-		labelSelector = mustParseLabelSelector(r.labelKeyOwnerId + "!=" + apiService.Labels[r.labelKeyOwnerId])
+		labelSelector = mustParseLabelSelector(t.labelKeyOwnerId + "!=" + apiService.Labels[t.labelKeyOwnerId])
 	}
 	for _, kind := range kinds {
 		gvk := schema.GroupVersionKind{
@@ -1055,7 +1118,7 @@ func (r *Reconciler[T]) isApiServiceUsed(ctx context.Context, apiService *apireg
 		}
 		list := &unstructured.UnstructuredList{}
 		list.SetGroupVersionKind(gvk)
-		if err := r.client.List(ctx, list, &client.ListOptions{LabelSelector: labelSelector, Limit: 1}); err != nil {
+		if err := t.client.List(ctx, list, &client.ListOptions{LabelSelector: labelSelector, Limit: 1}); err != nil {
 			return false, err
 		}
 		if len(list.Items) > 0 {
@@ -1065,7 +1128,7 @@ func (r *Reconciler[T]) isApiServiceUsed(ctx context.Context, apiService *apireg
 	return false, nil
 }
 
-func (r *Reconciler[T]) isManaged(key types.ObjectKey, component Component) bool {
+func (t *reconcileTarget[T]) isManaged(key types.ObjectKey, component T) bool {
 	status := component.GetStatus()
 	gvk := key.GetObjectKind().GroupVersionKind()
 	for _, item := range status.Inventory {
