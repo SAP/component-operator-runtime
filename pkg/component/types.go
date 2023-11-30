@@ -14,7 +14,7 @@ import (
 
 // Component is the central interface that component operators have to implement.
 // Besides being a conroller-runtime client.Object, the implementing type has to expose accessor
-// methods for the deployment's target namespace and name, and for the components's spec and status.
+// methods for the deployment's target namespace and name, and for the components's spec and status,
 // via methods GetSpec() and GetStatus().
 type Component interface {
 	client.Object
@@ -26,10 +26,10 @@ type Component interface {
 	// This is the value that will be passed to Generator.Generator() as name.
 	GetDeploymentName() string
 	// Return a read-only accessor to the component's spec.
-	// Which, as a consequence, obviously has to implement the types.Unstructurable interface.
+	// The returned value has to implement the types.Unstructurable interface.
 	GetSpec() types.Unstructurable
 	// Return a read-write (usually a pointer) accessor to the component's status,
-	// resp. to the corresponding sub-struct if the status extends component.Status.
+	// resp. to the corresponding substruct if the status extends component.Status.
 	GetStatus() *Status
 }
 

@@ -4,7 +4,7 @@ linkTitle: "Enhance Existing Generators"
 weight: 30
 type: "docs"
 description: >
-  How to construct generators from existing generators
+  How to derive generators from existing generators
 ---
 
 In some cases it is desirable to modify the behaviour of an existing generator by transforming the
@@ -15,9 +15,9 @@ generation step. This can be achieved by wrapping an existing generator into a
 package manifests
 
 type TransformableGenerator interface {
-	Generator
-	WithParameterTransformer(transformer ParameterTransformer) TransformableGenerator
-	WithObjectTransformer(transformer ObjectTransformer) TransformableGenerator
+  Generator
+  WithParameterTransformer(transformer ParameterTransformer) TransformableGenerator
+  WithObjectTransformer(transformer ObjectTransformer) TransformableGenerator
 }
 ```
 
@@ -35,10 +35,10 @@ The generator obtained this way can now be extended by calling its methods `With
 package manifests
 
 type ParameterTransformer interface {
-	TransformParameters(parameters types.Unstructurable) (types.Unstructurable, error)
+  TransformParameters(parameters types.Unstructurable) (types.Unstructurable, error)
 }
 
 type ObjectTransformer interface {
-	TransformObjects(objects []client.Object) ([]client.Object, error)
+  TransformObjects(objects []client.Object) ([]client.Object, error)
 }
 ```

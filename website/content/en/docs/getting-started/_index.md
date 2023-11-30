@@ -13,7 +13,7 @@ and how to start with the implementation of the operator.
 First of all, you have to download the component-operator-runtime scaffolding tool from the [releases page](https://github.com/sap/component-operator-runtime/releases/). In the following we assume that the downloaded `scaffold` executable
 is somehwere in your path (for example, as /usr/local/bin/scaffold-component-operator).
 
-Then, you need a git repository for the operator code; in this example, we call it github.com/myorg/mycomponent-operator.
+Then, a git repository for the operator code is needed; in this example, we call it github.com/myorg/mycomponent-operator.
 We assume that you have cloned the empty repository to your local desktop, and have changed the current directory
 to the checked out repository.
 
@@ -32,7 +32,7 @@ scaffold-component-operator \
 ```
 
 This will give you a syntactically correct Go module. In order to start the operator, you first have to apply the
-custom resource definition into your development (e.g. kind) cluster:
+custom resource definition into your development (e.g. [kind](https://kind.sigs.k8s.io/)) cluster:
 
 ```bash
 kubectl apply -f crds/operator.kyma-project.io_mycomponents.yaml
@@ -63,7 +63,7 @@ The next step is to implement a meaningful resource generator (the scaffolding j
 
 ```go
 type Generator interface {
-	Generate(namespace string, name string, parameters types.Unstructurable) ([]client.Object, error)
+  Generate(namespace string, name string, parameters types.Unstructurable) ([]client.Object, error)
 }
 ```
 
@@ -72,7 +72,7 @@ of the `GetDeploymentNamespace()`, `GetDeploymentName()`, `GetSpec()` methods of
 In other words, the spec of the component resource will be fed into the resource generator, which will return the
 concrete manifests of the dependent objects, which will then be applied to the cluster.
 
-In some cases, the best option is to implement your own resource generator from scratch. When doing so, the returned resources `[]client.Object` either have to be of type `*unstructured.Unstructured`, or the according type must be known to the scheme supplied to the component-operator-runtime reconciler.
+In some cases, the best option is to implement your own resource generator from scratch. When doing so, the returned resources `[]client.Object` either have to be of type `*unstructured.Unstructured`, or the according type must be known to the scheme used by the component-operator-runtime reconciler.
 
 In many other cases however, it makes more sense to just reuse one of the [generic generators shipped with this 
   repository](../generators).

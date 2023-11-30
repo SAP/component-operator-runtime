@@ -12,5 +12,6 @@ Usually (but not necessarily) the managed component contains one or multiple oth
 
 Other than existing tools addressing this case, such as the [Operator Lifecycle Manager (OLM)](https://olm.operatorframework.io/),
 this project proposes a more opinionated programming model. That is, the idea is to represent the managed component by an own custom resource type,
-which (usually) would be instantiated only once in the cluster. We feel encouraged to go this way, as many community projects (e.g. Istio), are following the same pattern.
-The component-operator-runtime framework now provides a generic controller, implemented as [controller-runtime](https://github.com/kubernetes-sigs/controller-runtime) reonciler, to facilitate the development of the according controller logic for the custom resource type modeling the component.
+which (usually) will be instantiated only once in the cluster. We feel encouraged to go this way, as many community projects are following the pattern of providing dedicated lifecycle operators.
+
+The component-operator-runtime framework plugs into the [controller-runtime](https://github.com/kubernetes-sigs/controller-runtime) SDK by implementing the controller-runtime `Reconciler` interface.

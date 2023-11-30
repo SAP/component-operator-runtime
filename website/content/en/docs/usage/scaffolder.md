@@ -4,7 +4,7 @@ linkTitle: "Scaffolder"
 weight: 20
 type: "docs"
 description: >
-  Scaffold a component operator by the comonent-operator-runtime scaffolder
+  Generate a component operator by the comonent-operator-runtime scaffolder
 ---
 
 The recommended way to get started with the implementation of a new component operator is to use the included
@@ -28,27 +28,24 @@ Usage: scaffold [options] [output directory]
   [output directory]: Target directory for the generated scaffold; must exist
   [options]:
       --version                                    Show version
-      --owner string                               Owner of this project, as written to the license header
-                                                   (default "SAP SE")
+      --owner string                               Owner of this project, as written to the license header (default "SAP SE")
       --spdx-license-headers                       Whether to write license headers in SPDX format
       --group-name string                          API group name (default "operator.kyma-project.io")
       --group-version string                       API group version (default "v1alpha1")
       --kind string                                API kind for the component
-      --resource string                            API resource (plural) for the component;
-                                                   if empty, it will be the pluralized kind
-      --operator-name string                       Unique name for this operator;
-                                                   used e.g. for leader election and labels;
-                                                   should be a valid DNS hostname
+      --resource string                            API resource (plural) for the component; if empty, it will be the pluralized kind
+      --operator-name string                       Unique name for this operator, used e.g. for leader election and labels; should be a valid DNS hostname
       --with-validating-webhook                    Whether to scaffold validating webhook
       --with-mutating-webhook                      Whether to scaffold mutating webhook
-      --go-version string                          Go version to be used (default "1.19")
+      --go-version string                          Go version to be used (default "1.21")
       --go-module string                           Name of the Go module, as written to the go.mod file
-      --kubernetes-version string                  Kubernetes go-client version to be used (default "v0.27.2")
-      --controller-runtime-version string          Controller-runtime version to be used (default "v0.15.0")
+      --kubernetes-version string                  Kubernetes go-client version to be used (default "v0.28.1")
+      --controller-runtime-version string          Controller-runtime version to be used (default "v0.16.0")
+      --controller-tools-version string            Controller-tools version to be used (default "v0.13.0")
+      --code-generator-version string              Code-generator version to be used (default "v0.28.1")
       --admission-webhook-runtime-version string   Admission-webhook-runtime version to be used (default "v0.1.0")
-      --envtest-kubernetes-version string          Kubernetes version to be used by envtest (default "1.26.1")
-      --image string                               Name of the Docker/OCI image produced by this project
-                                                   (default "controller:latest")
+      --envtest-kubernetes-version string          Kubernetes version to be used by envtest (default "1.27.1")
+      --image string                               Name of the Docker/OCI image produced by this project (default "controller:latest")
       --skip-post-processing                       Skip post-processing
 ```
 
