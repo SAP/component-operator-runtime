@@ -8,6 +8,7 @@ package manifests
 import (
 	"context"
 
+	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/sap/component-operator-runtime/pkg/types"
@@ -37,4 +38,9 @@ type ParameterTransformer interface {
 // Allows to manipulate the parameters returned by an existing generator.
 type ObjectTransformer interface {
 	TransformObjects(namespace string, name string, objects []client.Object) ([]client.Object, error)
+}
+
+// SchemeBuilder interface.
+type SchemeBuilder interface {
+	AddToScheme(scheme *runtime.Scheme) error
 }

@@ -42,6 +42,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
 	"github.com/sap/component-operator-runtime/internal/backoff"
+	internalcluster "github.com/sap/component-operator-runtime/internal/cluster"
 	"github.com/sap/component-operator-runtime/pkg/cluster"
 	"github.com/sap/component-operator-runtime/pkg/manifests"
 	"github.com/sap/component-operator-runtime/pkg/types"
@@ -93,6 +94,7 @@ type Reconciler[T Component] struct {
 	name               string
 	client             cluster.Client
 	resourceGenerator  manifests.Generator
+	clients            *internalcluster.ClientFactory
 	backoff            *backoff.Backoff
 	postReadHooks      []HookFunc[T]
 	preReconcileHooks  []HookFunc[T]
@@ -182,7 +184,11 @@ func (r *Reconciler[T]) Reconcile(ctx context.Context, req ctrl.Request) (result
 	}
 
 	// setup target
-	target := newReconcileTarget[T](r.name, r.client, r.resourceGenerator)
+	targetClient, err := r.getClientForComponent(component)
+	if err != nil {
+		return ctrl.Result{}, errors.Wrap(err, "error getting client for component")
+	}
+	target := newReconcileTarget[T](r.name, targetClient, r.resourceGenerator)
 
 	// do the reconciliation
 	if component.GetDeletionTimestamp().IsZero() {
@@ -331,7 +337,13 @@ func (r *Reconciler[T]) SetupWithManager(mgr ctrl.Manager) error {
 	if err != nil {
 		return errors.Wrap(err, "error creating discovery client")
 	}
-	r.client = cluster.NewClient(mgr.GetClient(), discoveryClient, mgr.GetEventRecorderFor(r.name))
+	r.client = internalcluster.NewClient(mgr.GetClient(), discoveryClient, mgr.GetEventRecorderFor(r.name))
+
+	schemeBuilder, _ := r.resourceGenerator.(manifests.SchemeBuilder)
+	r.clients, err = internalcluster.NewClientFactory(r.name, mgr.GetConfig(), schemeBuilder)
+	if err != nil {
+		return errors.Wrap(err, "error creating client factory")
+	}
 
 	component := newComponent[T]()
 	return ctrl.NewControllerManagedBy(mgr).
@@ -341,7 +353,19 @@ func (r *Reconciler[T]) SetupWithManager(mgr ctrl.Manager) error {
 		Complete(r)
 }
 
-// ReconcileTarget describes the deployment target of a reconcile run.
+func (r *Reconciler[T]) getClientForComponent(component T) (cluster.Client, error) {
+	clientConfiguration, haveClientConfiguration := Component(component).(cluster.ClientConfiguration)
+	impersonationConfiguration, haveImpersonationConfiguration := Component(component).(cluster.ImpersonationConfiguration)
+	if !haveClientConfiguration && !haveImpersonationConfiguration {
+		return r.client, nil
+	}
+	client, err := r.clients.Get(clientConfiguration, impersonationConfiguration)
+	if err != nil {
+		return nil, errors.Wrap(err, "error getting remote or impersonated client")
+	}
+	return client, nil
+}
+
 type reconcileTarget[T Component] struct {
 	reconcilerName               string
 	client                       cluster.Client
