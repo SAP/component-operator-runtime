@@ -89,7 +89,7 @@ package manifests
 // When called from the reconciler, the arguments namespace, name and parameters will match the return values
 // of the component's GetDeploymentNamespace(), GetDeploymentName() and GetSpec() methods, respectively.
 type Generator interface {
-  Generate(namespace string, name string, parameters types.Unstructurable) ([]client.Object, error)
+	Generate(ctx context.Context, namespace string, name string, parameters types.Unstructurable) ([]client.Object, error)
 }
 ```
 

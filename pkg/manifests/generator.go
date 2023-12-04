@@ -6,6 +6,8 @@ SPDX-License-Identifier: Apache-2.0
 package manifests
 
 import (
+	"context"
+
 	"github.com/pkg/errors"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -33,7 +35,7 @@ func (g *tranformableGenerator) WithObjectTransformer(transformer ObjectTransfor
 	return g
 }
 
-func (g *tranformableGenerator) Generate(namespace string, name string, parameters types.Unstructurable) ([]client.Object, error) {
+func (g *tranformableGenerator) Generate(ctx context.Context, namespace string, name string, parameters types.Unstructurable) ([]client.Object, error) {
 	for i, transformer := range g.parameterTransformers {
 		_parameters, err := transformer.TransformParameters(namespace, name, parameters)
 		if err != nil {
@@ -41,7 +43,7 @@ func (g *tranformableGenerator) Generate(namespace string, name string, paramete
 		}
 		parameters = _parameters
 	}
-	objects, err := g.generator.Generate(namespace, name, parameters)
+	objects, err := g.generator.Generate(ctx, namespace, name, parameters)
 	if err != nil {
 		return nil, err
 	}

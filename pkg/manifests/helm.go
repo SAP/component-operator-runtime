@@ -7,6 +7,7 @@ package manifests
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -35,18 +36,18 @@ import (
 // A few restrictions apply to the provided Helm chart: it must not contain any subcharts, some template functions are not supported,
 // some bultin variables are not supported, and hooks are processed in a slightly different fashion.
 type HelmGenerator struct {
-	name            string
-	discoveryClient discovery.DiscoveryInterface
-	crds            [][]byte
-	templates       []*template.Template
-	data            map[string]any
+	crds      [][]byte
+	templates []*template.Template
+	data      map[string]any
 }
 
 var _ Generator = &HelmGenerator{}
 
 // Create a new HelmGenerator.
+// Deprecation warning: the parameters name, client and discoveryClient are ignored (can be passed as empty resp. nil) and will be removed in a future release;
+// the according values will be retrieved from the context passed to Generate().
 func NewHelmGenerator(name string, fsys fs.FS, chartPath string, client client.Client, discoveryClient discovery.DiscoveryInterface) (*HelmGenerator, error) {
-	g := HelmGenerator{name: name, discoveryClient: discoveryClient}
+	g := HelmGenerator{}
 	g.data = make(map[string]any)
 
 	if fsys == nil {
@@ -150,7 +151,7 @@ func NewHelmGenerator(name string, fsys fs.FS, chartPath string, client client.C
 				Funcs(sprig.TxtFuncMap()).
 				Funcs(templatex.FuncMap()).
 				Funcs(templatex.FuncMapForTemplate(t)).
-				Funcs(templatex.FuncMapForClient(client))
+				Funcs(templatex.FuncMapForClient(nil))
 		} else {
 			t = t.New(manifest)
 		}
@@ -176,6 +177,7 @@ func NewHelmGenerator(name string, fsys fs.FS, chartPath string, client client.C
 }
 
 // Create a new HelmGenerator as TransformableGenerator.
+// Deprecation warning: the parameters name, client and discoveryClient are ignored (can be passed as empty resp. nil) and will be removed in a future release.
 func NewTransformableHelmGenerator(name string, fsys fs.FS, chartPath string, client client.Client, discoveryClient discovery.DiscoveryInterface) (TransformableGenerator, error) {
 	g, err := NewHelmGenerator(name, fsys, chartPath, client, discoveryClient)
 	if err != nil {
@@ -184,7 +186,8 @@ func NewTransformableHelmGenerator(name string, fsys fs.FS, chartPath string, cl
 	return NewGenerator(g), nil
 }
 
-// Create a new HelmGenerator with a ParameterTransformer attached (further transformers can be attached to the reeturned generator object).
+// Create a new HelmGenerator with a ParameterTransformer attached (further transformers can be attached to the returned generator object).
+// Deprecation warning: the parameters name, client and discoveryClient are ignored (can be passed as empty resp. nil) and will be removed in a future release.
 func NewHelmGeneratorWithParameterTransformer(name string, fsys fs.FS, chartPath string, client client.Client, discoveryClient discovery.DiscoveryInterface, transformer ParameterTransformer) (TransformableGenerator, error) {
 	g, err := NewTransformableHelmGenerator(name, fsys, chartPath, client, discoveryClient)
 	if err != nil {
@@ -193,7 +196,8 @@ func NewHelmGeneratorWithParameterTransformer(name string, fsys fs.FS, chartPath
 	return g.WithParameterTransformer(transformer), nil
 }
 
-// Create a new HelmGenerator with an ObjectTransformer attached (further transformers can be attached to the reeturned generator object).
+// Create a new HelmGenerator with an ObjectTransformer attached (further transformers can be attached to the returned generator object).
+// Deprecation warning: the parameters name, client and discoveryClient are ignored (can be passed as empty resp. nil) and will be removed in a future release.
 func NewHelmGeneratorWithObjectTransformer(name string, fsys fs.FS, chartPath string, client client.Client, discoveryClient discovery.DiscoveryInterface, transformer ObjectTransformer) (TransformableGenerator, error) {
 	g, err := NewTransformableHelmGenerator(name, fsys, chartPath, client, discoveryClient)
 	if err != nil {
@@ -203,21 +207,29 @@ func NewHelmGeneratorWithObjectTransformer(name string, fsys fs.FS, chartPath st
 }
 
 // Generate resource descriptors.
-func (g *HelmGenerator) Generate(namespace string, name string, parameters types.Unstructurable) ([]client.Object, error) {
+func (g *HelmGenerator) Generate(ctx context.Context, namespace string, name string, parameters types.Unstructurable) ([]client.Object, error) {
 	var objects []client.Object
 
-	// TODO: this (and the according values of the annotations) should be available as constants somewhere
-	annotationKeyReconcilePolicy := g.name + "/reconcile-policy"
-	annotationKeyUpdatePolicy := g.name + "/update-policy"
-	annotationKeyOrder := g.name + "/order"
-	annotationKeyPurgeOrder := g.name + "/purge-order"
+	reconcilerName, err := ReconcilerNameFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	client, err := ClientFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	annotationKeyReconcilePolicy := reconcilerName + "/" + types.AnnotationKeySuffixReconcilePolicy
+	annotationKeyUpdatePolicy := reconcilerName + "/" + types.AnnotationKeySuffixUpdatePolicy
+	annotationKeyOrder := reconcilerName + "/" + types.AnnotationKeySuffixOrder
+	annotationKeyPurgeOrder := reconcilerName + "/" + types.AnnotationKeySuffixPurgeOrder
 
 	data := make(map[string]any)
 	for k, v := range g.data {
 		data[k] = v
 	}
 
-	capabilities, err := helm.GetCapabilities(g.discoveryClient)
+	capabilities, err := helm.GetCapabilities(client.DiscoveryClient())
 	if err != nil {
 		return nil, err
 	}
@@ -226,7 +238,7 @@ func (g *HelmGenerator) Generate(namespace string, name string, parameters types
 	data["Release"] = &helm.ReleaseData{
 		Namespace: namespace,
 		Name:      name,
-		Service:   g.name,
+		Service:   reconcilerName,
 		// TODO: probably IsInstall and IsUpgrade should be set in a more differentiated way;
 		// but we don't know how, since this framework does not really distinguish between installation and upgrade ...
 		IsInstall: true,
@@ -258,7 +270,8 @@ func (g *HelmGenerator) Generate(namespace string, name string, parameters types
 		if err != nil {
 			return nil, err
 		}
-		t0.Option("missingkey=zero")
+		t0.Option("missingkey=zero").
+			Funcs(templatex.FuncMapForClient(client))
 	}
 	for _, t := range g.templates {
 		data["Template"] = &helm.TemplateData{
@@ -292,7 +305,7 @@ func (g *HelmGenerator) Generate(namespace string, name string, parameters types
 			}
 			annotations := object.GetAnnotations()
 			for key := range annotations {
-				if strings.HasPrefix(key, g.name+"/") {
+				if strings.HasPrefix(key, reconcilerName+"/") {
 					return nil, fmt.Errorf("annotation %s must not be set (object: %s)", key, types.ObjectKeyToString(object))
 				}
 			}
@@ -318,41 +331,35 @@ func (g *HelmGenerator) Generate(namespace string, name string, parameters types
 					return nil, fmt.Errorf("helm delete policy %s is not supported (object: %s)", helm.HookDeletePolicyHookFailed, types.ObjectKeyToString(object))
 				}
 				if slices.Contains(hookMetadata.DeletePolicies, helm.HookDeletePolicyBeforeHookCreation) {
-					// TODO: use a constant
-					annotations[annotationKeyUpdatePolicy] = "recreate"
+					annotations[annotationKeyUpdatePolicy] = types.UpdatePolicyRecreate
 				}
 				switch {
 				case slices.Equal(slices.Sort(hookMetadata.Types), slices.Sort([]string{helm.HookTypePreInstall})):
-					// TODO: use a constant
-					annotations[annotationKeyReconcilePolicy] = "once"
+					annotations[annotationKeyReconcilePolicy] = types.ReconcilePolicyOnce
 					annotations[annotationKeyOrder] = strconv.Itoa(hookMetadata.Weight - helm.HookMaxWeight - 1)
 					if slices.Contains(hookMetadata.DeletePolicies, helm.HookDeletePolicyHookSucceeded) {
 						annotations[annotationKeyPurgeOrder] = strconv.Itoa(-1)
 					}
 				case slices.Equal(slices.Sort(hookMetadata.Types), slices.Sort([]string{helm.HookTypePostInstall})):
-					// TODO: use a constant
-					annotations[annotationKeyReconcilePolicy] = "once"
+					annotations[annotationKeyReconcilePolicy] = types.ReconcilePolicyOnce
 					annotations[annotationKeyOrder] = strconv.Itoa(hookMetadata.Weight - helm.HookMinWeight + 1)
 					if slices.Contains(hookMetadata.DeletePolicies, helm.HookDeletePolicyHookSucceeded) {
 						annotations[annotationKeyPurgeOrder] = strconv.Itoa(helm.HookMaxWeight - helm.HookMinWeight + 1)
 					}
 				case slices.Equal(slices.Sort(hookMetadata.Types), slices.Sort([]string{helm.HookTypePreInstall, helm.HookTypePreUpgrade})):
-					// TODO: use a constant
-					annotations[annotationKeyReconcilePolicy] = "on-object-or-component-change"
+					annotations[annotationKeyReconcilePolicy] = types.ReconcilePolicyOnObjectOrComponentChange
 					annotations[annotationKeyOrder] = strconv.Itoa(hookMetadata.Weight - helm.HookMaxWeight - 1)
 					if slices.Contains(hookMetadata.DeletePolicies, helm.HookDeletePolicyHookSucceeded) {
 						annotations[annotationKeyPurgeOrder] = strconv.Itoa(-1)
 					}
 				case slices.Equal(slices.Sort(hookMetadata.Types), slices.Sort([]string{helm.HookTypePostInstall, helm.HookTypePostUpgrade})):
-					// TODO: use a constant
-					annotations[annotationKeyReconcilePolicy] = "on-object-or-component-change"
+					annotations[annotationKeyReconcilePolicy] = types.ReconcilePolicyOnObjectOrComponentChange
 					annotations[annotationKeyOrder] = strconv.Itoa(hookMetadata.Weight - helm.HookMinWeight + 1)
 					if slices.Contains(hookMetadata.DeletePolicies, helm.HookDeletePolicyHookSucceeded) {
 						annotations[annotationKeyPurgeOrder] = strconv.Itoa(helm.HookMaxWeight - helm.HookMinWeight + 1)
 					}
 				case slices.Equal(slices.Sort(hookMetadata.Types), slices.Sort([]string{helm.HookTypePreInstall, helm.HookTypePreUpgrade, helm.HookTypePostInstall, helm.HookTypePostUpgrade})):
-					// TODO: use a constant
-					annotations[annotationKeyReconcilePolicy] = "on-object-or-component-change"
+					annotations[annotationKeyReconcilePolicy] = types.ReconcilePolicyOnObjectOrComponentChange
 					annotations[annotationKeyOrder] = strconv.Itoa(hookMetadata.Weight - helm.HookMaxWeight - 1)
 					if slices.Contains(hookMetadata.DeletePolicies, helm.HookDeletePolicyHookSucceeded) {
 						annotations[annotationKeyPurgeOrder] = strconv.Itoa(helm.HookMaxWeight - helm.HookMinWeight + 1)

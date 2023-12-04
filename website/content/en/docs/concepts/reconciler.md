@@ -27,7 +27,7 @@ func NewReconciler[T Component](
 ```
 
 The passed type parameter `T Component` is the concrete runtime type of the component's custom resource type. Furthermore,
-- `name` is supposed to be a unique name (typically a DNS name) uniquely identifying this component operator in the cluster; ìt will be used in annotations, labels, for leader election, ...
+- `name` is supposed to be a unique name (typically a DNS name) identifying this component operator in the cluster; ìt will be used in annotations, labels, for leader election, ...
 - `client`, `discoveryClient`, `eventRecorder` and `scheme` are deprecated and will be removed in future releases; they can be passed as `nil`
 - `resourceGenerator` is an implementation of the `Generator` interface, describing how the dependent objects are rendered from the component's spec.
 

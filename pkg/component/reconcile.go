@@ -42,6 +42,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
 	"github.com/sap/component-operator-runtime/internal/backoff"
+	"github.com/sap/component-operator-runtime/pkg/cluster"
 	"github.com/sap/component-operator-runtime/pkg/manifests"
 	"github.com/sap/component-operator-runtime/pkg/types"
 )
@@ -56,8 +57,6 @@ import (
 // TODO: it might be desirable to run the component operator outside the target cluster;
 // maybe even in a 1:n layout (where one component operator manages multiple target clusters);
 // in this case, we would need a way to specify a kubeconfig per operator CRO;
-// the difficulty in implementing this lies mostly with the complex generators (helm, kustomize)
-// which currently expect a client/discoveryClient at creation time (instead of generation time)
 
 const (
 	readyConditionReasonNew                = "FirstSeen"
@@ -77,17 +76,6 @@ const (
 )
 
 const (
-	reconcilePolicyOnObjectChange            = "on-object-change"
-	reconcilePolicyOnObjectOrComponentChange = "on-object-or-component-change"
-	reconcilePolicyOnce                      = "once"
-)
-
-const (
-	updatePolicyDefault  = "default"
-	updatePolicyRecreate = "recreate"
-)
-
-const (
 	scopeUnknown = iota
 	scopeNamespaced
 	scopeCluster
@@ -103,10 +91,7 @@ type HookFunc[T Component] func(ctx context.Context, client client.Client, compo
 // Reconciler provides the implementation of controller-runtime's Reconciler interface, for a given Component type T.
 type Reconciler[T Component] struct {
 	name               string
-	client             client.Client
-	discoveryClient    discovery.DiscoveryInterface
-	eventRecorder      record.EventRecorder
-	scheme             *runtime.Scheme
+	client             cluster.Client
 	resourceGenerator  manifests.Generator
 	backoff            *backoff.Backoff
 	postReadHooks      []HookFunc[T]
@@ -117,34 +102,14 @@ type Reconciler[T Component] struct {
 }
 
 // Create a new Reconciler. Here:
-//   - name should be a meaningful and unique name identifying this reconciler with the Kubernetes cluster; it will be used in annotations, finalizers, and so on
-//   - client should be a controller-runtime client for the current cluster, typically it is mgr.GetClient();
-//     it should have informer caching disabled for the reconciled type T, as well as for apiextensionsv1.CustomResourceDefinition and apiregistrationv1.APIService
-//   - discoveryClient should be a discovery client for the current cluster, typically built from mgr.GetConfig() and mgr.GetHTTPClient()
-//   - eventRecorder should be an event recorder for the current cluster, typically it is mgr.GetEventRecorderFor(name)
-//   - scheme is required to recognize the core group (corev1), the api group containing T, and apiextensionsv1 and apiregistrationv1;
-//     in addition, scheme must know about all concrete (i.e. non-unstructured) types returned by the given resource generator
-//   - resourceGenerator must be an implementation of the manifests.Generator interface.
+// name should be a meaningful and unique name identifying this reconciler within the Kubernetes cluster; it will be used in annotations, finalizers, and so on;
+// resourceGenerator must be an implementation of the manifests.Generator interface.
 //
-// Deprecation warning: the parameters client, discoveryClient, eventRecorder, scheme will be removed; the deprecation will happen in three phases:
-//   - Phase 1: the current behavior remains unchanged, but consumers should ensure to pass the deprecated parameters exactly as follows:
-//     client: mgr.GetClient()
-//     discoveryClient: a discovery client instantiated through mgr.GetConfig() and mgr.GetHTTPClient()
-//     eventRecorder: mgr.GetEventRecorderFor(name)
-//     scheme: mgr.GetScheme()
-//     here, mgr is the owning manager;
-//     as an alternative the above parameters can be passed as nil, in which case they will be defaulted as just described;
-//     the returned Reconciler object must not be used before SetupWithManager() was called.
-//   - Phase 2: the parameters client, discoveryClient, eventRecorder, scheme will be ignored (can be passed as nil);
-//     the reconcile logic will infer client, discoveryClient, eventRecorder and scheme from the Manager instance passed to SetupWithManager(), as described above.
-//   - Phase 3: the deprecated parameters will be removed.
+// Deprecation warning: the parameters client, discoveryClient, eventRecorder, scheme are ignored (can be passed as nil) and will be removed in a future release;
+// in their place, the according clients will be derived directly from the responsible manager, passed to SetupWithmanager().
 func NewReconciler[T Component](name string, client client.Client, discoveryClient discovery.DiscoveryInterface, eventRecorder record.EventRecorder, scheme *runtime.Scheme, resourceGenerator manifests.Generator) *Reconciler[T] {
 	return &Reconciler[T]{
 		name:              name,
-		client:            client,
-		discoveryClient:   discoveryClient,
-		eventRecorder:     eventRecorder,
-		scheme:            scheme,
 		resourceGenerator: resourceGenerator,
 		backoff:           backoff.NewBackoff(5 * time.Second),
 	}
@@ -184,9 +149,9 @@ func (r *Reconciler[T]) Reconcile(ctx context.Context, req ctrl.Request) (result
 		}
 		state, reason, message := status.GetState()
 		if state == StateError {
-			r.eventRecorder.Event(component, corev1.EventTypeWarning, reason, message)
+			r.client.EventRecorder().Event(component, corev1.EventTypeWarning, reason, message)
 		} else {
-			r.eventRecorder.Event(component, corev1.EventTypeNormal, reason, message)
+			r.client.EventRecorder().Event(component, corev1.EventTypeNormal, reason, message)
 		}
 		if skipStatusUpdate {
 			return
@@ -217,7 +182,7 @@ func (r *Reconciler[T]) Reconcile(ctx context.Context, req ctrl.Request) (result
 	}
 
 	// setup target
-	target := newReconcileTarget[T](r.name, r.client, r.discoveryClient, r.eventRecorder, r.scheme, r.resourceGenerator)
+	target := newReconcileTarget[T](r.name, r.client, r.resourceGenerator)
 
 	// do the reconciliation
 	if component.GetDeletionTimestamp().IsZero() {
@@ -362,23 +327,11 @@ func (r *Reconciler[T]) WithPostDeleteHook(hook HookFunc[T]) *Reconciler[T] {
 // Register the reconciler with a given controller-runtime Manager.
 func (r *Reconciler[T]) SetupWithManager(mgr ctrl.Manager) error {
 	// TODO: add some check (and lock?) to prevent SetupWithManager() being called more than once
-	// TODO: proceed with the deprecation of NewReconciler() arguments (see comments there); that is, remove the below if statements ...
-	if r.client == nil {
-		r.client = mgr.GetClient()
+	discoveryClient, err := discovery.NewDiscoveryClientForConfigAndClient(mgr.GetConfig(), mgr.GetHTTPClient())
+	if err != nil {
+		return errors.Wrap(err, "error creating discovery client")
 	}
-	if r.discoveryClient == nil {
-		discoveryClient, err := discovery.NewDiscoveryClientForConfigAndClient(mgr.GetConfig(), mgr.GetHTTPClient())
-		if err != nil {
-			return errors.Wrap(err, "error creating discovery client")
-		}
-		r.discoveryClient = discoveryClient
-	}
-	if r.eventRecorder == nil {
-		r.eventRecorder = mgr.GetEventRecorderFor(r.name)
-	}
-	if r.scheme == nil {
-		r.scheme = mgr.GetScheme()
-	}
+	r.client = cluster.NewClient(mgr.GetClient(), discoveryClient, mgr.GetEventRecorderFor(r.name))
 
 	component := newComponent[T]()
 	return ctrl.NewControllerManagedBy(mgr).
@@ -390,11 +343,8 @@ func (r *Reconciler[T]) SetupWithManager(mgr ctrl.Manager) error {
 
 // ReconcileTarget describes the deployment target of a reconcile run.
 type reconcileTarget[T Component] struct {
-	name                         string
-	client                       client.Client
-	discoveryClient              discovery.DiscoveryInterface
-	eventRecorder                record.EventRecorder
-	scheme                       *runtime.Scheme
+	reconcilerName               string
+	client                       cluster.Client
 	resourceGenerator            manifests.Generator
 	labelKeyOwnerId              string
 	annotationKeyDigest          string
@@ -405,27 +355,18 @@ type reconcileTarget[T Component] struct {
 	annotationKeyOwnerId         string
 }
 
-func newReconcileTarget[T Component](
-	name string,
-	client client.Client,
-	discoveryClient discovery.DiscoveryInterface,
-	eventRecorder record.EventRecorder,
-	scheme *runtime.Scheme, resourceGenerator manifests.Generator,
-) *reconcileTarget[T] {
+func newReconcileTarget[T Component](reconcilerName string, client cluster.Client, resourceGenerator manifests.Generator) *reconcileTarget[T] {
 	return &reconcileTarget[T]{
-		name:                         name,
+		reconcilerName:               reconcilerName,
 		client:                       client,
-		discoveryClient:              discoveryClient,
-		eventRecorder:                eventRecorder,
-		scheme:                       scheme,
 		resourceGenerator:            resourceGenerator,
-		labelKeyOwnerId:              name + "/owner-id",
-		annotationKeyDigest:          name + "/digest",
-		annotationKeyReconcilePolicy: name + "/reconcile-policy",
-		annotationKeyUpdatePolicy:    name + "/update-policy",
-		annotationKeyOrder:           name + "/order",
-		annotationKeyPurgeOrder:      name + "/purge-order",
-		annotationKeyOwnerId:         name + "/owner-id",
+		labelKeyOwnerId:              reconcilerName + "/" + types.LabelKeySuffixOwnerId,
+		annotationKeyDigest:          reconcilerName + "/" + types.AnnotationKeySuffixDigest,
+		annotationKeyReconcilePolicy: reconcilerName + "/" + types.AnnotationKeySuffixReconcilePolicy,
+		annotationKeyUpdatePolicy:    reconcilerName + "/" + types.AnnotationKeySuffixUpdatePolicy,
+		annotationKeyOrder:           reconcilerName + "/" + types.AnnotationKeySuffixOrder,
+		annotationKeyPurgeOrder:      reconcilerName + "/" + types.AnnotationKeySuffixPurgeOrder,
+		annotationKeyOwnerId:         reconcilerName + "/" + types.AnnotationKeySuffixOwnerId,
 	}
 }
 
@@ -436,10 +377,36 @@ func (t *reconcileTarget[T]) Reconcile(ctx context.Context, component T) (bool, 
 	status := component.GetStatus()
 
 	// render manifests
-	objects, err := t.resourceGenerator.Generate(namespace, name, component.GetSpec())
+	generateCtx := manifests.NewContextWithClient(manifests.NewContextWithReconcilerName(ctx, t.reconcilerName), t.client)
+	objects, err := t.resourceGenerator.Generate(generateCtx, namespace, name, component.GetSpec())
 	if err != nil {
 		return false, errors.Wrap(err, "error rendering manifests")
 	}
+
+	/*
+		// if desired: write generated manifests to secret for debugging
+		if debug := component.GetAnnotations()["component-operator-runtime.cs.sap.com/debug"]; debug == "true" {
+			var buf bytes.Buffer
+			for _, object := range objects {
+				rawObject, err := kyaml.Marshal(object)
+				if err != nil {
+					return false, errors.Wrapf(err, "error serializing object %s", types.ObjectKeyToString(object))
+				}
+				buf.WriteString("---\n")
+				buf.Write(rawObject)
+			}
+			debugSecret := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: namespace,
+					Name:      "com.sap.cs.component-operator-runtime.release." + name,
+				},
+				Data: map[string][]byte{
+					"objects": buf.Bytes(),
+				},
+			}
+			objects = append(objects, debugSecret)
+		}
+	*/
 
 	// normalize objects; that means:
 	// - check that unstructured objects have valid type information set, and convert them to their concrete type if known to the scheme
@@ -451,8 +418,8 @@ func (t *reconcileTarget[T]) Reconcile(ctx context.Context, component T) (bool, 
 			if gvk.Version == "" || gvk.Kind == "" {
 				return false, fmt.Errorf("unstructured object %s is missing type information", types.ObjectKeyToString(object))
 			}
-			if t.scheme.Recognizes(gvk) {
-				typedObject, err := t.scheme.New(gvk)
+			if t.client.Scheme().Recognizes(gvk) {
+				typedObject, err := t.client.Scheme().New(gvk)
 				if err != nil {
 					return false, errors.Wrapf(err, "error instantiating type for object %s", types.ObjectKeyToString(object))
 				}
@@ -470,7 +437,7 @@ func (t *reconcileTarget[T]) Reconcile(ctx context.Context, component T) (bool, 
 				normalizedObjects[i] = object
 			}
 		} else {
-			_gvk, err := apiutil.GVKForObject(object, t.scheme)
+			_gvk, err := apiutil.GVKForObject(object, t.client.Scheme())
 			if err != nil {
 				return false, errors.Wrapf(err, "error retrieving scheme type information for object %s", types.ObjectKeyToString(object))
 			}
@@ -489,6 +456,7 @@ func (t *reconcileTarget[T]) Reconcile(ctx context.Context, component T) (bool, 
 		// note: due to the normalization done before, every object will now have a valid object kind set
 		gvk := object.GetObjectKind().GroupVersionKind()
 
+		// TODO: client now has a method IsObjectNamespaced(); can we use this instead?
 		scope := scopeUnknown
 		restMapping, err := t.client.RESTMapper().RESTMapping(gvk.GroupKind(), gvk.Version)
 		if err == nil {
@@ -571,11 +539,11 @@ func (t *reconcileTarget[T]) Reconcile(ctx context.Context, component T) (bool, 
 
 		reconcilePolicy := object.GetAnnotations()[t.annotationKeyReconcilePolicy]
 		switch reconcilePolicy {
-		case reconcilePolicyOnObjectChange, "":
-			reconcilePolicy = reconcilePolicyOnObjectChange
-		case reconcilePolicyOnObjectOrComponentChange:
+		case types.ReconcilePolicyOnObjectChange, "":
+			reconcilePolicy = types.ReconcilePolicyOnObjectChange
+		case types.ReconcilePolicyOnObjectOrComponentChange:
 			digest = fmt.Sprintf("%s@%d", digest, component.GetGeneration())
-		case reconcilePolicyOnce:
+		case types.ReconcilePolicyOnce:
 			// note: if the object already existed with a different reconcile policy, then it will get reconciled one (and only one) more time
 			digest = "__once__"
 		default:
@@ -747,9 +715,9 @@ func (t *reconcileTarget[T]) Reconcile(ctx context.Context, component T) (bool, 
 		// retreive update policy
 		updatePolicy := object.GetAnnotations()[t.annotationKeyUpdatePolicy]
 		switch updatePolicy {
-		case updatePolicyDefault, "":
-			updatePolicy = updatePolicyDefault
-		case updatePolicyRecreate:
+		case types.UpdatePolicyDefault, "":
+			updatePolicy = types.UpdatePolicyDefault
+		case types.UpdatePolicyRecreate:
 		default:
 			return false, fmt.Errorf("invalid value for annotation %s: %s", t.annotationKeyUpdatePolicy, updatePolicy)
 		}
@@ -796,11 +764,11 @@ func (t *reconcileTarget[T]) Reconcile(ctx context.Context, component T) (bool, 
 					numUnready++
 				} else if existingObject.GetAnnotations()[t.annotationKeyDigest] != item.Digest {
 					switch updatePolicy {
-					case updatePolicyDefault:
+					case types.UpdatePolicyDefault:
 						if err := t.updateObject(ctx, object, existingObject); err != nil {
 							return false, errors.Wrapf(err, "error creating object %s", item)
 						}
-					case updatePolicyRecreate:
+					case types.UpdatePolicyRecreate:
 						if err := t.deleteObject(ctx, object, existingObject); err != nil {
 							return false, errors.Wrapf(err, "error deleting (while recreating) object %s", item)
 						}
@@ -958,7 +926,7 @@ func (t *reconcileTarget[T]) readObject(ctx context.Context, key types.ObjectKey
 func (t *reconcileTarget[T]) createObject(ctx context.Context, object client.Object) (err error) {
 	defer func() {
 		if err == nil {
-			t.eventRecorder.Event(object, corev1.EventTypeNormal, objectReasonCreated, "Object successfully created")
+			t.client.EventRecorder().Event(object, corev1.EventTypeNormal, objectReasonCreated, "Object successfully created")
 		}
 	}()
 	data, err := runtime.DefaultUnstructuredConverter.ToUnstructured(object)
@@ -967,7 +935,7 @@ func (t *reconcileTarget[T]) createObject(ctx context.Context, object client.Obj
 	}
 	object = &unstructured.Unstructured{Object: data}
 	if isCrd(object) || isApiService(object) {
-		controllerutil.AddFinalizer(object, t.name)
+		controllerutil.AddFinalizer(object, t.reconcilerName)
 	}
 	return t.client.Create(ctx, object)
 }
@@ -975,9 +943,9 @@ func (t *reconcileTarget[T]) createObject(ctx context.Context, object client.Obj
 func (t *reconcileTarget[T]) updateObject(ctx context.Context, object client.Object, existingObject *unstructured.Unstructured) (err error) {
 	defer func() {
 		if err == nil {
-			t.eventRecorder.Event(object, corev1.EventTypeNormal, objectReasonUpdated, "Object successfully updated")
+			t.client.EventRecorder().Event(object, corev1.EventTypeNormal, objectReasonUpdated, "Object successfully updated")
 		} else {
-			t.eventRecorder.Eventf(existingObject, corev1.EventTypeWarning, objectReasonUpdateError, "Error updating object: %s", err)
+			t.client.EventRecorder().Eventf(existingObject, corev1.EventTypeWarning, objectReasonUpdateError, "Error updating object: %s", err)
 		}
 	}()
 	data, err := runtime.DefaultUnstructuredConverter.ToUnstructured(object)
@@ -986,7 +954,7 @@ func (t *reconcileTarget[T]) updateObject(ctx context.Context, object client.Obj
 	}
 	object = &unstructured.Unstructured{Object: data}
 	if isCrd(object) || isApiService(object) {
-		controllerutil.AddFinalizer(object, t.name)
+		controllerutil.AddFinalizer(object, t.reconcilerName)
 	}
 	object.SetResourceVersion((existingObject.GetResourceVersion()))
 	return t.client.Update(ctx, object)
@@ -998,9 +966,9 @@ func (t *reconcileTarget[T]) deleteObject(ctx context.Context, key types.ObjectK
 			return
 		}
 		if err == nil {
-			t.eventRecorder.Event(existingObject, corev1.EventTypeNormal, objectReasonDeleted, "Object successfully deleted")
+			t.client.EventRecorder().Event(existingObject, corev1.EventTypeNormal, objectReasonDeleted, "Object successfully deleted")
 		} else {
-			t.eventRecorder.Eventf(existingObject, corev1.EventTypeWarning, objectReasonDeleteError, "Error deleting object: %s", err)
+			t.client.EventRecorder().Eventf(existingObject, corev1.EventTypeWarning, objectReasonDeleteError, "Error deleting object: %s", err)
 		}
 	}()
 	log := log.FromContext(ctx)
@@ -1035,11 +1003,11 @@ func (t *reconcileTarget[T]) deleteObject(ctx context.Context, key types.ObjectK
 			if used {
 				return fmt.Errorf("error deleting custom resource definition %s, existing instances found", types.ObjectKeyToString(key))
 			}
-			if ok := controllerutil.RemoveFinalizer(crd, t.name); ok {
+			if ok := controllerutil.RemoveFinalizer(crd, t.reconcilerName); ok {
 				// note: 409 error is very likely here (because of concurrent updates happening through the API server); this is why we retry once
 				if err := t.client.Update(ctx, crd); err != nil {
 					if i == 1 && apierrors.IsConflict(err) {
-						log.V(1).Info("error while updating CustomResourcedefinition (409 conflict); doing one retry", "name", t.name, "error", err.Error())
+						log.V(1).Info("error while updating CustomResourcedefinition (409 conflict); doing one retry", "name", t.reconcilerName, "error", err.Error())
 						continue
 					}
 					return err
@@ -1060,11 +1028,11 @@ func (t *reconcileTarget[T]) deleteObject(ctx context.Context, key types.ObjectK
 			if used {
 				return fmt.Errorf("error deleting api service %s, existing instances found", types.ObjectKeyToString(key))
 			}
-			if ok := controllerutil.RemoveFinalizer(apiService, t.name); ok {
+			if ok := controllerutil.RemoveFinalizer(apiService, t.reconcilerName); ok {
 				// note: 409 error is very likely here (because of concurrent updates happening through the API server); this is why we retry once
 				if err := t.client.Update(ctx, apiService); err != nil {
 					if i == 1 && apierrors.IsConflict(err) {
-						log.V(1).Info("error while updating APIService (409 conflict); doing one retry", "name", t.name, "error", err.Error())
+						log.V(1).Info("error while updating APIService (409 conflict); doing one retry", "name", t.reconcilerName, "error", err.Error())
 						continue
 					}
 					return err
@@ -1096,7 +1064,7 @@ func (t *reconcileTarget[T]) isCrdUsed(ctx context.Context, crd *apiextensionsv1
 
 func (t *reconcileTarget[T]) isApiServiceUsed(ctx context.Context, apiService *apiregistrationv1.APIService, onlyForeign bool) (bool, error) {
 	gv := schema.GroupVersion{Group: apiService.Spec.Group, Version: apiService.Spec.Version}
-	resList, err := t.discoveryClient.ServerResourcesForGroupVersion(gv.String())
+	resList, err := t.client.DiscoveryClient().ServerResourcesForGroupVersion(gv.String())
 	if err != nil {
 		return false, err
 	}

@@ -7,6 +7,7 @@ package manifests
 
 import (
 	"bytes"
+	"context"
 	"io"
 	"io/fs"
 	"os"
@@ -23,6 +24,7 @@ import (
 	kustfsys "sigs.k8s.io/kustomize/kyaml/filesys"
 
 	"github.com/sap/component-operator-runtime/internal/templatex"
+	"github.com/sap/component-operator-runtime/pkg/cluster"
 	"github.com/sap/component-operator-runtime/pkg/types"
 )
 
@@ -35,6 +37,8 @@ type KustomizeGenerator struct {
 var _ Generator = &KustomizeGenerator{}
 
 // Create a new KustomizeGenerator.
+// Deprecation warning: the parameter client is ignored (can be passed as nil) and will be removed in a future release;
+// the according value will be retrieved from the context passed to Generate().
 func NewKustomizeGenerator(fsys fs.FS, kustomizationPath string, templateSuffix string, client client.Client) (*KustomizeGenerator, error) {
 	g := KustomizeGenerator{}
 
@@ -76,8 +80,8 @@ func NewKustomizeGenerator(fsys fs.FS, kustomizationPath string, templateSuffix 
 				Funcs(sprig.TxtFuncMap()).
 				Funcs(templatex.FuncMap()).
 				Funcs(templatex.FuncMapForTemplate(t)).
-				Funcs(templatex.FuncMapForClient(client)).
-				Funcs(funcMapForGenerateContext("", ""))
+				Funcs(templatex.FuncMapForClient(nil)).
+				Funcs(funcMapForGenerateContext(nil, "", ""))
 		} else {
 			t = t.New(name)
 		}
@@ -91,6 +95,7 @@ func NewKustomizeGenerator(fsys fs.FS, kustomizationPath string, templateSuffix 
 }
 
 // Create a new KustomizeGenerator as TransformableGenerator.
+// Deprecation warning: the parameter client is ignored (can be passed as nil) and will be removed in a future release.
 func NewTransformableKustomizeGenerator(fsys fs.FS, kustomizationPath string, templateSuffix string, client client.Client) (TransformableGenerator, error) {
 	g, err := NewKustomizeGenerator(fsys, kustomizationPath, templateSuffix, client)
 	if err != nil {
@@ -99,7 +104,8 @@ func NewTransformableKustomizeGenerator(fsys fs.FS, kustomizationPath string, te
 	return NewGenerator(g), nil
 }
 
-// Create a new KustomizeGenerator with a ParameterTransformer attached (further transformers can be attached to the reeturned generator object).
+// Create a new KustomizeGenerator with a ParameterTransformer attached (further transformers can be attached to the returned generator object).
+// Deprecation warning: the parameter client is ignored (can be passed as nil) and will be removed in a future release.
 func NewKustomizeGeneratorWithParameterTransformer(fsys fs.FS, kustomizationPath string, templateSuffix string, client client.Client, transformer ParameterTransformer) (TransformableGenerator, error) {
 	g, err := NewTransformableKustomizeGenerator(fsys, kustomizationPath, templateSuffix, client)
 	if err != nil {
@@ -108,7 +114,8 @@ func NewKustomizeGeneratorWithParameterTransformer(fsys fs.FS, kustomizationPath
 	return g.WithParameterTransformer(transformer), nil
 }
 
-// Create a new KustomizeGenerator with an ObjectTransformer attached (further transformers can be attached to the reeturned generator object).
+// Create a new KustomizeGenerator with an ObjectTransformer attached (further transformers can be attached to the returned generator object).
+// Deprecation warning: the parameter client is ignored (can be passed as nil) and will be removed in a future release.
 func NewKustomizeGeneratorWithObjectTransformer(fsys fs.FS, kustomizationPath string, templateSuffix string, client client.Client, transformer ObjectTransformer) (TransformableGenerator, error) {
 	g, err := NewTransformableKustomizeGenerator(fsys, kustomizationPath, templateSuffix, client)
 	if err != nil {
@@ -118,21 +125,26 @@ func NewKustomizeGeneratorWithObjectTransformer(fsys fs.FS, kustomizationPath st
 }
 
 // Generate resource descriptors.
-func (g *KustomizeGenerator) Generate(namespace string, name string, parameters types.Unstructurable) ([]client.Object, error) {
+func (g *KustomizeGenerator) Generate(ctx context.Context, namespace string, name string, parameters types.Unstructurable) ([]client.Object, error) {
 	var objects []client.Object
+
+	client, err := ClientFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
 
 	data := parameters.ToUnstructured()
 	fsys := kustfsys.MakeFsInMemory()
 
 	var t0 *template.Template
-	var err error
 	if len(g.templates) > 0 {
 		t0, err = g.templates[0].Clone()
 		if err != nil {
 			return nil, err
 		}
 		t0.Option("missingkey=zero").
-			Funcs(funcMapForGenerateContext(namespace, name))
+			Funcs(templatex.FuncMapForClient(client)).
+			Funcs(funcMapForGenerateContext(client, namespace, name))
 	}
 	for _, t := range g.templates {
 		var buf bytes.Buffer
@@ -172,7 +184,8 @@ func (g *KustomizeGenerator) Generate(namespace string, name string, parameters 
 	return objects, nil
 }
 
-func funcMapForGenerateContext(namespace string, name string) template.FuncMap {
+func funcMapForGenerateContext(client cluster.Client, namespace string, name string) template.FuncMap {
+	// TODO: add accessors for Kubernetes version etc.
 	return template.FuncMap{
 		"namespace": func() string { return namespace },
 		"name":      func() string { return name },

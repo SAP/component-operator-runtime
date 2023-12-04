@@ -22,10 +22,10 @@ func NewHelmGenerator(
 ```
 
 Here:
-- `name` must be identical to the name used for the related `Reconciler`
+- `name` is deprecated and will be removed in future releases; it can be passed as empty string.
 - `fsys` must be an implementation of `fs.FS`, such as `embed.FS`; or it can be passed as nil; then, all file operations will be executed on the current OS filesystem.
 - `chartPath` is the path containing the used Helm chart; if `fsys` was provided, this has to be a relative path; otherwise, it will be interpreted with respect to the OS filesystem (as an absolute path, or relative to the current working directory of the controller).
-- `client` and `discoveryClient` should be the same ones used in the `Reconciler` consuming this generator.
+- `client` and `discoveryClient` are deprecated and will be removed in future releases; they can be passed as nil.
 
 It should be noted that `HelmGenerator` does not use the Helm SDK; instead it tries to emulate the Helm behavior as good as possible.
 A few differences and restrictions arise from this:

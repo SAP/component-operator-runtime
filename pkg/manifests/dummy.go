@@ -6,6 +6,8 @@ SPDX-License-Identifier: Apache-2.0
 package manifests
 
 import (
+	"context"
+
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/sap/component-operator-runtime/pkg/types"
@@ -22,6 +24,6 @@ func NewDummyGenerator() (*DummyGenerator, error) {
 }
 
 // Generate resource descriptors.
-func (g *DummyGenerator) Generate(namespace string, name string, parameters types.Unstructurable) ([]client.Object, error) {
+func (g *DummyGenerator) Generate(ctx context.Context, namespace string, name string, parameters types.Unstructurable) ([]client.Object, error) {
 	return nil, nil
 }
