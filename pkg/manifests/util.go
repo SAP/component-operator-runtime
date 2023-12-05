@@ -84,6 +84,11 @@ func fileTypeFromMode(mode fs.FileMode) uint {
 	return fileType
 }
 
+// Search fsys for all files under dir matching namePattern and fileType.
+// Resulting paths will be always relative to fsys (cleaned, with no leading dot).
+// The parameter dir must not contain any dot or double dot, unless it equals '.' in which case the whole fsys will be searched.
+// As an alternative, dir can be empty (which is equivalent to dir == '.').
+// The parameter maxDepth can be any integer between 0 and 10000 (where 0 is interpreted as 10000).
 func find(fsys fs.FS, dir string, namePattern string, fileType uint, maxDepth uint) ([]string, error) {
 	if dir == "" {
 		dir = "."
