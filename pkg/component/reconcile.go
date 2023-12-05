@@ -103,12 +103,12 @@ type Reconciler[T Component] struct {
 	postDeleteHooks    []HookFunc[T]
 }
 
-// Create a new Reconciler. Here:
-// name should be a meaningful and unique name identifying this reconciler within the Kubernetes cluster; it will be used in annotations, finalizers, and so on;
+// Create a new Reconciler.
+// Here, name should be a meaningful and unique name identifying this reconciler within the Kubernetes cluster; it will be used in annotations, finalizers, and so on;
 // resourceGenerator must be an implementation of the manifests.Generator interface.
 //
 // Deprecation warning: the parameters client, discoveryClient, eventRecorder, scheme are ignored (can be passed as nil) and will be removed in a future release;
-// in their place, the according clients will be derived directly from the responsible manager, passed to SetupWithmanager().
+// in their place, the according clients will be derived directly from the responsible manager, as passed to SetupWithmanager().
 func NewReconciler[T Component](name string, client client.Client, discoveryClient discovery.DiscoveryInterface, eventRecorder record.EventRecorder, scheme *runtime.Scheme, resourceGenerator manifests.Generator) *Reconciler[T] {
 	return &Reconciler[T]{
 		name:              name,
@@ -356,7 +356,11 @@ func (r *Reconciler[T]) SetupWithManager(mgr ctrl.Manager) error {
 func (r *Reconciler[T]) getClientForComponent(component T) (cluster.Client, error) {
 	clientConfiguration, haveClientConfiguration := Component(component).(cluster.ClientConfiguration)
 	impersonationConfiguration, haveImpersonationConfiguration := Component(component).(cluster.ImpersonationConfiguration)
-	if !haveClientConfiguration && !haveImpersonationConfiguration {
+	_, haveCustomScheme := r.resourceGenerator.(manifests.SchemeBuilder)
+	// TODO: we should always return a factory client, even in the default case;
+	// however this would be an incompatible change; people who previously supplied a custom scheme via the manager's client
+	// would now have to do the same by adding AddToScheme() to the used generator.
+	if !haveClientConfiguration && !haveImpersonationConfiguration && !haveCustomScheme {
 		return r.client, nil
 	}
 	client, err := r.clients.Get(clientConfiguration, impersonationConfiguration)

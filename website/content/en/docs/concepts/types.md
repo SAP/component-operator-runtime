@@ -76,6 +76,39 @@ type Status struct {
 Note that, other than with the `GetSpec()` accessor, the framework will do changes to the returned `Status` structure.
 Thus, in almost all cases, the returned pointer should just reference the status of the component's API type (or an according substructure of that status).
 
+Components may optionally implement
+
+```go
+package cluster 
+
+// The ClientConfiguration interface is meant to be implemented by components which offer remote deployments.
+type ClientConfiguration interface {
+  // Get kubeconfig content.
+  GetKubeConfig() []byte
+}
+```
+
+in order to support remote deployments (that is, to make the deployment of the dependent objects use the specified kubeconfig).
+Furthermore, components can implement
+
+```go
+package cluster
+
+// The ImpersonationConfiguration interface is meant to be implemented by components which offer impersonated deployments.
+type ImpersonationConfiguration interface {
+  // Return impersonation user.
+  // Should return system:serviceaccount:<namespace>:<serviceaccount> if a service account is used for impersonation.
+  // Should return an empty string if user shall not be impersonated.
+  GetImpersonationUser() string
+  // Return impersonation groups.
+  // Should return nil if groups shall not be impersonated.
+  GetImpersonationGroups() []string
+}
+```
+
+to use the given user/groups for the deployment of dependent objects. Implementing both `ClientConfiguration` and `ImpersonationConfiguration` means that
+the provided kubeconfig will be impersonated as specified.
+
 ## The Generator interface
 
 While `Component` (respectively the related custom resource type) models the desired and actual state of
@@ -89,7 +122,7 @@ package manifests
 // When called from the reconciler, the arguments namespace, name and parameters will match the return values
 // of the component's GetDeploymentNamespace(), GetDeploymentName() and GetSpec() methods, respectively.
 type Generator interface {
-	Generate(ctx context.Context, namespace string, name string, parameters types.Unstructurable) ([]client.Object, error)
+  Generate(ctx context.Context, namespace string, name string, parameters types.Unstructurable) ([]client.Object, error)
 }
 ```
 
@@ -97,3 +130,17 @@ When called by the framework, the arguments passed to `Generate()` will just mat
 
 Component controllers can of course implement their own generator. In some cases (for example if there exists a 
 Helm chart or kustomization for the component), one of the [generators bundled with this repository](../../generators) can be used.
+
+Generators may optionally implement
+
+```go
+package manifests
+
+// SchemeBuilder interface.
+type SchemeBuilder interface {
+  AddToScheme(scheme *runtime.Scheme) error
+}
+
+```
+
+in order to enhance the scheme used by the dependent objects deployer.

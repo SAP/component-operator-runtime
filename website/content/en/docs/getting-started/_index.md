@@ -63,7 +63,7 @@ The next step is to implement a meaningful resource generator (the scaffolding j
 
 ```go
 type Generator interface {
-	Generate(ctx context.Context, namespace string, name string, parameters types.Unstructurable) ([]client.Object, error)
+  Generate(ctx context.Context, namespace string, name string, parameters types.Unstructurable) ([]client.Object, error)
 }
 ```
 
