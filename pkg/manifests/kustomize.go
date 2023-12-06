@@ -12,6 +12,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 	"text/template"
 
 	"github.com/Masterminds/sprig/v3"
@@ -19,9 +20,11 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	utilyaml "k8s.io/apimachinery/pkg/util/yaml"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/kustomize/api/konfig"
 	"sigs.k8s.io/kustomize/api/krusty"
 	kustypes "sigs.k8s.io/kustomize/api/types"
 	kustfsys "sigs.k8s.io/kustomize/kyaml/filesys"
+	kyaml "sigs.k8s.io/yaml"
 
 	"github.com/sap/component-operator-runtime/internal/templatex"
 	"github.com/sap/component-operator-runtime/pkg/cluster"
@@ -31,7 +34,8 @@ import (
 // KustomizeGenerator is a Generator implementation that basically renders a given Kustomization.
 type KustomizeGenerator struct {
 	kustomizer *krusty.Kustomizer
-	templates  []*template.Template
+	files      map[string][]byte
+	templates  map[string]*template.Template
 }
 
 var _ Generator = &KustomizeGenerator{}
@@ -40,7 +44,10 @@ var _ Generator = &KustomizeGenerator{}
 // Deprecation warning: the parameter client is ignored (can be passed as nil) and will be removed in a future release;
 // the according value will be retrieved from the context passed to Generate().
 func NewKustomizeGenerator(fsys fs.FS, kustomizationPath string, templateSuffix string, client client.Client) (*KustomizeGenerator, error) {
-	g := KustomizeGenerator{}
+	g := KustomizeGenerator{
+		files:     make(map[string][]byte),
+		templates: make(map[string]*template.Template),
+	}
 
 	if fsys == nil {
 		fsys = os.DirFS("/")
@@ -58,7 +65,7 @@ func NewKustomizeGenerator(fsys fs.FS, kustomizationPath string, templateSuffix 
 	g.kustomizer = krusty.MakeKustomizer(options)
 
 	var t *template.Template
-	files, err := find(fsys, kustomizationPath, "*"+templateSuffix, fileTypeRegular, 0)
+	files, err := find(fsys, kustomizationPath, "*", fileTypeRegular, 0)
 	if err != nil {
 		return nil, err
 	}
@@ -74,22 +81,28 @@ func NewKustomizeGenerator(fsys fs.FS, kustomizationPath string, templateSuffix 
 			// TODO: is it ok to panic here in case of error ?
 			panic("this cannot happen")
 		}
-		if t == nil {
-			t = template.New(name)
-			t.Option("missingkey=zero").
-				Funcs(sprig.TxtFuncMap()).
-				Funcs(templatex.FuncMap()).
-				Funcs(templatex.FuncMapForTemplate(t)).
-				Funcs(templatex.FuncMapForClient(nil)).
-				Funcs(funcMapForGenerateContext(nil, "", ""))
+		if strings.HasSuffix(name, templateSuffix) {
+			if t == nil {
+				t = template.New(name)
+				t.Option("missingkey=zero").
+					Funcs(sprig.TxtFuncMap()).
+					Funcs(templatex.FuncMap()).
+					Funcs(templatex.FuncMapForTemplate(t)).
+					Funcs(templatex.FuncMapForClient(nil)).
+					Funcs(funcMapForGenerateContext(nil, "", ""))
+			} else {
+				t = t.New(name)
+			}
+			if _, err := t.Parse(string(raw)); err != nil {
+				return nil, err
+			}
+			g.templates[strings.TrimSuffix(name, templateSuffix)] = t
 		} else {
-			t = t.New(name)
+			g.files[name] = raw
 		}
-		if _, err := t.Parse(string(raw)); err != nil {
-			return nil, err
-		}
-		g.templates = append(g.templates, t)
 	}
+
+	// TODO: check that g.files and g.templates are disjoint
 
 	return &g, nil
 }
@@ -136,22 +149,45 @@ func (g *KustomizeGenerator) Generate(ctx context.Context, namespace string, nam
 	data := parameters.ToUnstructured()
 	fsys := kustfsys.MakeFsInMemory()
 
-	var t0 *template.Template
-	if len(g.templates) > 0 {
-		t0, err = g.templates[0].Clone()
-		if err != nil {
+	for n, f := range g.files {
+		if err := fsys.WriteFile(n, f); err != nil {
 			return nil, err
 		}
-		t0.Option("missingkey=zero").
-			Funcs(templatex.FuncMapForClient(client)).
-			Funcs(funcMapForGenerateContext(client, namespace, name))
 	}
-	for _, t := range g.templates {
+
+	var t0 *template.Template
+	for n, t := range g.templates {
+		if t0 == nil {
+			t0, err = t.Clone()
+			if err != nil {
+				return nil, err
+			}
+			t0.Option("missingkey=zero").
+				Funcs(templatex.FuncMapForClient(client)).
+				Funcs(funcMapForGenerateContext(client, namespace, name))
+		}
 		var buf bytes.Buffer
 		if err := t0.ExecuteTemplate(&buf, t.Name(), data); err != nil {
 			return nil, err
 		}
-		if err := fsys.WriteFile(t.Name(), buf.Bytes()); err != nil {
+		if err := fsys.WriteFile(n, buf.Bytes()); err != nil {
+			return nil, err
+		}
+	}
+
+	haveKustomization := false
+	for _, kustomizationName := range konfig.RecognizedKustomizationFileNames() {
+		if fsys.Exists(kustomizationName) {
+			haveKustomization = true
+			break
+		}
+	}
+	if !haveKustomization {
+		kustomization, err := generateKustomization(fsys)
+		if err != nil {
+			return nil, err
+		}
+		if err := fsys.WriteFile(konfig.DefaultKustomizationFileName(), kustomization); err != nil {
 			return nil, err
 		}
 	}
@@ -190,4 +226,37 @@ func funcMapForGenerateContext(client cluster.Client, namespace string, name str
 		"namespace": func() string { return namespace },
 		"name":      func() string { return name },
 	}
+}
+
+func generateKustomization(fsys kustfsys.FileSystem) ([]byte, error) {
+	var resources []string
+
+	f := func(path string, info fs.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if !info.IsDir() && (strings.HasSuffix(path, ".yaml") || strings.HasSuffix(path, ".yml")) {
+			resources = append(resources, path)
+		}
+		return nil
+	}
+
+	if err := fsys.Walk(".", f); err != nil {
+		return nil, err
+	}
+
+	kustomization := kustypes.Kustomization{
+		TypeMeta: kustypes.TypeMeta{
+			APIVersion: kustypes.KustomizationVersion,
+			Kind:       kustypes.KustomizationKind,
+		},
+		Resources: resources,
+	}
+
+	rawKustomization, err := kyaml.Marshal(kustomization)
+	if err != nil {
+		return nil, err
+	}
+
+	return rawKustomization, nil
 }
