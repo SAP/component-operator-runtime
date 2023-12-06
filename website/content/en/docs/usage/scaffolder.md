@@ -14,6 +14,7 @@ After installing the scaffolder, a new project can be created like this:
 
 ```bash
 scaffold \
+  --group-name operator.kyma-project.io \
   --kind MyComponent \
   --operator-name mycomponent-operator.kyma-project.io \
   --go-module github.com/myorg/mycomponent-operator \
@@ -30,7 +31,7 @@ Usage: scaffold [options] [output directory]
       --version                                    Show version
       --owner string                               Owner of this project, as written to the license header (default "SAP SE")
       --spdx-license-headers                       Whether to write license headers in SPDX format
-      --group-name string                          API group name (default "operator.kyma-project.io")
+      --group-name string                          API group name
       --group-version string                       API group version (default "v1alpha1")
       --kind string                                API kind for the component
       --resource string                            API resource (plural) for the component; if empty, it will be the pluralized kind

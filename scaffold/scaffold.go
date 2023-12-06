@@ -103,7 +103,7 @@ func main() {
 	pflag.BoolVar(&showVersion, "version", false, "Show version")
 	pflag.StringVar(&config.Owner, "owner", "SAP SE", "Owner of this project, as written to the license header")
 	pflag.BoolVar(&config.SpdxLicenseHeaders, "spdx-license-headers", false, "Whether to write license headers in SPDX format")
-	pflag.StringVar(&config.GroupName, "group-name", "operator.kyma-project.io", "API group name")
+	pflag.StringVar(&config.GroupName, "group-name", "", "API group name")
 	pflag.StringVar(&config.GroupVersion, "group-version", "v1alpha1", "API group version")
 	pflag.StringVar(&config.Kind, "kind", "", "API kind for the component")
 	pflag.StringVar(&config.Resource, "resource", "", "API resource (plural) for the component; if empty, it will be the pluralized kind")
