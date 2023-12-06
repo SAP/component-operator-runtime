@@ -124,7 +124,7 @@ func (f *ClientFactory) Get(clientConfig cluster.ClientConfiguration, impersonat
 	key := sha256sum(keyData)
 
 	if client, ok := f.clients[key]; ok {
-		client.validUntil = time.Now().Add(10 * time.Minute)
+		client.validUntil = time.Now().Add(15 * time.Minute)
 		return client, nil
 	}
 
@@ -148,7 +148,7 @@ func (f *ClientFactory) Get(clientConfig cluster.ClientConfiguration, impersonat
 		discoveryClient:  clientset,
 		eventBroadcaster: eventBroadcaster,
 		eventRecorder:    eventRecorder,
-		validUntil:       time.Now().Add(10 * time.Minute),
+		validUntil:       time.Now().Add(15 * time.Minute),
 	}
 	f.clients[key] = client
 
