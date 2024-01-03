@@ -23,6 +23,11 @@ jobs:
     - name: Checkout
       uses: actions/checkout@v4
 
+    - name: Setup go
+      uses: actions/setup-go@v5
+      with:
+        go-version-file: 'go.mod'
+
     - name: Check that generated artifacts are up-to-date
       run: |
         make generate
