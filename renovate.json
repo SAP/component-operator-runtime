@@ -23,7 +23,7 @@
       "matchDatasources": [
         "golang-version"
       ],
-      "rangeStrategy": "replace",
+      "rangeStrategy": "bump",
       "allowedVersions": "1.21"
     },
     {
