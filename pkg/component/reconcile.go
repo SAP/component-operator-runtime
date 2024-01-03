@@ -114,6 +114,7 @@ func NewReconciler[T Component](name string, client client.Client, discoveryClie
 		name:              name,
 		resourceGenerator: resourceGenerator,
 		backoff:           backoff.NewBackoff(5 * time.Second),
+		postReadHooks:     []HookFunc[T]{resolveReferences[T]},
 	}
 }
 
