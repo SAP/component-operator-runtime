@@ -48,16 +48,9 @@ import (
 	"github.com/sap/component-operator-runtime/pkg/types"
 )
 
-// TODO: simplify the manager's client creation (do not force it to uncache T and the apiextensions/apiregistration types)
-// TODO: the default client does not cache unstructured objects; from the perspective of this package it should be fine to cache unstructured ...
-
 // TODO: we should disallow generators to produce manifests using metadata.generatName (it would break the whole inventory logic)
 
 // TODO: in general add more retry to overcome 409 update errors (also etcd storage errors because of missed precondition on delete)
-
-// TODO: it might be desirable to run the component operator outside the target cluster;
-// maybe even in a 1:n layout (where one component operator manages multiple target clusters);
-// in this case, we would need a way to specify a kubeconfig per operator CRO;
 
 const (
 	readyConditionReasonNew                = "FirstSeen"
@@ -92,6 +85,7 @@ type HookFunc[T Component] func(ctx context.Context, client client.Client, compo
 // Reconciler provides the implementation of controller-runtime's Reconciler interface, for a given Component type T.
 type Reconciler[T Component] struct {
 	name               string
+	id                 string
 	client             cluster.Client
 	resourceGenerator  manifests.Generator
 	clients            *internalcluster.ClientFactory
@@ -189,7 +183,7 @@ func (r *Reconciler[T]) Reconcile(ctx context.Context, req ctrl.Request) (result
 	if err != nil {
 		return ctrl.Result{}, errors.Wrap(err, "error getting client for component")
 	}
-	target := newReconcileTarget[T](r.name, targetClient, r.resourceGenerator)
+	target := newReconcileTarget[T](r.name, r.id, targetClient, r.resourceGenerator)
 
 	// do the reconciliation
 	if component.GetDeletionTimestamp().IsZero() {
@@ -334,6 +328,12 @@ func (r *Reconciler[T]) WithPostDeleteHook(hook HookFunc[T]) *Reconciler[T] {
 // Register the reconciler with a given controller-runtime Manager.
 func (r *Reconciler[T]) SetupWithManager(mgr ctrl.Manager) error {
 	// TODO: add some check (and lock?) to prevent SetupWithManager() being called more than once
+	kubeSystemNamespace := &corev1.Namespace{}
+	if err := mgr.GetAPIReader().Get(context.Background(), apitypes.NamespacedName{Name: "kube-system"}, kubeSystemNamespace); err != nil {
+		return errors.Wrap(err, "error retrieving uid of kube-system namespace")
+	}
+	r.id = string(kubeSystemNamespace.UID)
+
 	discoveryClient, err := discovery.NewDiscoveryClientForConfigAndClient(mgr.GetConfig(), mgr.GetHTTPClient())
 	if err != nil {
 		return errors.Wrap(err, "error creating discovery client")
@@ -373,6 +373,7 @@ func (r *Reconciler[T]) getClientForComponent(component T) (cluster.Client, erro
 
 type reconcileTarget[T Component] struct {
 	reconcilerName               string
+	reconcilerId                 string
 	client                       cluster.Client
 	resourceGenerator            manifests.Generator
 	labelKeyOwnerId              string
@@ -384,9 +385,10 @@ type reconcileTarget[T Component] struct {
 	annotationKeyOwnerId         string
 }
 
-func newReconcileTarget[T Component](reconcilerName string, client cluster.Client, resourceGenerator manifests.Generator) *reconcileTarget[T] {
+func newReconcileTarget[T Component](reconcilerName string, reconcilerId string, client cluster.Client, resourceGenerator manifests.Generator) *reconcileTarget[T] {
 	return &reconcileTarget[T]{
 		reconcilerName:               reconcilerName,
+		reconcilerId:                 reconcilerId,
 		client:                       client,
 		resourceGenerator:            resourceGenerator,
 		labelKeyOwnerId:              reconcilerName + "/" + types.LabelKeySuffixOwnerId,
@@ -402,7 +404,10 @@ func newReconcileTarget[T Component](reconcilerName string, client cluster.Clien
 func (t *reconcileTarget[T]) Reconcile(ctx context.Context, component T) (bool, error) {
 	namespace := component.GetDeploymentNamespace()
 	name := component.GetDeploymentName()
-	ownerId := component.GetNamespace() + "/" + component.GetName()
+	ownerId := t.reconcilerId + "/" + component.GetNamespace() + "/" + component.GetName()
+	hashedOwnerId := sha256base32([]byte(ownerId))
+	// TODO: remove the legacyOwnerId check (needed until we are sure that all owner id labels have the new format)
+	legacyOwnerId := component.GetNamespace() + "_" + component.GetName()
 	status := component.GetStatus()
 
 	// render manifests
@@ -564,7 +569,7 @@ func (t *reconcileTarget[T]) Reconcile(ctx context.Context, component T) (bool, 
 		if err != nil {
 			return false, errors.Wrapf(err, "error serializing object %s", types.ObjectKeyToString(object))
 		}
-		digest := sha256hash(raw)
+		digest := sha256hex(raw)
 
 		reconcilePolicy := object.GetAnnotations()[t.annotationKeyReconcilePolicy]
 		switch reconcilePolicy {
@@ -588,15 +593,15 @@ func (t *reconcileTarget[T]) Reconcile(ctx context.Context, component T) (bool, 
 			}
 			// check ownership
 			if existingObject != nil {
-				existingOwnerId := existingObject.GetAnnotations()[t.annotationKeyOwnerId]
+				existingOwnerId := existingObject.GetLabels()[t.labelKeyOwnerId]
 				if existingOwnerId == "" {
 					// TODO: make this configurable by some switch on Reconciler (or even per Component instance)
 					processForeign := true
 					if !processForeign {
 						return false, fmt.Errorf("found existing object %s without owner", types.ObjectKeyToString(object))
 					}
-				} else if existingOwnerId != ownerId {
-					return false, fmt.Errorf("owner conflict; object %s is owned by %s", types.ObjectKeyToString(object), existingOwnerId)
+				} else if existingOwnerId != hashedOwnerId && existingOwnerId != legacyOwnerId {
+					return false, fmt.Errorf("owner conflict; object %s is owned by %s", types.ObjectKeyToString(object), existingObject.GetAnnotations()[t.annotationKeyOwnerId])
 				}
 			}
 			status.Inventory = append(status.Inventory, &InventoryItem{})
@@ -780,7 +785,7 @@ func (t *reconcileTarget[T]) Reconcile(ctx context.Context, component T) (bool, 
 					return false, errors.Wrapf(err, "error reading object %s", item)
 				}
 
-				setLabel(object, t.labelKeyOwnerId, strings.Replace(ownerId, "/", "_", -1))
+				setLabel(object, t.labelKeyOwnerId, hashedOwnerId)
 				setAnnotation(object, t.annotationKeyOwnerId, ownerId)
 				setAnnotation(object, t.annotationKeyDigest, item.Digest)
 
@@ -1083,7 +1088,18 @@ func (t *reconcileTarget[T]) isCrdUsed(ctx context.Context, crd *apiextensionsv1
 	list.SetGroupVersionKind(gvk)
 	labelSelector := labels.Everything()
 	if onlyForeign {
-		labelSelector = mustParseLabelSelector(t.labelKeyOwnerId + "!=" + crd.Labels[t.labelKeyOwnerId])
+		// TODO: remove the below workaround logic (needed until we are sure that all owner id labels have the new format)
+		hashedOwnerId := ""
+		legacyOwnerId := ""
+		if strings.ContainsRune(crd.Labels[t.labelKeyOwnerId], '_') {
+			hashedOwnerId = sha256base32([]byte(t.reconcilerId + "/" + crd.Annotations[t.annotationKeyOwnerId]))
+			legacyOwnerId = crd.Labels[t.labelKeyOwnerId]
+		} else {
+			hashedOwnerId = crd.Labels[t.labelKeyOwnerId]
+			legacyOwnerId = strings.Join(slices.Last(strings.Split(crd.Annotations[t.annotationKeyOwnerId], "/"), 2), "_")
+		}
+		labelSelector = mustParseLabelSelector(t.labelKeyOwnerId + " notin (" + hashedOwnerId + "," + legacyOwnerId + ")")
+		// labelSelector = mustParseLabelSelector(t.labelKeyOwnerId + "!=" + crd.Labels[t.labelKeyOwnerId])
 	}
 	if err := t.client.List(ctx, list, &client.ListOptions{LabelSelector: labelSelector, Limit: 1}); err != nil {
 		return false, err
@@ -1105,7 +1121,18 @@ func (t *reconcileTarget[T]) isApiServiceUsed(ctx context.Context, apiService *a
 	}
 	labelSelector := labels.Everything()
 	if onlyForeign {
-		labelSelector = mustParseLabelSelector(t.labelKeyOwnerId + "!=" + apiService.Labels[t.labelKeyOwnerId])
+		// TODO: remove the below workaround logic (needed until we are sure that all owner id labels have the new format)
+		hashedOwnerId := ""
+		legacyOwnerId := ""
+		if strings.ContainsRune(apiService.Labels[t.labelKeyOwnerId], '_') {
+			hashedOwnerId = sha256base32([]byte(t.reconcilerId + "/" + apiService.Annotations[t.annotationKeyOwnerId]))
+			legacyOwnerId = apiService.Labels[t.labelKeyOwnerId]
+		} else {
+			hashedOwnerId = apiService.Labels[t.labelKeyOwnerId]
+			legacyOwnerId = strings.Join(slices.Last(strings.Split(apiService.Annotations[t.annotationKeyOwnerId], "/"), 2), "_")
+		}
+		labelSelector = mustParseLabelSelector(t.labelKeyOwnerId + " notin (" + hashedOwnerId + "," + legacyOwnerId + ")")
+		// labelSelector = mustParseLabelSelector(t.labelKeyOwnerId + "!=" + crd.Labels[t.labelKeyOwnerId])
 	}
 	for _, kind := range kinds {
 		gvk := schema.GroupVersionKind{
