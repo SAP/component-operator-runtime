@@ -89,7 +89,7 @@ var (
 	controllerToolsVersion         = "v0.13.0"
 	codeGeneratorVersion           = "v0.29.0"
 	admissionWebhookRuntimeVersion = "v0.1.0"
-	envtestKubernetesVersion       = "1.29.0"
+	envtestKubernetesVersion       = "1.28.3"
 )
 
 func main() {
