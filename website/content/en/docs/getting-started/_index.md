@@ -55,7 +55,7 @@ Now, after having the skeleton generated, we have to breathe life into the contr
 The first step is to enhance the spec of the generated custom resource type `MyComponentSpec` in `api/v1alpha1/types.go`.
 In principle, all the attributes parameterizing the deployment of the managed commponent should be modeled there.
 
-Whenever you change the runtime type, you should invoke `make generate` and `make manifests` in order to 
+Whenever you change the runtime type, you should invoke `make generate` and `make manifests` in order to
 update the generated code artifacts and the custom resource definition; afterwards you should re-apply the
 custom resource definition to the cluster.
 
@@ -74,7 +74,7 @@ concrete manifests of the dependent objects, which will then be applied to the c
 
 In some cases, the best option is to implement your own resource generator from scratch. When doing so, the returned resources `[]client.Object` either have to be of type `*unstructured.Unstructured`, or the according type must be known to the used scheme.
 
-In many other cases however, it makes more sense to just reuse one of the [generic generators shipped with this 
+In many other cases however, it makes more sense to just reuse one of the [generic generators shipped with this
   repository](../generators).
 
 

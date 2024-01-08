@@ -22,13 +22,13 @@ package component
 // Besides being a conroller-runtime client.Object, the implementing type has to expose accessor
 // methods for the components's spec and status, GetSpec() and GetStatus().
 type Component interface {
-	client.Object
-	// Return a read-only accessor to the component's spec.
-	// The returned value has to implement the types.Unstructurable interface.
-	GetSpec() types.Unstructurable
-	// Return a read-write (usually a pointer) accessor to the component's status,
-	// resp. to the corresponding substruct if the status extends component.Status.
-	GetStatus() *Status
+  client.Object
+  // Return a read-only accessor to the component's spec.
+  // The returned value has to implement the types.Unstructurable interface.
+  GetSpec() types.Unstructurable
+  // Return a read-write (usually a pointer) accessor to the component's status,
+  // resp. to the corresponding substruct if the status extends component.Status.
+  GetStatus() *Status
 }
 ```
 
@@ -54,13 +54,13 @@ package component
 
 // Component Status. Components must include this into their status.
 type Status struct {
-	ObservedGeneration int64            `json:"observedGeneration"`
-	AppliedGeneration  int64            `json:"appliedGeneration,omitempty"`
-	LastObservedAt     *metav1.Time     `json:"lastObservedAt,omitempty"`
-	LastAppliedAt      *metav1.Time     `json:"lastAppliedAt,omitempty"`
-	Conditions         []Condition      `json:"conditions,omitempty"`
-	State              State            `json:"state,omitempty"`
-	Inventory          []*InventoryItem `json:"inventory,omitempty"`
+  ObservedGeneration int64            `json:"observedGeneration"`
+  AppliedGeneration  int64            `json:"appliedGeneration,omitempty"`
+  LastObservedAt     *metav1.Time     `json:"lastObservedAt,omitempty"`
+  LastAppliedAt      *metav1.Time     `json:"lastAppliedAt,omitempty"`
+  Conditions         []Condition      `json:"conditions,omitempty"`
+  State              State            `json:"state,omitempty"`
+  Inventory          []*InventoryItem `json:"inventory,omitempty"`
 }
 ```
 
@@ -76,28 +76,28 @@ package component
 // to explicitly specify target namespace and name of the deployment (otherwise this will be defaulted as
 // the namespace and name of the component object itself).
 type PlacementConfiguration interface {
-	// Return target namespace for the component deployment.
-	// If the returned value is not the empty string, then this is the value that will be passed
-	// to Generator.Generate() as namespace and, in addition, rendered namespaced resources with
-	// unspecified namespace will be placed in this namespace.
-	GetDeploymentNamespace() string
-	// Return target name for the component deployment.
-	// If the returned value is not the empty string, then this is the value that will be passed
-	// to Generator.Generator() as name.
-	GetDeploymentName() string
+  // Return target namespace for the component deployment.
+  // If the returned value is not the empty string, then this is the value that will be passed
+  // to Generator.Generate() as namespace and, in addition, rendered namespaced resources with
+  // unspecified namespace will be placed in this namespace.
+  GetDeploymentNamespace() string
+  // Return target name for the component deployment.
+  // If the returned value is not the empty string, then this is the value that will be passed
+  // to Generator.Generator() as name.
+  GetDeploymentName() string
 }
 ```
 
 In addition, the component (or its spec) may implement
 
 ```go
-package component 
+package component
 
 // The ClientConfiguration interface is meant to be implemented by components (or their spec) which offer
 // remote deployments.
 type ClientConfiguration interface {
-	// Get kubeconfig content. Should return nil if default local client shall be used.
-	GetKubeConfig() []byte
+  // Get kubeconfig content. Should return nil if default local client shall be used.
+  GetKubeConfig() []byte
 }
 ```
 
@@ -109,12 +109,12 @@ package component
 // The ImpersonationConfiguration interface is meant to be implemented by components (or their spec) which offer
 // impersonated deployments.
 type ImpersonationConfiguration interface {
-	// Return impersonation user. Should return system:serviceaccount:<namespace>:<serviceaccount>
-	// if a service account is used for impersonation. Should return an empty string
-	// if user shall not be impersonated.
-	GetImpersonationUser() string
-	// Return impersonation groups. Should return nil if groups shall not be impersonated.
-	GetImpersonationGroups() []string
+  // Return impersonation user. Should return system:serviceaccount:<namespace>:<serviceaccount>
+  // if a service account is used for impersonation. Should return an empty string
+  // if user shall not be impersonated.
+  GetImpersonationUser() string
+  // Return impersonation groups. Should return nil if groups shall not be impersonated.
+  GetImpersonationGroups() []string
 }
 ```
 
@@ -140,11 +140,11 @@ package manifests
 // methods (if non-empty). The parameters argument will be assigned the return value
 // of the component's GetSpec() method.
 type Generator interface {
-	Generate(ctx context.Context, namespace string, name string, parameters types.Unstructurable) ([]client.Object, error)
+  Generate(ctx context.Context, namespace string, name string, parameters types.Unstructurable) ([]client.Object, error)
 }
 ```
 
-Component controllers can of course implement their own generator. In many cases (for example if there exists a 
+Component controllers can of course implement their own generator. In many cases (for example if there exists a
 Helm chart or kustomization for the component), one of the [generators bundled with this repository](../../generators) can be used.
 
 Generators may optionally implement
