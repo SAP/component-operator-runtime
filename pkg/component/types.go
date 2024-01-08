@@ -14,17 +14,9 @@ import (
 
 // Component is the central interface that component operators have to implement.
 // Besides being a conroller-runtime client.Object, the implementing type has to expose accessor
-// methods for the deployment's target namespace and name, and for the components's spec and status,
-// via methods GetSpec() and GetStatus().
+// methods for the components's spec and status, GetSpec() and GetStatus().
 type Component interface {
 	client.Object
-	// Return target namespace for the component deployment.
-	// This is the value that will be passed to Generator.Generate() as namespace.
-	// In addition, rendered namespaced resources without namespace will be placed in this namespace.
-	GetDeploymentNamespace() string
-	// Return target name for the component deployment.
-	// This is the value that will be passed to Generator.Generator() as name.
-	GetDeploymentName() string
 	// Return a read-only accessor to the component's spec.
 	// The returned value has to implement the types.Unstructurable interface.
 	GetSpec() types.Unstructurable
@@ -33,9 +25,43 @@ type Component interface {
 	GetStatus() *Status
 }
 
+// The PlacementConfiguration interface is meant to be implemented by components (or their spec) which allow
+// to explicitly specify target namespace and name of the deployment (otherwise this will be defaulted as
+// the namespace and name of the component object itself).
+type PlacementConfiguration interface {
+	// Return target namespace for the component deployment.
+	// If the returned value is not the empty string, then this is the value that will be passed
+	// to Generator.Generate() as namespace and, in addition, rendered namespaced resources with
+	// unspecified namespace will be placed in this namespace.
+	GetDeploymentNamespace() string
+	// Return target name for the component deployment.
+	// If the returned value is not the empty string, then this is the value that will be passed
+	// to Generator.Generator() as name.
+	GetDeploymentName() string
+}
+
+// The ClientConfiguration interface is meant to be implemented by components (or their spec) which offer
+// remote deployments.
+type ClientConfiguration interface {
+	// Get kubeconfig content. Should return nil if default local client shall be used.
+	GetKubeConfig() []byte
+}
+
+// The ImpersonationConfiguration interface is meant to be implemented by components (or their spec) which offer
+// impersonated deployments.
+type ImpersonationConfiguration interface {
+	// Return impersonation user. Should return system:serviceaccount:<namespace>:<serviceaccount>
+	// if a service account is used for impersonation. Should return an empty string
+	// if user shall not be impersonated.
+	GetImpersonationUser() string
+	// Return impersonation groups. Should return nil if groups shall not be impersonated.
+	GetImpersonationGroups() []string
+}
+
 // +kubebuilder:object:generate=true
 
-// Component Spec. Types implementing the Component interface may include this into their spec.
+// Legacy placement spec. Components may include this into their spec.
+// Deprecation warning: use PlacementSpec instead.
 type Spec struct {
 	Namespace string `json:"namespace,omitempty"`
 	Name      string `json:"name,omitempty"`
@@ -43,7 +69,36 @@ type Spec struct {
 
 // +kubebuilder:object:generate=true
 
-// Component Status. Types implementing the Component interface must include this into their status.
+// PlacementSpec defines a namespace and name. Components providing PlacementConfiguration may include this into their spec.
+type PlacementSpec struct {
+	Namespace string `json:"namespace,omitempty"`
+	Name      string `json:"name,omitempty"`
+}
+
+// +kubebuilder:object:generate=true
+
+// ClientSpec defines a reference to another cluster by kubeconfig. Components providing ClientConfiguration may include this into their spec.
+type ClientSpec struct {
+	KubeConfig *KubeConfigSpec `json:"kubeConfig,omitempty"`
+}
+
+// +kubebuilder:object:generate=true
+
+// KubeConfigSpec defines a reference to a kubeconfig.
+type KubeConfigSpec struct {
+	SecretRef SecretKeyReference `json:"secretRef" fallbackKeys:"value,value.yaml,value.yml"`
+}
+
+// +kubebuilder:object:generate=true
+
+// ImpersonationSpec defines a service account name. Components providing ImpersonationConfiguration may include this into their spec.
+type ImpersonationSpec struct {
+	ServiceAccountName string `json:"serviceAccountName,omitempty"`
+}
+
+// +kubebuilder:object:generate=true
+
+// Component Status. Components must include this into their status.
 type Status struct {
 	ObservedGeneration int64        `json:"observedGeneration"`
 	AppliedGeneration  int64        `json:"appliedGeneration,omitempty"`

@@ -36,6 +36,7 @@ func (r *ConfigMapReference) load(ctx context.Context, client client.Client, nam
 	return nil
 }
 
+// Return the previously loaded configmap data.
 func (r *ConfigMapReference) Data() map[string]string {
 	return r.data
 }
@@ -74,6 +75,7 @@ func (r *ConfigMapKeyReference) load(ctx context.Context, client client.Client, 
 	}
 }
 
+// Return the previously loaded value of the configmap key.
 func (r *ConfigMapKeyReference) Value() string {
 	return r.value
 }
@@ -96,6 +98,7 @@ func (r *SecretReference) load(ctx context.Context, client client.Client, namesp
 	return nil
 }
 
+// Return the previously loaded secret data.
 func (r *SecretReference) Data() map[string][]byte {
 	return r.data
 }
@@ -134,18 +137,13 @@ func (r *SecretKeyReference) load(ctx context.Context, client client.Client, nam
 	}
 }
 
+// Return the previously loaded value of the secret key.
 func (r *SecretKeyReference) Value() []byte {
 	return r.value
 }
 
 func resolveReferences[T Component](ctx context.Context, client client.Client, component T) error {
-	// note: the following relies on T being a pointer type; but this is reasonable, the same assumption
-	// is made in newComponent() ...
-	spec := reflect.ValueOf(component).Elem().FieldByName("Spec")
-	if spec.Kind() != reflect.Pointer {
-		spec = spec.Addr()
-	}
-	return walk.Walk(spec, func(x any, path []string, tag reflect.StructTag) error {
+	return walk.Walk(getSpec(component), func(x any, path []string, tag reflect.StructTag) error {
 		switch r := x.(type) {
 		case *ConfigMapReference:
 			return r.load(ctx, client, component.GetNamespace())

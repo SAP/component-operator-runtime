@@ -8,15 +8,17 @@ package manifests
 import (
 	"context"
 
-	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/sap/component-operator-runtime/pkg/types"
 )
 
 // Resource generator interface.
-// When called from the reconciler, the arguments namespace, name and parameters will match the return values
-// of the component's GetDeploymentNamespace(), GetDeploymentName() and GetSpec() methods, respectively.
+// When called from the reconciler, the arguments namespace and name will match the
+// component's namespace and name or, if the component or its spec implement the
+// PlacementConfiguration interface, the return values of the GetDeploymentNamespace(), GetDeploymentName()
+// methods (if non-empty). The parameters argument will be assigned the return value
+// of the component's GetSpec() method.
 type Generator interface {
 	Generate(ctx context.Context, namespace string, name string, parameters types.Unstructurable) ([]client.Object, error)
 }
@@ -38,9 +40,4 @@ type ParameterTransformer interface {
 // Allows to manipulate the parameters returned by an existing generator.
 type ObjectTransformer interface {
 	TransformObjects(namespace string, name string, objects []client.Object) ([]client.Object, error)
-}
-
-// SchemeBuilder interface.
-type SchemeBuilder interface {
-	AddToScheme(scheme *runtime.Scheme) error
 }

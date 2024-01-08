@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"math"
 	"reflect"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -42,8 +43,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
 	"github.com/sap/component-operator-runtime/internal/backoff"
-	internalcluster "github.com/sap/component-operator-runtime/internal/cluster"
-	"github.com/sap/component-operator-runtime/pkg/cluster"
+	"github.com/sap/component-operator-runtime/internal/cluster"
 	"github.com/sap/component-operator-runtime/pkg/manifests"
 	"github.com/sap/component-operator-runtime/pkg/types"
 )
@@ -88,7 +88,7 @@ type Reconciler[T Component] struct {
 	id                 string
 	client             cluster.Client
 	resourceGenerator  manifests.Generator
-	clients            *internalcluster.ClientFactory
+	clients            *cluster.ClientFactory
 	backoff            *backoff.Backoff
 	postReadHooks      []HookFunc[T]
 	preReconcileHooks  []HookFunc[T]
@@ -338,10 +338,10 @@ func (r *Reconciler[T]) SetupWithManager(mgr ctrl.Manager) error {
 	if err != nil {
 		return errors.Wrap(err, "error creating discovery client")
 	}
-	r.client = internalcluster.NewClient(mgr.GetClient(), discoveryClient, mgr.GetEventRecorderFor(r.name))
+	r.client = cluster.NewClient(mgr.GetClient(), discoveryClient, mgr.GetEventRecorderFor(r.name))
 
-	schemeBuilder, _ := r.resourceGenerator.(manifests.SchemeBuilder)
-	r.clients, err = internalcluster.NewClientFactory(r.name, mgr.GetConfig(), schemeBuilder)
+	schemeBuilder, _ := r.resourceGenerator.(types.SchemeBuilder)
+	r.clients, err = cluster.NewClientFactory(r.name, mgr.GetConfig(), schemeBuilder)
 	if err != nil {
 		return errors.Wrap(err, "error creating client factory")
 	}
@@ -355,16 +355,40 @@ func (r *Reconciler[T]) SetupWithManager(mgr ctrl.Manager) error {
 }
 
 func (r *Reconciler[T]) getClientForComponent(component T) (cluster.Client, error) {
-	clientConfiguration, haveClientConfiguration := Component(component).(cluster.ClientConfiguration)
-	impersonationConfiguration, haveImpersonationConfiguration := Component(component).(cluster.ImpersonationConfiguration)
-	_, haveCustomScheme := r.resourceGenerator.(manifests.SchemeBuilder)
+	placementConfiguration, havePlacementConfiguration := assertPlacementConfiguration(component)
+	clientConfiguration, haveClientConfiguration := assertClientConfiguration(component)
+	impersonationConfiguration, haveImpersonationConfiguration := assertImpersonationConfiguration(component)
+	_, haveCustomScheme := r.resourceGenerator.(types.SchemeBuilder)
 	// TODO: we should always return a factory client, even in the default case;
 	// however this would be an incompatible change; people who previously supplied a custom scheme via the manager's client
 	// would now have to do the same by adding AddToScheme() to the used generator.
 	if !haveClientConfiguration && !haveImpersonationConfiguration && !haveCustomScheme {
 		return r.client, nil
 	}
-	client, err := r.clients.Get(clientConfiguration, impersonationConfiguration)
+	var kubeconfig []byte
+	var impersonationUser string
+	var impersonationGroups []string
+	if haveClientConfiguration {
+		kubeconfig = clientConfiguration.GetKubeConfig()
+	}
+	if haveImpersonationConfiguration {
+		impersonationUser = impersonationConfiguration.GetImpersonationUser()
+		impersonationGroups = impersonationConfiguration.GetImpersonationGroups()
+		r := regexp.MustCompile(`^(system:serviceaccount):(.*):(.+)$`)
+		if m := r.FindStringSubmatch(impersonationUser); m != nil {
+			if m[2] == "" {
+				namespace := ""
+				if havePlacementConfiguration {
+					namespace = placementConfiguration.GetDeploymentNamespace()
+				}
+				if namespace == "" {
+					namespace = component.GetNamespace()
+				}
+				impersonationUser = fmt.Sprintf("%s:%s:%s", m[1], namespace, m[3])
+			}
+		}
+	}
+	client, err := r.clients.Get(kubeconfig, impersonationUser, impersonationGroups)
 	if err != nil {
 		return nil, errors.Wrap(err, "error getting remote or impersonated client")
 	}
@@ -402,8 +426,18 @@ func newReconcileTarget[T Component](reconcilerName string, reconcilerId string,
 }
 
 func (t *reconcileTarget[T]) Reconcile(ctx context.Context, component T) (bool, error) {
-	namespace := component.GetDeploymentNamespace()
-	name := component.GetDeploymentName()
+	namespace := ""
+	name := ""
+	if placementConfiguration, ok := assertPlacementConfiguration(component); ok {
+		namespace = placementConfiguration.GetDeploymentNamespace()
+		name = placementConfiguration.GetDeploymentName()
+	}
+	if namespace == "" {
+		namespace = component.GetNamespace()
+	}
+	if name == "" {
+		name = component.GetName()
+	}
 	ownerId := t.reconcilerId + "/" + component.GetNamespace() + "/" + component.GetName()
 	hashedOwnerId := sha256base32([]byte(ownerId))
 	// TODO: remove the legacyOwnerId check (needed until we are sure that all owner id labels have the new format)
@@ -727,7 +761,7 @@ func (t *reconcileTarget[T]) Reconcile(ctx context.Context, component T) (bool, 
 	// in other words: status.Inventory and objects contains the same resources
 
 	// create missing namespaces
-	// TODO: make this more configurable
+	// TODO: make auto-creation of namespaces more configurable
 	for _, namespace := range findMissingNamespaces(objects) {
 		if err := t.client.Get(ctx, apitypes.NamespacedName{Name: namespace}, &corev1.Namespace{}); err != nil {
 			if !apierrors.IsNotFound(err) {

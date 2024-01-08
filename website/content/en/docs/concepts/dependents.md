@@ -14,7 +14,7 @@ For example, it will create and delete objects in a meaningful order, trying to 
 A more remarkable feature of component-operator-runtime is that it will block deletion of dependent objects
 as long as non-managed instances of managed extension types (such as custom resource definitions) exist.
 To be more precise, assume for example, that the managed component contains some custom resource definition, plus the according operator.
-Then, if the component resource would be deleted, none of the component's dependent objects would be touched as long as there exist foreign
+Then, if the component resource gets deleted, none of the component's dependent objects will be touched as long as there exist foreign
 instances of the managed custom resource definition in the cluster.
 
 In some special situations, it is desirable to have even more control on the lifecycle of the dependent objects.

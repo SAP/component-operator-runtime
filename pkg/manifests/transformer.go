@@ -20,12 +20,16 @@ import (
 	"github.com/sap/component-operator-runtime/pkg/types"
 )
 
+// TemplateParameterTransformer allows to transform parameters through a given go template.
+// The template can use all functions from the sprig library, plus toYaml, fromYaml, toJson, fromJson, required.
 type TemplateParameterTransformer struct {
 	template *template.Template
 }
 
 var _ ParameterTransformer = &TemplateParameterTransformer{}
 
+// Create a new TemplateParameterTransformer (reading the template from the given fsys and path).
+// If fsys is nil, the local OS filesystem will be used.
 func NewTemplateParameterTransformer(fsys fs.FS, path string) (*TemplateParameterTransformer, error) {
 	t := &TemplateParameterTransformer{}
 
@@ -51,6 +55,7 @@ func NewTemplateParameterTransformer(fsys fs.FS, path string) (*TemplateParamete
 	return t, nil
 }
 
+// Transform parameters.
 func (t *TemplateParameterTransformer) TransformParameters(namespace string, name string, parameters types.Unstructurable) (types.Unstructurable, error) {
 	data := parameters.ToUnstructured()
 	data["Namespace"] = namespace

@@ -26,8 +26,8 @@ import (
 	kustfsys "sigs.k8s.io/kustomize/kyaml/filesys"
 	kyaml "sigs.k8s.io/yaml"
 
+	"github.com/sap/component-operator-runtime/internal/cluster"
 	"github.com/sap/component-operator-runtime/internal/templatex"
-	"github.com/sap/component-operator-runtime/pkg/cluster"
 	"github.com/sap/component-operator-runtime/pkg/types"
 )
 

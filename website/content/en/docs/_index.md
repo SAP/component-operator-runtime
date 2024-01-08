@@ -9,7 +9,7 @@ This repository provides a framework supporting the development of opinionated K
 managing the lifecycle of arbitrary deployment components of Kubernetes clusters, with a special focus
 on such components that are or contain Kubernetes operators themselves.
 
-It can therefore serve as a starting point to develop [SAP Kyma module operators](https://github.com/kyma-project/template-operator), 
+It can therefore serve as a starting point to develop [SAP Kyma module operators](https://github.com/kyma-project/template-operator),
 but can also be used independently of Kyma.
 
 Regarding its mission statement, this project can be compared with the [Operator Lifecycle Manager (OLM)](https://olm.operatorframework.io/).

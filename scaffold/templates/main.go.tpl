@@ -126,7 +126,7 @@ func main() {
 	{{- end }}
 
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
-		Scheme:                        scheme,
+		Scheme: scheme,
 		Client: client.Options{
 			Cache: &client.CacheOptions{
 				DisableFor: append(operator.GetUncacheableTypes(), &apiextensionsv1.CustomResourceDefinition{}, &apiregistrationv1.APIService{}),
