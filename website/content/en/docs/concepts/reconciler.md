@@ -31,7 +31,7 @@ The passed type parameter `T Component` is the concrete runtime type of the comp
 - `client`, `discoveryClient`, `eventRecorder` and `scheme` are deprecated and will be removed in future releases; they can be passed as `nil`
 - `resourceGenerator` is an implementation of the `Generator` interface, describing how the dependent objects are rendered from the component's spec.
 
-The object returned by `NewReconciler` implements the controller-runtime `Reconciler` interface, and can therefore be used as a drop-in
+The object returned by `NewReconciler` implements controller-runtime's `Reconciler` interface, and can therefore be used as a drop-in
 in kubebuilder managed projects. After creation, the reconciler  has to be registered with the responsible controller-runtime manager instance by calling
 
 ```go

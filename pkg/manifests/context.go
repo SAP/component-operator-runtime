@@ -9,7 +9,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/sap/component-operator-runtime/pkg/cluster"
+	"github.com/sap/component-operator-runtime/internal/cluster"
 )
 
 type reconcilerNameContextKey struct{}

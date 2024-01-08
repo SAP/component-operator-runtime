@@ -14,4 +14,4 @@ Other than existing tools addressing this case, such as the [Operator Lifecycle 
 this project proposes a more opinionated programming model. That is, the idea is to represent the managed component by an own custom resource type,
 which (usually) will be instantiated only once in the cluster. We feel encouraged to go this way, as many community projects are following the pattern of providing dedicated lifecycle operators.
 
-The component-operator-runtime framework plugs into the [controller-runtime](https://github.com/kubernetes-sigs/controller-runtime) SDK by implementing the controller-runtime `Reconciler` interface.
+The component-operator-runtime framework plugs into the [controller-runtime](https://github.com/kubernetes-sigs/controller-runtime) SDK by implementing controller-runtime's `Reconciler` interface.

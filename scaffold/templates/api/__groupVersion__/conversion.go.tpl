@@ -46,14 +46,14 @@ var _ conversion.Convertible = &{{ .kind }}{}
 func (src *{{ .kind }}) ConvertTo(dstHub conversion.Hub) error {
 	dst := dstHub.(*_HUB_API_VERSION_.{{ .kind }})
 	dst.ObjectMeta = src.ObjectMeta
-	// Add logic here to convert src.Spec into dst.Spec.
+	// Add logic here to convert src.Spec into dst.Spec and src.Status into dst.Status.
 	return nil
 }
 
 func (dst *{{ .kind }}) ConvertFrom(srcHub conversion.Hub) error {
 	src := srcHub.(*_HUB_API_VERSION_.{{ .kind }})
 	dst.ObjectMeta = src.ObjectMeta
-	// Add logic here to convert src.Spec into dst.Spec.
+	// Add logic here to convert src.Spec into dst.Spec and src.Status into dst.Status.
 	return nil
 }
 */

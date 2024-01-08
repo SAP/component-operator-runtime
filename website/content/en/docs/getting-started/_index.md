@@ -59,7 +59,7 @@ Whenever you change the runtime type, you should invoke `make generate` and `mak
 update the generated code artifacts and the custom resource definition; afterwards you should re-apply the
 custom resource definition to the cluster.
 
-The next step is to implement a meaningful resource generator (the scaffolding just put a dummy implementation called `DummyGenerator` into `main.go`). Writing such a resource generator means to implement the interface
+The next step is to implement a meaningful resource generator (the scaffolding just puts a dummy implementation called `DummyGenerator` into `main.go`). Writing such a resource generator means to implement the interface
 
 ```go
 type Generator interface {
@@ -67,12 +67,12 @@ type Generator interface {
 }
 ```
 
-When called by the framework, the `namespace`, `name`, `parameters` arguments of the `Generate()` method will be assigned the respective return values
-of the `GetDeploymentNamespace()`, `GetDeploymentName()`, `GetSpec()` methods of the component's runtime custom resource type.
-In other words, the spec of the component resource will be fed into the resource generator, which will return the
+When called by the framework, the `namespace` and `name` arguments of the `Generate()` method will be assigned the component's namespace and name or, if the component or its spec implements the `PlacementConfiguration` interface, they will match the return values
+of the respective `GetDeploymentNamespace()`, `GetDeploymentName()` methods. The `parameter` argument will be set to the return value of the component's `GetSpec()` method.
+In simplistic words, the spec of the component resource will be fed into the resource generator, which will return the
 concrete manifests of the dependent objects, which will then be applied to the cluster.
 
-In some cases, the best option is to implement your own resource generator from scratch. When doing so, the returned resources `[]client.Object` either have to be of type `*unstructured.Unstructured`, or the according type must be known to the scheme used by the component-operator-runtime reconciler.
+In some cases, the best option is to implement your own resource generator from scratch. When doing so, the returned resources `[]client.Object` either have to be of type `*unstructured.Unstructured`, or the according type must be known to the used scheme.
 
 In many other cases however, it makes more sense to just reuse one of the [generic generators shipped with this 
   repository](../generators).

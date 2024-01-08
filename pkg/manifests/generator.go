@@ -21,6 +21,7 @@ type tranformableGenerator struct {
 	objectTransformers    []ObjectTransformer
 }
 
+// Wrap a given Generator into a TransformableGenerator, to allow to attach further parameter or object transformers to it.
 func NewGenerator(generator Generator) TransformableGenerator {
 	return &tranformableGenerator{generator: generator}
 }

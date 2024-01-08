@@ -11,19 +11,17 @@ import (
 	"k8s.io/client-go/discovery"
 	"k8s.io/client-go/tools/record"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-
-	"github.com/sap/component-operator-runtime/pkg/cluster"
 )
 
-func NewClient(client client.Client, discoveryClient discovery.DiscoveryInterface, eventRecorder record.EventRecorder) cluster.Client {
-	return &Client{
+func NewClient(client client.Client, discoveryClient discovery.DiscoveryInterface, eventRecorder record.EventRecorder) Client {
+	return &clientImpl{
 		Client:          client,
 		discoveryClient: discoveryClient,
 		eventRecorder:   eventRecorder,
 	}
 }
 
-type Client struct {
+type clientImpl struct {
 	client.Client
 	discoveryClient  discovery.DiscoveryInterface
 	eventBroadcaster record.EventBroadcaster
@@ -31,10 +29,10 @@ type Client struct {
 	validUntil       time.Time
 }
 
-func (c *Client) DiscoveryClient() discovery.DiscoveryInterface {
+func (c *clientImpl) DiscoveryClient() discovery.DiscoveryInterface {
 	return c.discoveryClient
 }
 
-func (c *Client) EventRecorder() record.EventRecorder {
+func (c *clientImpl) EventRecorder() record.EventRecorder {
 	return c.eventRecorder
 }
