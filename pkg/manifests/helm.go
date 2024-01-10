@@ -46,6 +46,9 @@ var _ Generator = &HelmGenerator{}
 // Create a new HelmGenerator.
 // Deprecation warning: the parameters name, client and discoveryClient are ignored (can be passed as empty resp. nil) and will be removed in a future release;
 // the according values will be retrieved from the context passed to Generate().
+// If fsys is nil, the local operating system filesystem will be used, and chartPath can be an absolute or relative path (in the latter case it will be considered
+// relative to the current working directory). If fsys is non-nil, then chartPath should be a relative path; if an absolute path is supplied, it will be turned
+// An empty chartPath will be treated like ".".
 func NewHelmGenerator(name string, fsys fs.FS, chartPath string, client client.Client, discoveryClient discovery.DiscoveryInterface) (*HelmGenerator, error) {
 	g := HelmGenerator{}
 	g.data = make(map[string]any)
@@ -57,9 +60,12 @@ func NewHelmGenerator(name string, fsys fs.FS, chartPath string, client client.C
 			return nil, err
 		}
 		chartPath = absoluteChartPath[1:]
+	} else if filepath.IsAbs(chartPath) {
+		chartPath = chartPath[1:]
 	}
+	chartPath = filepath.Clean(chartPath)
 
-	chartRaw, err := fs.ReadFile(fsys, chartPath+"/Chart.yaml")
+	chartRaw, err := fs.ReadFile(fsys, filepath.Clean(chartPath+"/Chart.yaml"))
 	if err != nil {
 		return nil, err
 	}
@@ -75,7 +81,7 @@ func NewHelmGenerator(name string, fsys fs.FS, chartPath string, client client.C
 	}
 	g.data["Chart"] = chartData
 
-	valuesRaw, err := fs.ReadFile(fsys, chartPath+"/values.yaml")
+	valuesRaw, err := fs.ReadFile(fsys, filepath.Clean(chartPath+"/values.yaml"))
 	if err == nil {
 		g.data["Values"] = &map[string]any{}
 		if err := kyaml.Unmarshal(valuesRaw, g.data["Values"]); err != nil {

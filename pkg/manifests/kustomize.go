@@ -43,6 +43,9 @@ var _ Generator = &KustomizeGenerator{}
 // Create a new KustomizeGenerator.
 // Deprecation warning: the parameter client is ignored (can be passed as nil) and will be removed in a future release;
 // the according value will be retrieved from the context passed to Generate().
+// If fsys is nil, the local operating system filesystem will be used, and kustomizationPath can be an absolute or relative path (in the latter case it will be considered
+// relative to the current working directory). If fsys is non-nil, then kustomizationPath should be a relative path; if an absolute path is supplied, it will be turned
+// An empty kustomizationPath will be treated like ".".
 func NewKustomizeGenerator(fsys fs.FS, kustomizationPath string, templateSuffix string, client client.Client) (*KustomizeGenerator, error) {
 	g := KustomizeGenerator{
 		files:     make(map[string][]byte),
@@ -56,7 +59,10 @@ func NewKustomizeGenerator(fsys fs.FS, kustomizationPath string, templateSuffix 
 			return nil, err
 		}
 		kustomizationPath = absoluteKustomizationPath[1:]
+	} else if filepath.IsAbs(kustomizationPath) {
+		kustomizationPath = kustomizationPath[1:]
 	}
+	kustomizationPath = filepath.Clean(kustomizationPath)
 
 	options := &krusty.Options{
 		LoadRestrictions: kustypes.LoadRestrictionsNone,
