@@ -12,7 +12,7 @@ import (
 	"strings"
 
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/types"
+	apitypes "k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/sap/component-operator-runtime/internal/walk"
@@ -29,7 +29,7 @@ type ConfigMapReference struct {
 
 func (r *ConfigMapReference) load(ctx context.Context, client client.Client, namespace string) error {
 	configMap := &corev1.ConfigMap{}
-	if err := client.Get(ctx, types.NamespacedName{Namespace: namespace, Name: r.Name}, configMap); err != nil {
+	if err := client.Get(ctx, apitypes.NamespacedName{Namespace: namespace, Name: r.Name}, configMap); err != nil {
 		return err
 	}
 	r.data = configMap.Data
@@ -54,7 +54,7 @@ type ConfigMapKeyReference struct {
 
 func (r *ConfigMapKeyReference) load(ctx context.Context, client client.Client, namespace string, fallbackKeys ...string) error {
 	configMap := &corev1.ConfigMap{}
-	if err := client.Get(ctx, types.NamespacedName{Namespace: namespace, Name: r.Name}, configMap); err != nil {
+	if err := client.Get(ctx, apitypes.NamespacedName{Namespace: namespace, Name: r.Name}, configMap); err != nil {
 		return err
 	}
 	if r.Key != "" {
@@ -91,7 +91,7 @@ type SecretReference struct {
 
 func (r *SecretReference) load(ctx context.Context, client client.Client, namespace string) error {
 	secret := &corev1.Secret{}
-	if err := client.Get(ctx, types.NamespacedName{Namespace: namespace, Name: r.Name}, secret); err != nil {
+	if err := client.Get(ctx, apitypes.NamespacedName{Namespace: namespace, Name: r.Name}, secret); err != nil {
 		return err
 	}
 	r.data = secret.Data
@@ -116,7 +116,7 @@ type SecretKeyReference struct {
 
 func (r *SecretKeyReference) load(ctx context.Context, client client.Client, namespace string, fallbackKeys ...string) error {
 	secret := &corev1.Secret{}
-	if err := client.Get(ctx, types.NamespacedName{Namespace: namespace, Name: r.Name}, secret); err != nil {
+	if err := client.Get(ctx, apitypes.NamespacedName{Namespace: namespace, Name: r.Name}, secret); err != nil {
 		return err
 	}
 	if r.Key != "" {
