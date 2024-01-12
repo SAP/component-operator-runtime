@@ -133,6 +133,22 @@ func (r *Reconciler[T]) Reconcile(ctx context.Context, req ctrl.Request) (result
 	status := component.GetStatus()
 	savedStatus := status.DeepCopy()
 
+	// requeue/retry interval
+	requeueInterval := time.Duration(0)
+	if requeueConfiguration, ok := assertRequeueConfiguration(component); ok {
+		requeueInterval = requeueConfiguration.GetRequeueInterval()
+	}
+	if requeueInterval == 0 {
+		requeueInterval = 10 * time.Minute
+	}
+	retryInterval := time.Duration(0)
+	if retryConfiguration, ok := assertRetryConfiguration(component); ok {
+		retryInterval = retryConfiguration.GetRetryInterval()
+	}
+	if retryInterval == 0 {
+		retryInterval = requeueInterval
+	}
+
 	// always attempt to update the status
 	skipStatusUpdate := false
 	defer func() {
@@ -149,6 +165,15 @@ func (r *Reconciler[T]) Reconcile(ctx context.Context, req ctrl.Request) (result
 			r.client.EventRecorder().Event(component, corev1.EventTypeWarning, reason, message)
 		} else {
 			r.client.EventRecorder().Event(component, corev1.EventTypeNormal, reason, message)
+		}
+		retriableError := &types.RetriableError{}
+		if errors.As(err, retriableError) {
+			retryAfter := retriableError.RetryAfter()
+			if retryAfter == nil || *retryAfter == 0 {
+				retryAfter = &retryInterval
+			}
+			result = ctrl.Result{RequeueAfter: *retryAfter}
+			err = nil
 		}
 		if skipStatusUpdate {
 			return
@@ -219,7 +244,7 @@ func (r *Reconciler[T]) Reconcile(ctx context.Context, req ctrl.Request) (result
 			status.SetState(StateReady, readyConditionReasonReady, "Dependent resources successfully reconciled")
 			status.AppliedGeneration = component.GetGeneration()
 			status.LastAppliedAt = &now
-			return ctrl.Result{RequeueAfter: 10 * time.Minute}, nil
+			return ctrl.Result{RequeueAfter: requeueInterval}, nil
 		} else {
 			log.V(1).Info("not all dependent resources successfully reconciled")
 			status.SetState(StateProcessing, readyConditionReasonProcessing, "Reconcilation of dependent resources triggered; waiting until all dependent resources are ready")

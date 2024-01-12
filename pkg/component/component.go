@@ -65,6 +65,28 @@ func assertImpersonationConfiguration[T Component](component T) (ImpersonationCo
 	return nil, false
 }
 
+// Check if given component or its spec implements RequeueConfiguration (and return it).
+func assertRequeueConfiguration[T Component](component T) (RequeueConfiguration, bool) {
+	if requeueConfiguration, ok := Component(component).(RequeueConfiguration); ok {
+		return requeueConfiguration, true
+	}
+	if requeueConfiguration, ok := getSpec(component).(RequeueConfiguration); ok {
+		return requeueConfiguration, true
+	}
+	return nil, false
+}
+
+// Check if given component or its spec implements RetryConfiguration (and return it).
+func assertRetryConfiguration[T Component](component T) (RetryConfiguration, bool) {
+	if retryConfiguration, ok := Component(component).(RetryConfiguration); ok {
+		return retryConfiguration, true
+	}
+	if retryConfiguration, ok := getSpec(component).(RetryConfiguration); ok {
+		return retryConfiguration, true
+	}
+	return nil, false
+}
+
 // Implement the PlacementConfiguration interface.
 func (s *PlacementSpec) GetDeploymentNamespace() string {
 	return s.Namespace

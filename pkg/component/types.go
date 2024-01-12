@@ -6,6 +6,8 @@ SPDX-License-Identifier: Apache-2.0
 package component
 
 import (
+	"time"
+
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -56,6 +58,20 @@ type ImpersonationConfiguration interface {
 	GetImpersonationUser() string
 	// Return impersonation groups. Should return nil if groups shall not be impersonated.
 	GetImpersonationGroups() []string
+}
+
+// The RequeueConfiguration interface is meant to be implemented by components (or their spec) which offer
+// tweaking the requeue interval (by default, it would be 10 minutes).
+type RequeueConfiguration interface {
+	// Get requeue interval. Should be greater than 1 minute.
+	GetRequeueInterval() time.Duration
+}
+
+// The RetryConfiguration interface is meant to be implemented by components (or their spec) which offer
+// tweaking the retry interval (by default, it would be the value of the requeue interval).
+type RetryConfiguration interface {
+	// Get retry interval. Should be greater than 1 minute.
+	GetRetryInterval() time.Duration
 }
 
 // +kubebuilder:object:generate=true
