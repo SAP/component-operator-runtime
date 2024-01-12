@@ -40,6 +40,14 @@ func (e walkError) Error() string {
 	return fmt.Sprintf("/%s: %s", strings.Join(e.path, "/"), e.err)
 }
 
+func (e walkError) Unwrap() error {
+	return e.err
+}
+
+func (e walkError) Cause() error {
+	return e.err
+}
+
 func walk(v reflect.Value, path []string, tag reflect.StructTag, f WalkFunc) (errs []error) {
 	t := v.Type()
 
@@ -74,7 +82,8 @@ func walk(v reflect.Value, path []string, tag reflect.StructTag, f WalkFunc) (er
 		}
 	case reflect.Struct:
 		callback()
-		for _, field := range reflect.VisibleFields(t) {
+		for i := 0; i < t.NumField(); i++ {
+			field := t.Field(i)
 			if field.IsExported() {
 				errs = append(errs, walk(v.FieldByIndex(field.Index), append(path, field.Name), field.Tag, f)...)
 			}
