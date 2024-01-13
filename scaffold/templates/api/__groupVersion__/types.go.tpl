@@ -43,6 +43,12 @@ type {{ .kind }}Spec struct {
 	// Uncomment the following if you want to implement the ImpersonationConfiguratio interface
 	// (that is, want to allow use a specified service account in the target namespace for the deployment).
 	// component.ImpersonationSpec `json:",inline"`
+	// Uncomment the following if you want to implement the RequeueConfiguration interface
+	// (that is, want to allow to override the default requeue interval of 10m).
+	// component.RequeueSpec `json:",inline"`
+	// Uncomment the following if you want to implement the RetryConfiguration interface
+	// (that is, want to allow to override the default retry interval, which equals the effective requeue interval).
+	// component.RequeueSpec `json:",inline"`
 
 	// Add your own fields here, describing the deployment of the managed component.
 }
