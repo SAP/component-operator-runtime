@@ -78,7 +78,7 @@ const (
 // HookFunc is the function signature that can be used to
 // establish callbacks at certain points in the reconciliation logic.
 // Hooks will be passed the current (potentially unsaved) state of the component.
-// Post-hooks will only be called if the previous operator (read, reconcile, delete)
+// Post-hooks will only be called if the according operation (read, reconcile, delete)
 // has been successful.
 type HookFunc[T Component] func(ctx context.Context, client client.Client, component T) error
 
@@ -114,6 +114,7 @@ func NewReconciler[T Component](name string, client client.Client, discoveryClie
 
 // Reconcile contains the actual reconciliation logic.
 func (r *Reconciler[T]) Reconcile(ctx context.Context, req ctrl.Request) (result ctrl.Result, err error) {
+	// TODO: add some check (and lock?) to prevent Reconcile() to be invoked before SetupWithManager() was called
 	log := log.FromContext(ctx)
 	log.V(1).Info("running reconcile")
 
@@ -351,6 +352,7 @@ func (r *Reconciler[T]) WithPostDeleteHook(hook HookFunc[T]) *Reconciler[T] {
 }
 
 // Register the reconciler with a given controller-runtime Manager.
+// TODO: probably we could merge NewReconciler() and SetupWithManager() into one function, such as SetupReconciler().
 func (r *Reconciler[T]) SetupWithManager(mgr ctrl.Manager) error {
 	// TODO: add some check (and lock?) to prevent SetupWithManager() being called more than once
 	kubeSystemNamespace := &corev1.Namespace{}

@@ -8,6 +8,7 @@ package component
 import (
 	"fmt"
 	"reflect"
+	"time"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -97,8 +98,6 @@ func (s *PlacementSpec) GetDeploymentName() string {
 	return s.Name
 }
 
-var _ PlacementConfiguration = &PlacementSpec{}
-
 // Implement the ClientConfiguration interface.
 func (s *ClientSpec) GetKubeConfig() []byte {
 	if s.KubeConfig == nil {
@@ -106,8 +105,6 @@ func (s *ClientSpec) GetKubeConfig() []byte {
 	}
 	return s.KubeConfig.SecretRef.value
 }
-
-var _ ClientConfiguration = &ClientSpec{}
 
 // Implement the ImpersonationConfiguration interface.
 func (s *ImpersonationSpec) GetImpersonationUser() string {
@@ -124,7 +121,21 @@ func (s *ImpersonationSpec) GetImpersonationGroups() []string {
 	return nil
 }
 
-var _ ImpersonationConfiguration = &ImpersonationSpec{}
+// Implement the RequeueConfiguration interface.
+func (s *RequeueSpec) GetRequeueInterval() time.Duration {
+	if s.RequeueInterval != nil {
+		return s.RequeueInterval.Duration
+	}
+	return time.Duration(0)
+}
+
+// Implement the RetryConfiguration interface.
+func (s *RetrySpec) GetRetryInterval() time.Duration {
+	if s.RetryInterval != nil {
+		return s.RetryInterval.Duration
+	}
+	return time.Duration(0)
+}
 
 // Get state (and related details).
 func (s *Status) GetState() (State, string, string) {

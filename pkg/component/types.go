@@ -91,12 +91,16 @@ type PlacementSpec struct {
 	Name      string `json:"name,omitempty"`
 }
 
+var _ PlacementConfiguration = &PlacementSpec{}
+
 // +kubebuilder:object:generate=true
 
 // ClientSpec defines a reference to another cluster by kubeconfig. Components providing ClientConfiguration may include this into their spec.
 type ClientSpec struct {
 	KubeConfig *KubeConfigSpec `json:"kubeConfig,omitempty"`
 }
+
+var _ ClientConfiguration = &ClientSpec{}
 
 // +kubebuilder:object:generate=true
 
@@ -111,6 +115,32 @@ type KubeConfigSpec struct {
 type ImpersonationSpec struct {
 	ServiceAccountName string `json:"serviceAccountName,omitempty"`
 }
+
+var _ ImpersonationConfiguration = &ImpersonationSpec{}
+
+// +kubebuilder:object:generate=true
+
+// RequeueSpec defines the requeue interval, that is, the interval after which components will be re-reconciled after a successful reconciliation.
+// Components providing RequeueConfiguration may include this into their spec.
+type RequeueSpec struct {
+	// +kubebuilder:validation:Type:=string
+	// +kubebuilder:validation:Pattern="^([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$"
+	RequeueInterval *metav1.Duration `json:"requeueInterval,omitempty"`
+}
+
+var _ RequeueConfiguration = &RequeueSpec{}
+
+// +kubebuilder:object:generate=true
+
+// RetrySpec defines the retry interval, that is, the interval after which components will be re-reconciled after a successful reconciliation.
+// Components providing RetryConfiguration may include this into their spec.
+type RetrySpec struct {
+	// +kubebuilder:validation:Type:=string
+	// +kubebuilder:validation:Pattern="^([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$"
+	RetryInterval *metav1.Duration `json:"retryInterval,omitempty"`
+}
+
+var _ RetryConfiguration = &RetrySpec{}
 
 // +kubebuilder:object:generate=true
 
