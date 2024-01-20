@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
 	apitypes "k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -31,7 +32,11 @@ type ConfigMapReference struct {
 func (r *ConfigMapReference) load(ctx context.Context, client client.Client, namespace string) error {
 	configMap := &corev1.ConfigMap{}
 	if err := client.Get(ctx, apitypes.NamespacedName{Namespace: namespace, Name: r.Name}, configMap); err != nil {
-		return types.NewRetriableError(err, nil)
+		if errors.IsNotFound(err) {
+			return types.NewRetriableError(err, nil)
+		} else {
+			return err
+		}
 	}
 	r.data = configMap.Data
 	return nil
@@ -56,7 +61,11 @@ type ConfigMapKeyReference struct {
 func (r *ConfigMapKeyReference) load(ctx context.Context, client client.Client, namespace string, fallbackKeys ...string) error {
 	configMap := &corev1.ConfigMap{}
 	if err := client.Get(ctx, apitypes.NamespacedName{Namespace: namespace, Name: r.Name}, configMap); err != nil {
-		return types.NewRetriableError(err, nil)
+		if errors.IsNotFound(err) {
+			return types.NewRetriableError(err, nil)
+		} else {
+			return err
+		}
 	}
 	if r.Key != "" {
 		if value, ok := configMap.Data[r.Key]; ok {
@@ -93,7 +102,11 @@ type SecretReference struct {
 func (r *SecretReference) load(ctx context.Context, client client.Client, namespace string) error {
 	secret := &corev1.Secret{}
 	if err := client.Get(ctx, apitypes.NamespacedName{Namespace: namespace, Name: r.Name}, secret); err != nil {
-		return types.NewRetriableError(err, nil)
+		if errors.IsNotFound(err) {
+			return types.NewRetriableError(err, nil)
+		} else {
+			return err
+		}
 	}
 	r.data = secret.Data
 	return nil
@@ -118,7 +131,11 @@ type SecretKeyReference struct {
 func (r *SecretKeyReference) load(ctx context.Context, client client.Client, namespace string, fallbackKeys ...string) error {
 	secret := &corev1.Secret{}
 	if err := client.Get(ctx, apitypes.NamespacedName{Namespace: namespace, Name: r.Name}, secret); err != nil {
-		return types.NewRetriableError(err, nil)
+		if errors.IsNotFound(err) {
+			return types.NewRetriableError(err, nil)
+		} else {
+			return err
+		}
 	}
 	if r.Key != "" {
 		if value, ok := secret.Data[r.Key]; ok {
