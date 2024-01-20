@@ -93,7 +93,7 @@ func NewHelmGenerator(name string, fsys fs.FS, chartPath string, client client.C
 		return nil, err
 	}
 
-	crds, err := find(fsys, chartPath+"/crds", "*.yaml", fileTypeRegular, 0)
+	crds, err := find(fsys, filepath.Clean(chartPath+"/crds"), "*.yaml", fileTypeRegular, 0)
 	if err != nil {
 		return nil, err
 	}
@@ -105,12 +105,12 @@ func NewHelmGenerator(name string, fsys fs.FS, chartPath string, client client.C
 		g.crds = append(g.crds, raw)
 	}
 
-	includes, err := find(fsys, chartPath+"/templates", "_*", fileTypeRegular, 0)
+	includes, err := find(fsys, filepath.Clean(chartPath+"/templates"), "_*", fileTypeRegular, 0)
 	if err != nil {
 		return nil, err
 	}
 
-	manifests, err := find(fsys, chartPath+"/templates", "[^_]*.yaml", fileTypeRegular, 0)
+	manifests, err := find(fsys, filepath.Clean(chartPath+"/templates"), "[^_]*.yaml", fileTypeRegular, 0)
 	if err != nil {
 		return nil, err
 	}
@@ -120,7 +120,7 @@ func NewHelmGenerator(name string, fsys fs.FS, chartPath string, client client.C
 
 	// TODO: for now, one level of library subcharts is supported
 	// we should enhance the support of subcharts (nested charts, application charts)
-	subChartPaths, err := find(fsys, chartPath+"/charts", "*", fileTypeDir, 1)
+	subChartPaths, err := find(fsys, filepath.Clean(chartPath+"/charts"), "*", fileTypeDir, 1)
 	if err != nil {
 		return nil, err
 	}
@@ -136,7 +136,7 @@ func NewHelmGenerator(name string, fsys fs.FS, chartPath string, client client.C
 		if subChartData.Type != helm.ChartTypeLibrary {
 			return nil, fmt.Errorf("only library subcharts are supported (path: %s)", subChartPath)
 		}
-		subIncludes, err := find(fsys, subChartPath+"/templates", "_*", fileTypeRegular, 0)
+		subIncludes, err := find(fsys, filepath.Clean(subChartPath+"/templates"), "_*", fileTypeRegular, 0)
 		if err != nil {
 			return nil, err
 		}

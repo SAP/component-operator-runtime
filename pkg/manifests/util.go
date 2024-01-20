@@ -88,18 +88,25 @@ func fileTypeFromMode(mode fs.FileMode) uint {
 // Resulting paths will be always relative to fsys (cleaned, with no leading dot).
 // The parameter dir must not contain any dot or double dot, unless it equals '.' in which case the whole fsys will be searched.
 // As an alternative, dir can be empty (which is equivalent to dir == '.').
+// Parameters namePattern and fileType may be optionally set to filter the result; namePattern must be a file pattern
+// (not containing any slashes) and will be matched using path.Match(); an empty namePattern will match anything.
+// The parameter fileType may be a (logically or'ed) combination of the constants defined in this file;
+// supplying fileType as zero is the same as passing fileTypeAny.
 // The parameter maxDepth can be any integer between 0 and 10000 (where 0 is interpreted as 10000).
+// The returned paths will be relative (to the provided fsys), and filepath.Clean() will be run on each entry.
 func find(fsys fs.FS, dir string, namePattern string, fileType uint, maxDepth uint) ([]string, error) {
 	if dir == "" {
 		dir = "."
 	}
-	if strings.Contains(namePattern, "/") {
-		return nil, fmt.Errorf("invalid name pattern; must not contain slashes")
+	if namePattern == "" {
+		namePattern = "*"
+	} else if strings.Contains(namePattern, "/") {
+		panic("invalid name pattern; must not contain slashes")
 	}
 	if fileType == 0 {
 		fileType = fileTypeAny
 	} else if fileType&fileTypeAny != fileType {
-		return nil, fmt.Errorf("invalid file type")
+		panic("invalid file type")
 	}
 	if maxDepth == 0 {
 		maxDepth = 10000
