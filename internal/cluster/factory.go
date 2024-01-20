@@ -36,6 +36,8 @@ type ClientFactory struct {
 	clients map[string]*clientImpl
 }
 
+const validity = 15 * time.Minute
+
 func NewClientFactory(name string, config *rest.Config, schemeBuilder types.SchemeBuilder) (*ClientFactory, error) {
 	scheme := runtime.NewScheme()
 	if err := clientgoscheme.AddToScheme(scheme); err != nil {
@@ -69,6 +71,8 @@ func NewClientFactory(name string, config *rest.Config, schemeBuilder types.Sche
 			for key, client := range factory.clients {
 				if client.validUntil.Before(now) {
 					client.eventBroadcaster.Shutdown()
+					// TODO: add some (debug) log output when client is removed; unfortunately, we have no logger in here ...
+					// TODO: add metrics about running clients
 					delete(factory.clients, key)
 				}
 			}
@@ -114,7 +118,7 @@ func (f *ClientFactory) Get(kubeConfig []byte, impersonationUser string, imperso
 	key := sha256sum(keyData)
 
 	if client, ok := f.clients[key]; ok {
-		client.validUntil = time.Now().Add(15 * time.Minute)
+		client.validUntil = time.Now().Add(validity)
 		return client, nil
 	}
 
@@ -138,10 +142,12 @@ func (f *ClientFactory) Get(kubeConfig []byte, impersonationUser string, imperso
 		discoveryClient:  clientset,
 		eventBroadcaster: eventBroadcaster,
 		eventRecorder:    eventRecorder,
-		validUntil:       time.Now().Add(15 * time.Minute),
+		validUntil:       time.Now().Add(validity),
 	}
 	f.clients[key] = client
 
+	// TODO: add some (debug) log output when new client is created; unfortunately, we have no logger in here ...
+	// TODO: add metrics about running clients
 	return client, nil
 }
 
