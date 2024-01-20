@@ -14,6 +14,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/pkg/errors"
@@ -95,6 +96,8 @@ type Reconciler[T Component] struct {
 	postReconcileHooks []HookFunc[T]
 	preDeleteHooks     []HookFunc[T]
 	postDeleteHooks    []HookFunc[T]
+	setupMutex         sync.Mutex
+	setupComplete      bool
 }
 
 // Create a new Reconciler.
@@ -114,7 +117,13 @@ func NewReconciler[T Component](name string, client client.Client, discoveryClie
 
 // Reconcile contains the actual reconciliation logic.
 func (r *Reconciler[T]) Reconcile(ctx context.Context, req ctrl.Request) (result ctrl.Result, err error) {
-	// TODO: add some check (and lock?) to prevent Reconcile() to be invoked before SetupWithManager() was called
+	r.setupMutex.Lock()
+	if !r.setupComplete {
+		defer r.setupMutex.Unlock()
+		panic("usage error: SetupWithManger() must be called first")
+	}
+	r.setupMutex.Unlock()
+
 	log := log.FromContext(ctx)
 	log.V(1).Info("running reconcile")
 
@@ -315,6 +324,11 @@ func (r *Reconciler[T]) Reconcile(ctx context.Context, req ctrl.Request) (result
 // Register post-read hook with reconciler.
 // This hook will be called after the reconciled component object has been retrieved from the Kubernetes API.
 func (r *Reconciler[T]) WithPostReadHook(hook HookFunc[T]) *Reconciler[T] {
+	r.setupMutex.Lock()
+	defer r.setupMutex.Unlock()
+	if r.setupComplete {
+		panic("usage error: hooks can only be registered before SetupWithManger() was called")
+	}
 	r.postReadHooks = append(r.postReadHooks, hook)
 	return r
 }
@@ -323,6 +337,11 @@ func (r *Reconciler[T]) WithPostReadHook(hook HookFunc[T]) *Reconciler[T] {
 // This hook will be called if the reconciled component is not in deletion (has no deletionTimestamp set),
 // right before the reconcilation of the dependent objects starts.
 func (r *Reconciler[T]) WithPreReconcileHook(hook HookFunc[T]) *Reconciler[T] {
+	r.setupMutex.Lock()
+	defer r.setupMutex.Unlock()
+	if r.setupComplete {
+		panic("usage error: hooks can only be registered before SetupWithManger() was called")
+	}
 	r.preReconcileHooks = append(r.preReconcileHooks, hook)
 	return r
 }
@@ -331,6 +350,11 @@ func (r *Reconciler[T]) WithPreReconcileHook(hook HookFunc[T]) *Reconciler[T] {
 // This hook will be called if the reconciled component is not in deletion (has no deletionTimestamp set),
 // right after the reconcilation of the dependent objects happened, and was successful.
 func (r *Reconciler[T]) WithPostReconcileHook(hook HookFunc[T]) *Reconciler[T] {
+	r.setupMutex.Lock()
+	defer r.setupMutex.Unlock()
+	if r.setupComplete {
+		panic("usage error: hooks can only be registered before SetupWithManger() was called")
+	}
 	r.postReconcileHooks = append(r.postReconcileHooks, hook)
 	return r
 }
@@ -339,6 +363,11 @@ func (r *Reconciler[T]) WithPostReconcileHook(hook HookFunc[T]) *Reconciler[T] {
 // This hook will be called if the reconciled component is in deletion (has a deletionTimestamp set),
 // right before the deletion of the dependent objects starts.
 func (r *Reconciler[T]) WithPreDeleteHook(hook HookFunc[T]) *Reconciler[T] {
+	r.setupMutex.Lock()
+	defer r.setupMutex.Unlock()
+	if r.setupComplete {
+		panic("usage error: hooks can only be registered before SetupWithManger() was called")
+	}
 	r.preDeleteHooks = append(r.preDeleteHooks, hook)
 	return r
 }
@@ -347,14 +376,23 @@ func (r *Reconciler[T]) WithPreDeleteHook(hook HookFunc[T]) *Reconciler[T] {
 // This hook will be called if the reconciled component is in deletion (has a deletionTimestamp set),
 // right after the deletion of the dependent objects happened, and was successful.
 func (r *Reconciler[T]) WithPostDeleteHook(hook HookFunc[T]) *Reconciler[T] {
+	r.setupMutex.Lock()
+	defer r.setupMutex.Unlock()
+	if r.setupComplete {
+		panic("usage error: hooks can only be registered before SetupWithManger() was called")
+	}
 	r.postDeleteHooks = append(r.postDeleteHooks, hook)
 	return r
 }
 
 // Register the reconciler with a given controller-runtime Manager.
-// TODO: probably we could merge NewReconciler() and SetupWithManager() into one function, such as SetupReconciler().
 func (r *Reconciler[T]) SetupWithManager(mgr ctrl.Manager) error {
-	// TODO: add some check (and lock?) to prevent SetupWithManager() being called more than once
+	r.setupMutex.Lock()
+	defer r.setupMutex.Unlock()
+	if r.setupComplete {
+		panic("usage error: SetupWithManger() must not be called more than once")
+	}
+
 	kubeSystemNamespace := &corev1.Namespace{}
 	if err := mgr.GetAPIReader().Get(context.Background(), apitypes.NamespacedName{Name: "kube-system"}, kubeSystemNamespace); err != nil {
 		return errors.Wrap(err, "error retrieving uid of kube-system namespace")
@@ -374,11 +412,17 @@ func (r *Reconciler[T]) SetupWithManager(mgr ctrl.Manager) error {
 	}
 
 	component := newComponent[T]()
-	return ctrl.NewControllerManagedBy(mgr).
+	err = ctrl.NewControllerManagedBy(mgr).
 		For(component).
 		WithEventFilter(predicate.Or(predicate.GenerationChangedPredicate{}, predicate.AnnotationChangedPredicate{})).
 		WithOptions(controller.Options{MaxConcurrentReconciles: 3}).
 		Complete(r)
+	if err != nil {
+		return errors.Wrap(err, "error creating controller")
+	}
+
+	r.setupComplete = true
+	return nil
 }
 
 func (r *Reconciler[T]) getClientForComponent(component T) (cluster.Client, error) {
@@ -472,6 +516,11 @@ func (t *reconcileTarget[T]) Reconcile(ctx context.Context, component T) (bool, 
 	status := component.GetStatus()
 
 	// render manifests
+	// TODO: sometimes the generator needs more information about the rendered component (such as the component's name or namespace);
+	// as of now, components have to help themselves through implementing post-read hooks; to simplify this for components,
+	// we could expose the component (full object or maybe just its metadata) via the generate context;
+	// another option would be to have a special NamespacedName reuse type, where the namespace part would be auto-defaulted
+	// by the framework (similar to the auto-loading of configmap/secret references)
 	generateCtx := manifests.NewContextWithClient(manifests.NewContextWithReconcilerName(ctx, t.reconcilerName), t.client)
 	objects, err := t.resourceGenerator.Generate(generateCtx, namespace, name, component.GetSpec())
 	if err != nil {
