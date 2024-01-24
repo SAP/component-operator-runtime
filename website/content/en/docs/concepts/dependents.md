@@ -26,6 +26,9 @@ To support such cases, the `Generator` implementation can set the following anno
 - `mycomponent-operator.mydomain.io/update-policy`: defines how the object (if existing) is updated; can be one of:
   - `default` (which is the default): a regular update (i.e. PUT) call will be made to the Kubernetes API server
   - `recreate`: if the object would be updated, it will be deleted and recreated instead
+- `mycomponent-operator.mydomain.io/delete-policy`: defines what happens if the object is deleted; can be one of:
+  - `default` (which is the default): a delete call will be sent to the Kubernetes API server
+  - `orphan`: the object will not be deleted, and it will be no longer tracked
 - `mycomponent-operator.mydomain.io/order`: the order at which this object will be reconciled; dependents will be reconciled order by order; that is, objects of the same order will be deployed in the canonical order, and the controller will only proceed to the next order if all objects of previous orders are ready; specified orders can be negative or positive numbers between -32768 and 32767, objects with no explicit order set are treated as if they would specify order 0.
 - `mycomponent-operator.mydomain.io/purge-order`: (optional) the order by which this object will be purged
 

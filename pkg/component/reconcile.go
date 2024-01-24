@@ -475,6 +475,7 @@ type reconcileTarget[T Component] struct {
 	annotationKeyDigest          string
 	annotationKeyReconcilePolicy string
 	annotationKeyUpdatePolicy    string
+	annotationKeyDeletePolicy    string
 	annotationKeyOrder           string
 	annotationKeyPurgeOrder      string
 	annotationKeyOwnerId         string
@@ -490,6 +491,7 @@ func newReconcileTarget[T Component](reconcilerName string, reconcilerId string,
 		annotationKeyDigest:          reconcilerName + "/" + types.AnnotationKeySuffixDigest,
 		annotationKeyReconcilePolicy: reconcilerName + "/" + types.AnnotationKeySuffixReconcilePolicy,
 		annotationKeyUpdatePolicy:    reconcilerName + "/" + types.AnnotationKeySuffixUpdatePolicy,
+		annotationKeyDeletePolicy:    reconcilerName + "/" + types.AnnotationKeySuffixDeletePolicy,
 		annotationKeyOrder:           reconcilerName + "/" + types.AnnotationKeySuffixOrder,
 		annotationKeyPurgeOrder:      reconcilerName + "/" + types.AnnotationKeySuffixPurgeOrder,
 		annotationKeyOwnerId:         reconcilerName + "/" + types.AnnotationKeySuffixOwnerId,
@@ -781,9 +783,17 @@ func (t *reconcileTarget[T]) Reconcile(ctx context.Context, component T) (bool, 
 				return false, errors.Wrapf(err, "error reading object %s", item)
 			}
 
+			orphan := false
+			if existingObject != nil {
+				orphan = existingObject.GetAnnotations()[t.annotationKeyDeletePolicy] == types.DeletePolicyOrphan
+			}
+
 			switch item.Phase {
 			case PhaseScheduledForDeletion:
 				if numManagedToBeDeleted == 0 || t.isManaged(item, component) {
+					if orphan {
+						continue
+					}
 					// note: here is a theoretical risk that we delete an existing foreign object, because informers are not yet synced
 					// however not sending the delete request is also not an option, because this might lead to orphaned own dependents
 					if err := t.deleteObject(ctx, item, existingObject); err != nil {
@@ -795,6 +805,9 @@ func (t *reconcileTarget[T]) Reconcile(ctx context.Context, component T) (bool, 
 				numToBeDeleted++
 			case PhaseScheduledForCompletion:
 				if numManagedToBeDeleted == 0 || t.isManaged(item, component) {
+					if orphan {
+						return false, fmt.Errorf("invalid usage of deletion policy: object %s is scheduled for completion (due to purge order) and therefore cannot be orphaned", item)
+					}
 					// note: here is a theoretical risk that we delete an existing foreign object, because informers are not yet synced
 					// however not sending the delete request is also not an option, because this might lead to orphaned own dependents
 					if err := t.deleteObject(ctx, item, existingObject); err != nil {
@@ -994,6 +1007,10 @@ func (t *reconcileTarget[T]) Delete(ctx context.Context, component T) (bool, err
 		}
 
 		if numManaged == 0 || t.isManaged(item, component) {
+			// orphan the object, if according deletion policy is set
+			if existingObject != nil && existingObject.GetAnnotations()[t.annotationKeyDeletePolicy] == types.DeletePolicyOrphan {
+				continue
+			}
 			// delete the object
 			// note: here is a theoretical risk that we delete an existing (foreign) object, because informers are not yet synced
 			// however not sending the delete request is also not an option, because this might lead to orphaned own dependents
