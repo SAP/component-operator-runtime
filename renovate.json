@@ -6,7 +6,6 @@
   "extends": [
     "config:base"
   ],
-  "constraints": {"go": "1.21"},
   "prHourlyLimit": 5,
   "prConcurrentLimit": 10,
   "semanticCommits": "enabled",
@@ -24,8 +23,7 @@
       "matchDatasources": [
         "golang-version"
       ],
-      "rangeStrategy": "replace",
-      "allowedVersions": "1.21"
+      "rangeStrategy": "bump"
     },
     {
       "matchUpdateTypes": [
