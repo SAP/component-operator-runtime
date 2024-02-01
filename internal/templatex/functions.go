@@ -6,6 +6,7 @@ SPDX-License-Identifier: Apache-2.0
 package templatex
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"strings"
@@ -23,11 +24,19 @@ import (
 // template FuncMap generator
 func FuncMap() template.FuncMap {
 	return template.FuncMap{
-		"toYaml":   toYaml,
-		"fromYaml": fromYaml,
-		"toJson":   toJson,
-		"fromJson": fromJson,
-		"required": required,
+		"toYaml":           toYaml,
+		"mustToYaml":       toYaml,
+		"fromYaml":         fromYaml,
+		"mustFromYaml":     fromYaml,
+		"toJson":           toJson,
+		"mustToJson":       toJson,
+		"toPrettyJson":     toPrettyJson,
+		"mustToPrettyJson": toPrettyJson,
+		"toRawJson":        toRawJson,
+		"mustToRawJson":    toRawJson,
+		"fromJson":         fromJson,
+		"mustFromJson":     fromJson,
+		"required":         required,
 	}
 }
 
@@ -39,10 +48,19 @@ func FuncMapForTemplate(t *template.Template) template.FuncMap {
 	}
 }
 
-// template FuncMap generator for functions called in a Kubernetes context
+// template FuncMap generator for functions called in target Kubernetes context
 func FuncMapForClient(c client.Client) template.FuncMap {
 	return template.FuncMap{
-		"lookup": makeFuncLookup(c),
+		"lookup":     makeFuncLookup(c, false),
+		"mustLookup": makeFuncLookup(c, true),
+	}
+}
+
+// template FuncMap generator for functions called in local Kubernetes context
+func FuncMapForLocalClient(c client.Client) template.FuncMap {
+	return template.FuncMap{
+		"localLookup":     makeFuncLookup(c, false),
+		"mustLocalLookup": makeFuncLookup(c, true),
 	}
 }
 
@@ -68,6 +86,25 @@ func toJson(data any) (string, error) {
 		return "", err
 	}
 	return string(raw), nil
+}
+
+func toPrettyJson(data any) (string, error) {
+	raw, err := json.MarshalIndent(data, "", "  ")
+	if err != nil {
+		return "", err
+	}
+	return string(raw), nil
+}
+
+func toRawJson(data any) (string, error) {
+	buf := new(bytes.Buffer)
+	enc := json.NewEncoder(buf)
+	enc.SetEscapeHTML(false)
+	err := enc.Encode(&data)
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSuffix(buf.String(), "\n"), nil
 }
 
 func fromJson(data string) (map[string]any, error) {
@@ -114,13 +151,13 @@ func makeFuncTpl(t *template.Template) func(string, any) (string, error) {
 	}
 }
 
-func makeFuncLookup(c client.Client) func(string, string, string, string) (map[string]any, error) {
+func makeFuncLookup(c client.Client, failIfNotFound bool) func(string, string, string, string) (map[string]any, error) {
 	return func(apiVersion string, kind string, namespace string, name string) (map[string]any, error) {
 		object := &unstructured.Unstructured{}
 		object.SetAPIVersion(apiVersion)
 		object.SetKind(kind)
 		if err := c.Get(context.Background(), apitypes.NamespacedName{Namespace: namespace, Name: name}, object); err != nil {
-			if apierrors.IsNotFound(err) {
+			if apierrors.IsNotFound(err) && !failIfNotFound {
 				err = nil
 			}
 			return map[string]any{}, err
