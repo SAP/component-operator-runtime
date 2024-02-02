@@ -44,11 +44,17 @@ type HelmGenerator struct {
 var _ Generator = &HelmGenerator{}
 
 // Create a new HelmGenerator.
-// Deprecation warning: the parameters name, client and discoveryClient are ignored (can be passed as empty resp. nil) and will be removed in a future release;
+// Deprecation warning: the parameters name and discoveryClient are ignored (can be passed as empty resp. nil) and will be removed in a future release;
 // the according values will be retrieved from the context passed to Generate().
+// The parameter client should be a client for the local cluster (i.e. the cluster where the component object resides);
+// it is used by the localLookup and mustLocalLookup template functions.
+// If fsys is nil, the local operating system filesystem will be used, and chartPath can be an absolute or relative path (in the latter case it will be considered
+// relative to the current working directory). If fsys is non-nil, then chartPath should be a relative path; if an absolute path is supplied, it will be turned
+// An empty chartPath will be treated like ".".
 func NewHelmGenerator(name string, fsys fs.FS, chartPath string, client client.Client, discoveryClient discovery.DiscoveryInterface) (*HelmGenerator, error) {
-	g := HelmGenerator{}
-	g.data = make(map[string]any)
+	g := HelmGenerator{
+		data: make(map[string]any),
+	}
 
 	if fsys == nil {
 		fsys = os.DirFS("/")
@@ -57,9 +63,12 @@ func NewHelmGenerator(name string, fsys fs.FS, chartPath string, client client.C
 			return nil, err
 		}
 		chartPath = absoluteChartPath[1:]
+	} else if filepath.IsAbs(chartPath) {
+		chartPath = chartPath[1:]
 	}
+	chartPath = filepath.Clean(chartPath)
 
-	chartRaw, err := fs.ReadFile(fsys, chartPath+"/Chart.yaml")
+	chartRaw, err := fs.ReadFile(fsys, filepath.Clean(chartPath+"/Chart.yaml"))
 	if err != nil {
 		return nil, err
 	}
@@ -75,7 +84,7 @@ func NewHelmGenerator(name string, fsys fs.FS, chartPath string, client client.C
 	}
 	g.data["Chart"] = chartData
 
-	valuesRaw, err := fs.ReadFile(fsys, chartPath+"/values.yaml")
+	valuesRaw, err := fs.ReadFile(fsys, filepath.Clean(chartPath+"/values.yaml"))
 	if err == nil {
 		g.data["Values"] = &map[string]any{}
 		if err := kyaml.Unmarshal(valuesRaw, g.data["Values"]); err != nil {
@@ -87,7 +96,7 @@ func NewHelmGenerator(name string, fsys fs.FS, chartPath string, client client.C
 		return nil, err
 	}
 
-	crds, err := find(fsys, chartPath+"/crds", "*.yaml", fileTypeRegular, 0)
+	crds, err := find(fsys, filepath.Clean(chartPath+"/crds"), "*.yaml", fileTypeRegular, 0)
 	if err != nil {
 		return nil, err
 	}
@@ -99,12 +108,12 @@ func NewHelmGenerator(name string, fsys fs.FS, chartPath string, client client.C
 		g.crds = append(g.crds, raw)
 	}
 
-	includes, err := find(fsys, chartPath+"/templates", "_*", fileTypeRegular, 0)
+	includes, err := find(fsys, filepath.Clean(chartPath+"/templates"), "_*", fileTypeRegular, 0)
 	if err != nil {
 		return nil, err
 	}
 
-	manifests, err := find(fsys, chartPath+"/templates", "[^_]*.yaml", fileTypeRegular, 0)
+	manifests, err := find(fsys, filepath.Clean(chartPath+"/templates"), "[^_]*.yaml", fileTypeRegular, 0)
 	if err != nil {
 		return nil, err
 	}
@@ -114,7 +123,7 @@ func NewHelmGenerator(name string, fsys fs.FS, chartPath string, client client.C
 
 	// TODO: for now, one level of library subcharts is supported
 	// we should enhance the support of subcharts (nested charts, application charts)
-	subChartPaths, err := find(fsys, chartPath+"/charts", "*", fileTypeDir, 1)
+	subChartPaths, err := find(fsys, filepath.Clean(chartPath+"/charts"), "*", fileTypeDir, 1)
 	if err != nil {
 		return nil, err
 	}
@@ -130,7 +139,7 @@ func NewHelmGenerator(name string, fsys fs.FS, chartPath string, client client.C
 		if subChartData.Type != helm.ChartTypeLibrary {
 			return nil, fmt.Errorf("only library subcharts are supported (path: %s)", subChartPath)
 		}
-		subIncludes, err := find(fsys, subChartPath+"/templates", "_*", fileTypeRegular, 0)
+		subIncludes, err := find(fsys, filepath.Clean(subChartPath+"/templates"), "_*", fileTypeRegular, 0)
 		if err != nil {
 			return nil, err
 		}
@@ -151,6 +160,7 @@ func NewHelmGenerator(name string, fsys fs.FS, chartPath string, client client.C
 				Funcs(sprig.TxtFuncMap()).
 				Funcs(templatex.FuncMap()).
 				Funcs(templatex.FuncMapForTemplate(t)).
+				Funcs(templatex.FuncMapForLocalClient(client)).
 				Funcs(templatex.FuncMapForClient(nil))
 		} else {
 			t = t.New(manifest)

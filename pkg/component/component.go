@@ -6,7 +6,9 @@ SPDX-License-Identifier: Apache-2.0
 package component
 
 import (
+	"fmt"
 	"reflect"
+	"time"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -20,6 +22,119 @@ func newComponent[T Component]() T {
 	v := reflect.ValueOf(&component).Elem()
 	v.Set(reflect.New(v.Type().Elem()))
 	return component
+}
+
+// Get a pointer to the Spec field of a component; panics unless T is a pointer type.
+func getSpec[T Component](component T) any {
+	spec := reflect.ValueOf(component).Elem().FieldByName("Spec")
+	if spec.Kind() != reflect.Pointer {
+		spec = spec.Addr()
+	}
+	return spec.Interface()
+}
+
+// Check if given component or its spec implements PlacementConfiguration (and return it).
+func assertPlacementConfiguration[T Component](component T) (PlacementConfiguration, bool) {
+	if placementConfiguration, ok := Component(component).(PlacementConfiguration); ok {
+		return placementConfiguration, true
+	}
+	if placementConfiguration, ok := getSpec(component).(PlacementConfiguration); ok {
+		return placementConfiguration, true
+	}
+	return nil, false
+}
+
+// Check if given component or its spec implements ClientConfiguration (and return it).
+func assertClientConfiguration[T Component](component T) (ClientConfiguration, bool) {
+	if clientConfiguration, ok := Component(component).(ClientConfiguration); ok {
+		return clientConfiguration, true
+	}
+	if clientConfiguration, ok := getSpec(component).(ClientConfiguration); ok {
+		return clientConfiguration, true
+	}
+	return nil, false
+}
+
+// Check if given component or its spec implements ImpersonationConfiguration (and return it).
+func assertImpersonationConfiguration[T Component](component T) (ImpersonationConfiguration, bool) {
+	if impersonationConfiguration, ok := Component(component).(ImpersonationConfiguration); ok {
+		return impersonationConfiguration, true
+	}
+	if impersonationConfiguration, ok := getSpec(component).(ImpersonationConfiguration); ok {
+		return impersonationConfiguration, true
+	}
+	return nil, false
+}
+
+// Check if given component or its spec implements RequeueConfiguration (and return it).
+func assertRequeueConfiguration[T Component](component T) (RequeueConfiguration, bool) {
+	if requeueConfiguration, ok := Component(component).(RequeueConfiguration); ok {
+		return requeueConfiguration, true
+	}
+	if requeueConfiguration, ok := getSpec(component).(RequeueConfiguration); ok {
+		return requeueConfiguration, true
+	}
+	return nil, false
+}
+
+// Check if given component or its spec implements RetryConfiguration (and return it).
+func assertRetryConfiguration[T Component](component T) (RetryConfiguration, bool) {
+	if retryConfiguration, ok := Component(component).(RetryConfiguration); ok {
+		return retryConfiguration, true
+	}
+	if retryConfiguration, ok := getSpec(component).(RetryConfiguration); ok {
+		return retryConfiguration, true
+	}
+	return nil, false
+}
+
+// Implement the PlacementConfiguration interface.
+func (s *PlacementSpec) GetDeploymentNamespace() string {
+	return s.Namespace
+}
+
+// Implement the PlacementConfiguration interface.
+func (s *PlacementSpec) GetDeploymentName() string {
+	return s.Name
+}
+
+// Implement the ClientConfiguration interface.
+func (s *ClientSpec) GetKubeConfig() []byte {
+	if s.KubeConfig == nil {
+		return nil
+	}
+	return s.KubeConfig.SecretRef.value
+}
+
+// Implement the ImpersonationConfiguration interface.
+func (s *ImpersonationSpec) GetImpersonationUser() string {
+	if s.ServiceAccountName == "" {
+		return ""
+	}
+	// note: the service account's namespace is set empty here, and will be populated with the
+	// actual target namespace by the framework when calling this method.
+	return fmt.Sprintf("system:serviceaccount:%s:%s", "", s.ServiceAccountName)
+}
+
+// Implement the ImpersonationConfiguration interface.
+func (s *ImpersonationSpec) GetImpersonationGroups() []string {
+	return nil
+}
+
+// Implement the RequeueConfiguration interface.
+func (s *RequeueSpec) GetRequeueInterval() time.Duration {
+	if s.RequeueInterval != nil {
+		return s.RequeueInterval.Duration
+	}
+	return time.Duration(0)
+}
+
+// Implement the RetryConfiguration interface.
+func (s *RetrySpec) GetRetryInterval() time.Duration {
+	if s.RetryInterval != nil {
+		return s.RetryInterval.Duration
+	}
+	return time.Duration(0)
 }
 
 // Get state (and related details).

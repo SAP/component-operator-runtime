@@ -25,8 +25,7 @@ import (
 	apiregistrationv1 "k8s.io/kube-aggregator/pkg/apis/apiregistration/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/sap/component-operator-runtime/pkg/cluster"
-	"github.com/sap/component-operator-runtime/pkg/manifests"
+	"github.com/sap/component-operator-runtime/pkg/types"
 )
 
 type ClientFactory struct {
@@ -34,10 +33,12 @@ type ClientFactory struct {
 	name    string
 	config  *rest.Config
 	scheme  *runtime.Scheme
-	clients map[string]*Client
+	clients map[string]*clientImpl
 }
 
-func NewClientFactory(name string, config *rest.Config, schemeBuilder manifests.SchemeBuilder) (*ClientFactory, error) {
+const validity = 15 * time.Minute
+
+func NewClientFactory(name string, config *rest.Config, schemeBuilder types.SchemeBuilder) (*ClientFactory, error) {
 	scheme := runtime.NewScheme()
 	if err := clientgoscheme.AddToScheme(scheme); err != nil {
 		return nil, err
@@ -58,7 +59,7 @@ func NewClientFactory(name string, config *rest.Config, schemeBuilder manifests.
 		name:    name,
 		config:  config,
 		scheme:  scheme,
-		clients: make(map[string]*Client),
+		clients: make(map[string]*clientImpl),
 	}
 
 	go func() {
@@ -67,9 +68,11 @@ func NewClientFactory(name string, config *rest.Config, schemeBuilder manifests.
 			<-ticker.C
 			now := time.Now()
 			factory.mutex.Lock()
-			for key, cluster := range factory.clients {
-				if cluster.validUntil.Before(now) {
-					cluster.eventBroadcaster.Shutdown()
+			for key, client := range factory.clients {
+				if client.validUntil.Before(now) {
+					client.eventBroadcaster.Shutdown()
+					// TODO: add some (debug) log output when client is removed; unfortunately, we have no logger in here ...
+					// TODO: add metrics about running clients
 					delete(factory.clients, key)
 				}
 			}
@@ -80,51 +83,42 @@ func NewClientFactory(name string, config *rest.Config, schemeBuilder manifests.
 	return factory, nil
 }
 
-func (f *ClientFactory) Get(clientConfig cluster.ClientConfiguration, impersonationConfig cluster.ImpersonationConfiguration) (cluster.Client, error) {
+func (f *ClientFactory) Get(kubeConfig []byte, impersonationUser string, impersonationGroups []string) (Client, error) {
 	f.mutex.Lock()
 	defer f.mutex.Unlock()
 
 	var keyData = make(map[string]any)
 
 	var config *rest.Config
-	if clientConfig == nil {
+	if len(kubeConfig) == 0 {
 		config = rest.CopyConfig(f.config)
 	} else {
-		kubeConfig := clientConfig.GetKubeConfig()
-		if len(kubeConfig) == 0 {
-			config = rest.CopyConfig(f.config)
-		} else {
-			var err error
-			config, err = clientcmd.RESTConfigFromKubeConfig(kubeConfig)
-			if err != nil {
-				return nil, err
-			}
-			keyData["kubeConfig"] = string(kubeConfig)
+		var err error
+		config, err = clientcmd.RESTConfigFromKubeConfig(kubeConfig)
+		if err != nil {
+			return nil, err
 		}
+		keyData["kubeConfig"] = string(kubeConfig)
 	}
 
-	if impersonationConfig != nil {
-		impersonationUser := impersonationConfig.GetImpersonationUser()
-		impersonationGroups := impersonationConfig.GetImpersonationGroups()
-		if impersonationUser != "" || len(impersonationGroups) > 0 {
-			if !reflect.ValueOf(config.Impersonate).IsZero() {
-				return nil, fmt.Errorf("cannot impersonate an already impersonated configuration")
-			}
+	if impersonationUser != "" || len(impersonationGroups) > 0 {
+		if !reflect.ValueOf(config.Impersonate).IsZero() {
+			return nil, fmt.Errorf("cannot impersonate an already impersonated configuration")
 		}
-		if impersonationUser != "" {
-			config.Impersonate.UserName = impersonationUser
-			keyData["impersonationUser"] = impersonationUser
-		}
-		if len(impersonationGroups) > 0 {
-			config.Impersonate.Groups = impersonationGroups
-			keyData["impersonationGroups"] = impersonationGroups
-		}
+	}
+	if impersonationUser != "" {
+		config.Impersonate.UserName = impersonationUser
+		keyData["impersonationUser"] = impersonationUser
+	}
+	if len(impersonationGroups) > 0 {
+		config.Impersonate.Groups = impersonationGroups
+		keyData["impersonationGroups"] = impersonationGroups
 	}
 
 	key := sha256sum(keyData)
 
 	if client, ok := f.clients[key]; ok {
-		client.validUntil = time.Now().Add(15 * time.Minute)
+		client.validUntil = time.Now().Add(validity)
 		return client, nil
 	}
 
@@ -143,15 +137,17 @@ func (f *ClientFactory) Get(clientConfig cluster.ClientConfiguration, impersonat
 	eventBroadcaster := record.NewBroadcaster()
 	eventBroadcaster.StartRecordingToSink(&typedcorev1.EventSinkImpl{Interface: clientset.CoreV1().Events("")})
 	eventRecorder := eventBroadcaster.NewRecorder(f.scheme, corev1.EventSource{Component: f.name})
-	client := &Client{
+	client := &clientImpl{
 		Client:           ctrlclient,
 		discoveryClient:  clientset,
 		eventBroadcaster: eventBroadcaster,
 		eventRecorder:    eventRecorder,
-		validUntil:       time.Now().Add(15 * time.Minute),
+		validUntil:       time.Now().Add(validity),
 	}
 	f.clients[key] = client
 
+	// TODO: add some (debug) log output when new client is created; unfortunately, we have no logger in here ...
+	// TODO: add metrics about running clients
 	return client, nil
 }
 

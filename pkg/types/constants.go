@@ -10,6 +10,7 @@ const (
 	AnnotationKeySuffixDigest          = "digest"
 	AnnotationKeySuffixReconcilePolicy = "reconcile-policy"
 	AnnotationKeySuffixUpdatePolicy    = "update-policy"
+	AnnotationKeySuffixDeletePolicy    = "delete-policy"
 	AnnotationKeySuffixOrder           = "order"
 	AnnotationKeySuffixPurgeOrder      = "purge-order"
 	AnnotationKeySuffixOwnerId         = "owner-id"
@@ -24,4 +25,9 @@ const (
 const (
 	UpdatePolicyDefault  = "default"
 	UpdatePolicyRecreate = "recreate"
+)
+
+const (
+	DeletePolicyDefault = "default"
+	DeletePolicyOrphan  = "orphan"
 )

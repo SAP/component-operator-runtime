@@ -7,7 +7,9 @@ package component
 
 import (
 	"crypto/sha256"
+	"encoding/base32"
 	"encoding/hex"
+	"strings"
 
 	"github.com/sap/go-generics/slices"
 
@@ -21,9 +23,14 @@ import (
 	"github.com/sap/component-operator-runtime/pkg/types"
 )
 
-func sha256hash(data []byte) string {
+func sha256hex(data []byte) string {
 	sum := sha256.Sum256(data)
 	return hex.EncodeToString(sum[:])
+}
+
+func sha256base32(data []byte) string {
+	sum := sha256.Sum256(data)
+	return strings.ToLower(base32.StdEncoding.WithPadding(base32.NoPadding).EncodeToString(sum[:]))
 }
 
 func setLabel(obj client.Object, key string, value string) {
