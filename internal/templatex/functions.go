@@ -51,16 +51,16 @@ func FuncMapForTemplate(t *template.Template) template.FuncMap {
 // template FuncMap generator for functions called in target Kubernetes context
 func FuncMapForClient(c client.Client) template.FuncMap {
 	return template.FuncMap{
-		"lookup":     makeFuncLookup(c, false),
-		"mustLookup": makeFuncLookup(c, true),
+		"lookup":     makeFuncLookup(c, true),
+		"mustLookup": makeFuncLookup(c, false),
 	}
 }
 
 // template FuncMap generator for functions called in local Kubernetes context
 func FuncMapForLocalClient(c client.Client) template.FuncMap {
 	return template.FuncMap{
-		"localLookup":     makeFuncLookup(c, false),
-		"mustLocalLookup": makeFuncLookup(c, true),
+		"localLookup":     makeFuncLookup(c, true),
+		"mustLocalLookup": makeFuncLookup(c, false),
 	}
 }
 
@@ -151,13 +151,13 @@ func makeFuncTpl(t *template.Template) func(string, any) (string, error) {
 	}
 }
 
-func makeFuncLookup(c client.Client, failIfNotFound bool) func(string, string, string, string) (map[string]any, error) {
+func makeFuncLookup(c client.Client, ignoreNotFound bool) func(string, string, string, string) (map[string]any, error) {
 	return func(apiVersion string, kind string, namespace string, name string) (map[string]any, error) {
 		object := &unstructured.Unstructured{}
 		object.SetAPIVersion(apiVersion)
 		object.SetKind(kind)
 		if err := c.Get(context.Background(), apitypes.NamespacedName{Namespace: namespace, Name: name}, object); err != nil {
-			if apierrors.IsNotFound(err) && !failIfNotFound {
+			if apierrors.IsNotFound(err) && ignoreNotFound {
 				err = nil
 			}
 			return map[string]any{}, err
