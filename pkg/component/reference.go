@@ -20,30 +20,48 @@ import (
 	"github.com/sap/component-operator-runtime/pkg/types"
 )
 
+// TODO: should below reference actions be thread safe?
+// If not, it should be stated somewhere explicitly that they are not.
+
+const (
+	tagNotFoundPolicy = "notFoundPolicy"
+	tagFallbackKeys   = "fallbackKeys"
+
+	notFoundPolicyIgnoreOnDeletion = "ignoreOnDeletion"
+)
+
 // +kubebuilder:object:generate=true
 
 // ConfigMapReference defines a loadable reference to a configmap.
 type ConfigMapReference struct {
 	// +required
-	Name string            `json:"name"`
-	data map[string]string `json:"-"`
+	Name   string            `json:"name"`
+	data   map[string]string `json:"-"`
+	loaded bool              `json:"-"`
 }
 
-func (r *ConfigMapReference) load(ctx context.Context, client client.Client, namespace string) error {
+func (r *ConfigMapReference) load(ctx context.Context, client client.Client, namespace string, ignoreNotFound bool) error {
 	configMap := &corev1.ConfigMap{}
 	if err := client.Get(ctx, apitypes.NamespacedName{Namespace: namespace, Name: r.Name}, configMap); err != nil {
 		if errors.IsNotFound(err) {
+			if ignoreNotFound {
+				return nil
+			}
 			return types.NewRetriableError(err, nil)
 		} else {
 			return err
 		}
 	}
 	r.data = configMap.Data
+	r.loaded = true
 	return nil
 }
 
 // Return the previously loaded configmap data.
 func (r *ConfigMapReference) Data() map[string]string {
+	if !r.loaded {
+		panic("access to unloaded reference")
+	}
 	return r.data
 }
 
@@ -54,14 +72,18 @@ type ConfigMapKeyReference struct {
 	// +required
 	Name string `json:"name"`
 	// +optional
-	Key   string `json:"key,omitempty"`
-	value string `json:"-"`
+	Key    string `json:"key,omitempty"`
+	value  string `json:"-"`
+	loaded bool   `json:"-"`
 }
 
-func (r *ConfigMapKeyReference) load(ctx context.Context, client client.Client, namespace string, fallbackKeys ...string) error {
+func (r *ConfigMapKeyReference) load(ctx context.Context, client client.Client, namespace string, ignoreNotFound bool, fallbackKeys ...string) error {
 	configMap := &corev1.ConfigMap{}
 	if err := client.Get(ctx, apitypes.NamespacedName{Namespace: namespace, Name: r.Name}, configMap); err != nil {
 		if errors.IsNotFound(err) {
+			if ignoreNotFound {
+				return nil
+			}
 			return types.NewRetriableError(err, nil)
 		} else {
 			return err
@@ -70,6 +92,7 @@ func (r *ConfigMapKeyReference) load(ctx context.Context, client client.Client, 
 	if r.Key != "" {
 		if value, ok := configMap.Data[r.Key]; ok {
 			r.value = value
+			r.loaded = true
 			return nil
 		} else {
 			return types.NewRetriableError(fmt.Errorf("key %s not found in configmap %s/%s", r.Key, namespace, r.Name), nil)
@@ -78,6 +101,7 @@ func (r *ConfigMapKeyReference) load(ctx context.Context, client client.Client, 
 		for _, key := range fallbackKeys {
 			if value, ok := configMap.Data[key]; ok {
 				r.value = value
+				r.loaded = true
 				return nil
 			}
 		}
@@ -87,6 +111,9 @@ func (r *ConfigMapKeyReference) load(ctx context.Context, client client.Client, 
 
 // Return the previously loaded value of the configmap key.
 func (r *ConfigMapKeyReference) Value() string {
+	if !r.loaded {
+		panic("access to unloaded reference")
+	}
 	return r.value
 }
 
@@ -95,25 +122,33 @@ func (r *ConfigMapKeyReference) Value() string {
 // SecretReference defines a loadable reference to a secret.
 type SecretReference struct {
 	// +required
-	Name string            `json:"name"`
-	data map[string][]byte `json:"-"`
+	Name   string            `json:"name"`
+	data   map[string][]byte `json:"-"`
+	loaded bool              `json:"-"`
 }
 
-func (r *SecretReference) load(ctx context.Context, client client.Client, namespace string) error {
+func (r *SecretReference) load(ctx context.Context, client client.Client, namespace string, ignoreNotFound bool) error {
 	secret := &corev1.Secret{}
 	if err := client.Get(ctx, apitypes.NamespacedName{Namespace: namespace, Name: r.Name}, secret); err != nil {
 		if errors.IsNotFound(err) {
+			if ignoreNotFound {
+				return nil
+			}
 			return types.NewRetriableError(err, nil)
 		} else {
 			return err
 		}
 	}
 	r.data = secret.Data
+	r.loaded = true
 	return nil
 }
 
 // Return the previously loaded secret data.
 func (r *SecretReference) Data() map[string][]byte {
+	if !r.loaded {
+		panic("access to unloaded reference")
+	}
 	return r.data
 }
 
@@ -124,14 +159,18 @@ type SecretKeyReference struct {
 	// +required
 	Name string `json:"name"`
 	// +optional
-	Key   string `json:"key,omitempty"`
-	value []byte `json:"-"`
+	Key    string `json:"key,omitempty"`
+	value  []byte `json:"-"`
+	loaded bool   `json:"-"`
 }
 
-func (r *SecretKeyReference) load(ctx context.Context, client client.Client, namespace string, fallbackKeys ...string) error {
+func (r *SecretKeyReference) load(ctx context.Context, client client.Client, namespace string, ignoreNotFound bool, fallbackKeys ...string) error {
 	secret := &corev1.Secret{}
 	if err := client.Get(ctx, apitypes.NamespacedName{Namespace: namespace, Name: r.Name}, secret); err != nil {
 		if errors.IsNotFound(err) {
+			if ignoreNotFound {
+				return nil
+			}
 			return types.NewRetriableError(err, nil)
 		} else {
 			return err
@@ -140,6 +179,7 @@ func (r *SecretKeyReference) load(ctx context.Context, client client.Client, nam
 	if r.Key != "" {
 		if value, ok := secret.Data[r.Key]; ok {
 			r.value = value
+			r.loaded = true
 			return nil
 		} else {
 			return types.NewRetriableError(fmt.Errorf("key %s not found in secret %s/%s", r.Key, namespace, r.Name), nil)
@@ -148,6 +188,7 @@ func (r *SecretKeyReference) load(ctx context.Context, client client.Client, nam
 		for _, key := range fallbackKeys {
 			if value, ok := secret.Data[key]; ok {
 				r.value = value
+				r.loaded = true
 				return nil
 			}
 		}
@@ -157,6 +198,9 @@ func (r *SecretKeyReference) load(ctx context.Context, client client.Client, nam
 
 // Return the previously loaded value of the secret key.
 func (r *SecretKeyReference) Value() []byte {
+	if !r.loaded {
+		panic("access to unloaded reference")
+	}
 	return r.value
 }
 
@@ -164,21 +208,25 @@ func resolveReferences[T Component](ctx context.Context, client client.Client, c
 	return walk.Walk(getSpec(component), func(x any, path []string, tag reflect.StructTag) error {
 		switch r := x.(type) {
 		case *ConfigMapReference:
-			return r.load(ctx, client, component.GetNamespace())
+			ignoreNotFound := !component.GetDeletionTimestamp().IsZero() && tag.Get(tagNotFoundPolicy) == notFoundPolicyIgnoreOnDeletion
+			return r.load(ctx, client, component.GetNamespace(), ignoreNotFound)
 		case *ConfigMapKeyReference:
+			ignoreNotFound := !component.GetDeletionTimestamp().IsZero() && tag.Get(tagNotFoundPolicy) == notFoundPolicyIgnoreOnDeletion
 			var fallbackKeys []string
-			if s := tag.Get("fallbackKeys"); s != "" {
+			if s := tag.Get(tagFallbackKeys); s != "" {
 				fallbackKeys = strings.Split(s, ",")
 			}
-			return r.load(ctx, client, component.GetNamespace(), fallbackKeys...)
+			return r.load(ctx, client, component.GetNamespace(), ignoreNotFound, fallbackKeys...)
 		case *SecretReference:
-			return r.load(ctx, client, component.GetNamespace())
+			ignoreNotFound := !component.GetDeletionTimestamp().IsZero() && tag.Get(tagNotFoundPolicy) == notFoundPolicyIgnoreOnDeletion
+			return r.load(ctx, client, component.GetNamespace(), ignoreNotFound)
 		case *SecretKeyReference:
+			ignoreNotFound := !component.GetDeletionTimestamp().IsZero() && tag.Get(tagNotFoundPolicy) == notFoundPolicyIgnoreOnDeletion
 			var fallbackKeys []string
-			if s := tag.Get("fallbackKeys"); s != "" {
+			if s := tag.Get(tagFallbackKeys); s != "" {
 				fallbackKeys = strings.Split(s, ",")
 			}
-			return r.load(ctx, client, component.GetNamespace(), fallbackKeys...)
+			return r.load(ctx, client, component.GetNamespace(), !ignoreNotFound, fallbackKeys...)
 		}
 		return nil
 	})
