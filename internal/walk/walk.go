@@ -16,6 +16,22 @@ import (
 
 type WalkFunc func(x any, path []string, tag reflect.StructTag) error
 
+// Walk through x recursively (using reflection), and apply f to each node. In detail, this means:
+//   - slices,arrays and maps will be traversed element by element (note that the order is not predictable in case of maps)
+//   - structs will be traversed field by field (only exported fields).
+//
+// The walk function will be supplied with the following input:
+//   - pointer nodes will be passed as such
+//   - non-pointer nodes which are addressable will be passed as pointer to the node
+//   - other nodes (e.g. non-pointer map entries) will be passed as such
+//   - path is a string slice describing the path in the tree from root to node; map keys and struct fields as they are,
+//     slice/array indices converted to string
+//   - tag is the struct tag of the most recent struct field seen while traversing.
+//
+// Notes:
+//   - Walk may panic in certain situations, e.g. if it is passed non-pointer or nil pointer, or if an unsupported value is
+//     encountered while traversing (e.g. a channel)
+//   - Walk does not produce any errors by itself, it just wraps errors returned by the given callback function f.
 func Walk(x any, f WalkFunc) error {
 	v, ok := x.(reflect.Value)
 	if !ok {
