@@ -7,12 +7,13 @@ package component
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"reflect"
 	"strings"
 
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	apitypes "k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -43,7 +44,7 @@ type ConfigMapReference struct {
 func (r *ConfigMapReference) load(ctx context.Context, client client.Client, namespace string, ignoreNotFound bool) error {
 	configMap := &corev1.ConfigMap{}
 	if err := client.Get(ctx, apitypes.NamespacedName{Namespace: namespace, Name: r.Name}, configMap); err != nil {
-		if errors.IsNotFound(err) {
+		if apierrors.IsNotFound(err) {
 			if ignoreNotFound {
 				return nil
 			}
@@ -55,6 +56,17 @@ func (r *ConfigMapReference) load(ctx context.Context, client client.Client, nam
 	r.data = configMap.Data
 	r.loaded = true
 	return nil
+}
+
+func (r *ConfigMapReference) digest() string {
+	if !r.loaded {
+		return ""
+	}
+	rawData, err := json.Marshal(r.data)
+	if err != nil {
+		panic("this cannot happen")
+	}
+	return sha256hex(rawData)
 }
 
 // Return the previously loaded configmap data.
@@ -80,7 +92,7 @@ type ConfigMapKeyReference struct {
 func (r *ConfigMapKeyReference) load(ctx context.Context, client client.Client, namespace string, ignoreNotFound bool, fallbackKeys ...string) error {
 	configMap := &corev1.ConfigMap{}
 	if err := client.Get(ctx, apitypes.NamespacedName{Namespace: namespace, Name: r.Name}, configMap); err != nil {
-		if errors.IsNotFound(err) {
+		if apierrors.IsNotFound(err) {
 			if ignoreNotFound {
 				return nil
 			}
@@ -109,6 +121,13 @@ func (r *ConfigMapKeyReference) load(ctx context.Context, client client.Client, 
 	}
 }
 
+func (r *ConfigMapKeyReference) digest() string {
+	if !r.loaded {
+		return ""
+	}
+	return sha256hex([]byte(r.value))
+}
+
 // Return the previously loaded value of the configmap key.
 func (r *ConfigMapKeyReference) Value() string {
 	if !r.loaded {
@@ -130,7 +149,7 @@ type SecretReference struct {
 func (r *SecretReference) load(ctx context.Context, client client.Client, namespace string, ignoreNotFound bool) error {
 	secret := &corev1.Secret{}
 	if err := client.Get(ctx, apitypes.NamespacedName{Namespace: namespace, Name: r.Name}, secret); err != nil {
-		if errors.IsNotFound(err) {
+		if apierrors.IsNotFound(err) {
 			if ignoreNotFound {
 				return nil
 			}
@@ -142,6 +161,17 @@ func (r *SecretReference) load(ctx context.Context, client client.Client, namesp
 	r.data = secret.Data
 	r.loaded = true
 	return nil
+}
+
+func (r *SecretReference) digest() string {
+	if !r.loaded {
+		return ""
+	}
+	rawData, err := json.Marshal(r.data)
+	if err != nil {
+		panic("this cannot happen")
+	}
+	return sha256hex(rawData)
 }
 
 // Return the previously loaded secret data.
@@ -167,7 +197,7 @@ type SecretKeyReference struct {
 func (r *SecretKeyReference) load(ctx context.Context, client client.Client, namespace string, ignoreNotFound bool, fallbackKeys ...string) error {
 	secret := &corev1.Secret{}
 	if err := client.Get(ctx, apitypes.NamespacedName{Namespace: namespace, Name: r.Name}, secret); err != nil {
-		if errors.IsNotFound(err) {
+		if apierrors.IsNotFound(err) {
 			if ignoreNotFound {
 				return nil
 			}
@@ -196,6 +226,13 @@ func (r *SecretKeyReference) load(ctx context.Context, client client.Client, nam
 	}
 }
 
+func (r *SecretKeyReference) digest() string {
+	if !r.loaded {
+		return ""
+	}
+	return sha256hex(r.value)
+}
+
 // Return the previously loaded value of the secret key.
 func (r *SecretKeyReference) Value() []byte {
 	if !r.loaded {
@@ -208,9 +245,15 @@ func resolveReferences[T Component](ctx context.Context, client client.Client, c
 	return walk.Walk(getSpec(component), func(x any, path []string, tag reflect.StructTag) error {
 		switch r := x.(type) {
 		case *ConfigMapReference:
+			if r == nil {
+				return nil
+			}
 			ignoreNotFound := !component.GetDeletionTimestamp().IsZero() && tag.Get(tagNotFoundPolicy) == notFoundPolicyIgnoreOnDeletion
 			return r.load(ctx, client, component.GetNamespace(), ignoreNotFound)
 		case *ConfigMapKeyReference:
+			if r == nil {
+				return nil
+			}
 			ignoreNotFound := !component.GetDeletionTimestamp().IsZero() && tag.Get(tagNotFoundPolicy) == notFoundPolicyIgnoreOnDeletion
 			var fallbackKeys []string
 			if s := tag.Get(tagFallbackKeys); s != "" {
@@ -218,15 +261,21 @@ func resolveReferences[T Component](ctx context.Context, client client.Client, c
 			}
 			return r.load(ctx, client, component.GetNamespace(), ignoreNotFound, fallbackKeys...)
 		case *SecretReference:
+			if r == nil {
+				return nil
+			}
 			ignoreNotFound := !component.GetDeletionTimestamp().IsZero() && tag.Get(tagNotFoundPolicy) == notFoundPolicyIgnoreOnDeletion
 			return r.load(ctx, client, component.GetNamespace(), ignoreNotFound)
 		case *SecretKeyReference:
+			if r == nil {
+				return nil
+			}
 			ignoreNotFound := !component.GetDeletionTimestamp().IsZero() && tag.Get(tagNotFoundPolicy) == notFoundPolicyIgnoreOnDeletion
 			var fallbackKeys []string
 			if s := tag.Get(tagFallbackKeys); s != "" {
 				fallbackKeys = strings.Split(s, ",")
 			}
-			return r.load(ctx, client, component.GetNamespace(), !ignoreNotFound, fallbackKeys...)
+			return r.load(ctx, client, component.GetNamespace(), ignoreNotFound, fallbackKeys...)
 		}
 		return nil
 	})

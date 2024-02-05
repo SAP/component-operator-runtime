@@ -23,7 +23,7 @@ import (
 	"github.com/spf13/pflag"
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/runtime/schema"
-	"sigs.k8s.io/yaml"
+	kyaml "sigs.k8s.io/yaml"
 )
 
 type Config struct {
@@ -57,7 +57,7 @@ func (c Config) ToJson() []byte {
 }
 
 func (c Config) ToYaml() []byte {
-	raw, err := yaml.Marshal(c)
+	raw, err := kyaml.Marshal(c)
 	if err != nil {
 		panic(err)
 	}

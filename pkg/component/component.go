@@ -6,6 +6,7 @@ SPDX-License-Identifier: Apache-2.0
 package component
 
 import (
+	"encoding/json"
 	"fmt"
 	"reflect"
 	"time"
@@ -13,6 +14,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 
+	"github.com/sap/component-operator-runtime/internal/walk"
 	"github.com/sap/component-operator-runtime/pkg/types"
 )
 
@@ -86,6 +88,46 @@ func assertRetryConfiguration[T Component](component T) (RetryConfiguration, boo
 		return retryConfiguration, true
 	}
 	return nil, false
+}
+
+// Calculate digest of given component, honoring annotations, spec, and references
+func digest[T Component](component T) string {
+	digestData := make(map[string]any)
+	spec := getSpec(component)
+	digestData["annotations"] = component.GetAnnotations()
+	digestData["spec"] = spec
+	if err := walk.Walk(getSpec(component), func(x any, path []string, _ reflect.StructTag) error {
+		rawPath, err := json.Marshal(path)
+		if err != nil {
+			panic(err)
+		}
+		switch r := x.(type) {
+		case *ConfigMapReference:
+			if r != nil {
+				digestData["refs:"+string(rawPath)] = r.digest()
+			}
+		case *ConfigMapKeyReference:
+			if r != nil {
+				digestData["refs:"+string(rawPath)] = r.digest()
+			}
+		case *SecretReference:
+			if r != nil {
+				digestData["refs:"+string(rawPath)] = r.digest()
+			}
+		case *SecretKeyReference:
+			if r != nil {
+				digestData["refs:"+string(rawPath)] = r.digest()
+			}
+		}
+		return nil
+	}); err != nil {
+		panic("this cannot happen")
+	}
+	rawDigestData, err := json.Marshal(digestData)
+	if err != nil {
+		panic("this cannot happen")
+	}
+	return sha256hex(rawDigestData)
 }
 
 // Implement the PlacementConfiguration interface.

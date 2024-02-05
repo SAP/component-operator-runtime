@@ -516,6 +516,7 @@ func (t *reconcileTarget[T]) Reconcile(ctx context.Context, component T) (bool, 
 	// TODO: remove the legacyOwnerId check (needed until we are sure that all owner id labels have the new format)
 	legacyOwnerId := component.GetNamespace() + "_" + component.GetName()
 	status := component.GetStatus()
+	componentDigest := digest(component)
 
 	// render manifests
 	// TODO: sometimes the generator needs more information about the rendered component (such as the component's name or namespace);
@@ -523,7 +524,10 @@ func (t *reconcileTarget[T]) Reconcile(ctx context.Context, component T) (bool, 
 	// we could expose the component (full object or maybe just its metadata) via the generate context;
 	// another option would be to have a special NamespacedName reuse type, where the namespace part would be auto-defaulted
 	// by the framework (similar to the auto-loading of configmap/secret references)
-	generateCtx := manifests.NewContextWithClient(manifests.NewContextWithReconcilerName(ctx, t.reconcilerName), t.client)
+	generateCtx := manifests.NewContext(ctx).
+		WithReconcilerName(t.reconcilerName).
+		WithClient(t.client).
+		WithComponentDigest(componentDigest)
 	objects, err := t.resourceGenerator.Generate(generateCtx, namespace, name, component.GetSpec())
 	if err != nil {
 		return false, errors.Wrap(err, "error rendering manifests")
@@ -762,6 +766,7 @@ func (t *reconcileTarget[T]) Reconcile(ctx context.Context, component T) (bool, 
 	// note: after this point it is guaranteed that the persisted inventory reflects the target state
 	// now it is about to synchronize the cluster state with the inventory
 
+	// TODO: delete-order
 	// count instances of managed types which are about to be deleted
 	numManagedToBeDeleted := 0
 	for _, item := range status.Inventory {
@@ -993,6 +998,7 @@ func (t *reconcileTarget[T]) Delete(ctx context.Context, component T) (bool, err
 	}
 
 	// delete objects and maintain inventory
+	// TODO: delete-order
 	var inventory []*InventoryItem
 	for _, item := range status.Inventory {
 		// fetch object (if existing)
