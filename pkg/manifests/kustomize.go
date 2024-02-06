@@ -27,6 +27,7 @@ import (
 	kyaml "sigs.k8s.io/yaml"
 
 	"github.com/sap/component-operator-runtime/internal/cluster"
+	"github.com/sap/component-operator-runtime/internal/reconcile"
 	"github.com/sap/component-operator-runtime/internal/templatex"
 	"github.com/sap/component-operator-runtime/pkg/types"
 )
@@ -153,7 +154,7 @@ func NewKustomizeGeneratorWithObjectTransformer(fsys fs.FS, kustomizationPath st
 func (g *KustomizeGenerator) Generate(ctx context.Context, namespace string, name string, parameters types.Unstructurable) ([]client.Object, error) {
 	var objects []client.Object
 
-	client, err := ClientFromContext(ctx)
+	client, err := reconcile.ClientFromContext(ctx)
 	if err != nil {
 		return nil, err
 	}

@@ -28,6 +28,7 @@ import (
 	kyaml "sigs.k8s.io/yaml"
 
 	"github.com/sap/component-operator-runtime/internal/helm"
+	"github.com/sap/component-operator-runtime/internal/reconcile"
 	"github.com/sap/component-operator-runtime/internal/templatex"
 	"github.com/sap/component-operator-runtime/pkg/types"
 )
@@ -220,11 +221,11 @@ func NewHelmGeneratorWithObjectTransformer(name string, fsys fs.FS, chartPath st
 func (g *HelmGenerator) Generate(ctx context.Context, namespace string, name string, parameters types.Unstructurable) ([]client.Object, error) {
 	var objects []client.Object
 
-	reconcilerName, err := ReconcilerNameFromContext(ctx)
+	reconcilerName, err := reconcile.ReconcilerNameFromContext(ctx)
 	if err != nil {
 		return nil, err
 	}
-	client, err := ClientFromContext(ctx)
+	client, err := reconcile.ClientFromContext(ctx)
 	if err != nil {
 		return nil, err
 	}

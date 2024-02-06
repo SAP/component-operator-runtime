@@ -123,10 +123,6 @@ github.com/prometheus/procfs v0.10.1 h1:kYK1Va/YMlutzCGazswoHKo//tZVlFpKYh+Pymzi
 github.com/prometheus/procfs v0.10.1/go.mod h1:nwNm2aOCAYw8uTR/9bWRREkZFxAUcWzPHWJq+XBB/FM=
 github.com/rogpeppe/go-internal v1.10.0 h1:TMyTOH3F/DB16zRVcYyreMH6GnZZrwQVAoYjRBZyWFQ=
 github.com/rogpeppe/go-internal v1.10.0/go.mod h1:UQnix2H7Ngw/k4C5ijL5+65zddjncjaFoBhdsK/akog=
-github.com/sap/go-generics v0.1.8 h1:S16/8Qxk0vytuKQamXYd7RysQpHpsnnsPNL3Q7g8uZU=
-github.com/sap/go-generics v0.1.8/go.mod h1:9ywvA4XyTaPSayzstFXt9c+lYn/++TRQ0iW6z+vfnu0=
-github.com/sap/go-generics v0.1.9 h1:oiZ11empOCsmHPHLEwQ2Yfn5fnfqjd2l6hzzYu73ewg=
-github.com/sap/go-generics v0.1.9/go.mod h1:P0+/APImYIlDC3RkF43EVj12aoYBks29dMTbPotqdso=
 github.com/sap/go-generics v0.1.10 h1:1dc/6WiS6kYoSk8s+slwJTU+zOt5U5gPOV+pAZmhhzg=
 github.com/sap/go-generics v0.1.10/go.mod h1:P0+/APImYIlDC3RkF43EVj12aoYBks29dMTbPotqdso=
 github.com/sergi/go-diff v1.1.0 h1:we8PVUC3FE2uYfodKH/nBHMSetSfHDR6scGdBi+erh0=

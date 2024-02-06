@@ -45,6 +45,7 @@ import (
 
 	"github.com/sap/component-operator-runtime/internal/backoff"
 	"github.com/sap/component-operator-runtime/internal/cluster"
+	"github.com/sap/component-operator-runtime/internal/reconcile"
 	"github.com/sap/component-operator-runtime/pkg/manifests"
 	"github.com/sap/component-operator-runtime/pkg/types"
 )
@@ -99,6 +100,9 @@ type Reconciler[T Component] struct {
 	setupMutex         sync.Mutex
 	setupComplete      bool
 }
+
+// TODO: add options struct to NewReconciler (for example to tune owner id conflict, namspace auto-creation behavior)
+// TODO: allow scheme builder to be supplied independently from being implemented by resourceGenerator
 
 // Create a new Reconciler.
 // Here, name should be a meaningful and unique name identifying this reconciler within the Kubernetes cluster; it will be used in annotations, finalizers, and so on;
@@ -219,10 +223,12 @@ func (r *Reconciler[T]) Reconcile(ctx context.Context, req ctrl.Request) (result
 		return ctrl.Result{}, errors.Wrap(err, "error getting client for component")
 	}
 	target := newReconcileTarget[T](r.name, r.id, targetClient, r.resourceGenerator)
+	hookCtx := reconcile.NewContext(ctx).WithClient(targetClient)
 
 	// do the reconciliation
 	if component.GetDeletionTimestamp().IsZero() {
 		// create/update case
+		// TODO: optionally (to be completely consistent) set finalizer through a mutating webhook
 		if added := controllerutil.AddFinalizer(component, r.name); added {
 			if err := r.client.Update(ctx, component); err != nil {
 				return ctrl.Result{}, errors.Wrap(err, "error adding finalizer")
@@ -235,7 +241,7 @@ func (r *Reconciler[T]) Reconcile(ctx context.Context, req ctrl.Request) (result
 
 		log.V(2).Info("reconciling dependent resources")
 		for hookOrder, hook := range r.preReconcileHooks {
-			if err := hook(ctx, r.client, component); err != nil {
+			if err := hook(hookCtx, r.client, component); err != nil {
 				return ctrl.Result{}, errors.Wrapf(err, "error running pre-reconcile hook (%d)", hookOrder)
 			}
 		}
@@ -246,7 +252,7 @@ func (r *Reconciler[T]) Reconcile(ctx context.Context, req ctrl.Request) (result
 		}
 		if ok {
 			for hookOrder, hook := range r.postReconcileHooks {
-				if err := hook(ctx, r.client, component); err != nil {
+				if err := hook(hookCtx, r.client, component); err != nil {
 					return ctrl.Result{}, errors.Wrapf(err, "error running post-reconcile hook (%d)", hookOrder)
 				}
 			}
@@ -282,7 +288,7 @@ func (r *Reconciler[T]) Reconcile(ctx context.Context, req ctrl.Request) (result
 		// deletion case
 		log.V(2).Info("deleting dependent resources")
 		for hookOrder, hook := range r.preDeleteHooks {
-			if err := hook(ctx, r.client, component); err != nil {
+			if err := hook(hookCtx, r.client, component); err != nil {
 				return ctrl.Result{}, errors.Wrapf(err, "error running pre-delete hook (%d)", hookOrder)
 			}
 		}
@@ -293,7 +299,7 @@ func (r *Reconciler[T]) Reconcile(ctx context.Context, req ctrl.Request) (result
 		}
 		if ok {
 			for hookOrder, hook := range r.postDeleteHooks {
-				if err := hook(ctx, r.client, component); err != nil {
+				if err := hook(hookCtx, r.client, component); err != nil {
 					return ctrl.Result{}, errors.Wrapf(err, "error running post-delete hook (%d)", hookOrder)
 				}
 			}
@@ -524,7 +530,7 @@ func (t *reconcileTarget[T]) Reconcile(ctx context.Context, component T) (bool, 
 	// we could expose the component (full object or maybe just its metadata) via the generate context;
 	// another option would be to have a special NamespacedName reuse type, where the namespace part would be auto-defaulted
 	// by the framework (similar to the auto-loading of configmap/secret references)
-	generateCtx := manifests.NewContext(ctx).
+	generateCtx := reconcile.NewContext(ctx).
 		WithReconcilerName(t.reconcilerName).
 		WithClient(t.client).
 		WithComponentDigest(componentDigest)
