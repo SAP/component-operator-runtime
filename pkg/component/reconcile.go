@@ -32,7 +32,6 @@ import (
 	apitypes "k8s.io/apimachinery/pkg/types"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/client-go/discovery"
-	"k8s.io/client-go/tools/record"
 	apiregistrationv1 "k8s.io/kube-aggregator/pkg/apis/apiregistration/v1"
 	kstatus "sigs.k8s.io/cli-utils/pkg/kstatus/status"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -51,8 +50,9 @@ import (
 )
 
 // TODO: we should disallow generators to produce manifests using metadata.generatName (it would break the whole inventory logic)
-
 // TODO: in general add more retry to overcome 409 update errors (also etcd storage errors because of missed precondition on delete)
+// TODO: allow to override namespace auto-creation and adoption policy settings on a per-component level
+// (e.g. through annotations or another interface that components could optionally implement)
 
 const (
 	readyConditionReasonNew                = "FirstSeen"
@@ -84,12 +84,38 @@ const (
 // has been successful.
 type HookFunc[T Component] func(ctx context.Context, client client.Client, component T) error
 
+// ReconcilerOptions are creation options for a Reconciler.
+type ReconcilerOptions struct {
+	// Whether namespaces are auto-created if missing.
+	// If unspecified, true is assumed.
+	CreateMissingNamespaces *bool
+	// How to react if a dependent object exists but has no or a different owner.
+	// If unspecified, AdoptionPolicyAdoptUnowned is assumed.
+	AdoptionPolicy *AdoptionPolicy
+	// Schemebuilder allows to define additional schemes to be made available in the
+	// target client.
+	SchemeBuilder types.SchemeBuilder
+}
+
+// AdoptionPolicy defines how the reconciler reacts if a dependent object exists but has no or a different owner.
+type AdoptionPolicy string
+
+const (
+	// Fail if the dependent object exists but has no or a different owner.
+	AdoptionPolicyFail AdoptionPolicy = "Fail"
+	// Adopt existing dependent objects if they have no owner set.
+	AdoptionPolicyAdoptUnowned AdoptionPolicy = "AdoptUnowned"
+	// Adopt all existing dependent objects, even if they have a conflicting owner.
+	AdoptionPolicyAdoptAll AdoptionPolicy = "AdoptAll"
+)
+
 // Reconciler provides the implementation of controller-runtime's Reconciler interface, for a given Component type T.
 type Reconciler[T Component] struct {
 	name               string
 	id                 string
 	client             cluster.Client
 	resourceGenerator  manifests.Generator
+	options            ReconcilerOptions
 	clients            *cluster.ClientFactory
 	backoff            *backoff.Backoff
 	postReadHooks      []HookFunc[T]
@@ -101,19 +127,22 @@ type Reconciler[T Component] struct {
 	setupComplete      bool
 }
 
-// TODO: add options struct to NewReconciler (for example to tune owner id conflict, namspace auto-creation behavior)
-// TODO: allow scheme builder to be supplied independently from being implemented by resourceGenerator
-
 // Create a new Reconciler.
 // Here, name should be a meaningful and unique name identifying this reconciler within the Kubernetes cluster; it will be used in annotations, finalizers, and so on;
 // resourceGenerator must be an implementation of the manifests.Generator interface.
-//
-// Deprecation warning: the parameters client, discoveryClient, eventRecorder, scheme are ignored (can be passed as nil) and will be removed in a future release;
-// in their place, the according clients will be derived directly from the responsible manager, as passed to SetupWithmanager().
-func NewReconciler[T Component](name string, client client.Client, discoveryClient discovery.DiscoveryInterface, eventRecorder record.EventRecorder, scheme *runtime.Scheme, resourceGenerator manifests.Generator) *Reconciler[T] {
+func NewReconciler[T Component](name string, resourceGenerator manifests.Generator, options ReconcilerOptions) *Reconciler[T] {
+	if options.CreateMissingNamespaces == nil {
+		options.CreateMissingNamespaces = &[]bool{true}[0]
+	}
+	if options.AdoptionPolicy == nil {
+		options.AdoptionPolicy = &[]AdoptionPolicy{AdoptionPolicyAdoptUnowned}[0]
+	}
+	// TOOD: validate adoption policy
+
 	return &Reconciler[T]{
 		name:              name,
 		resourceGenerator: resourceGenerator,
+		options:           options,
 		backoff:           backoff.NewBackoff(5 * time.Second),
 		postReadHooks:     []HookFunc[T]{resolveReferences[T]},
 	}
@@ -222,7 +251,7 @@ func (r *Reconciler[T]) Reconcile(ctx context.Context, req ctrl.Request) (result
 	if err != nil {
 		return ctrl.Result{}, errors.Wrap(err, "error getting client for component")
 	}
-	target := newReconcileTarget[T](r.name, r.id, targetClient, r.resourceGenerator)
+	target := newReconcileTarget[T](r.name, r.id, targetClient, r.resourceGenerator, *r.options.CreateMissingNamespaces, *r.options.AdoptionPolicy)
 	hookCtx := reconcile.NewContext(ctx).WithClient(targetClient)
 
 	// do the reconciliation
@@ -411,8 +440,14 @@ func (r *Reconciler[T]) SetupWithManager(mgr ctrl.Manager) error {
 	}
 	r.client = cluster.NewClient(mgr.GetClient(), discoveryClient, mgr.GetEventRecorderFor(r.name))
 
-	schemeBuilder, _ := r.resourceGenerator.(types.SchemeBuilder)
-	r.clients, err = cluster.NewClientFactory(r.name, mgr.GetConfig(), schemeBuilder)
+	var schemeBuilders []types.SchemeBuilder
+	if schemeBuilder, ok := r.resourceGenerator.(types.SchemeBuilder); ok {
+		schemeBuilders = append(schemeBuilders, schemeBuilder)
+	}
+	if r.options.SchemeBuilder != nil {
+		schemeBuilders = append(schemeBuilders, r.options.SchemeBuilder)
+	}
+	r.clients, err = cluster.NewClientFactory(r.name, mgr.GetConfig(), schemeBuilders)
 	if err != nil {
 		return errors.Wrap(err, "error creating client factory")
 	}
@@ -435,7 +470,7 @@ func (r *Reconciler[T]) getClientForComponent(component T) (cluster.Client, erro
 	placementConfiguration, havePlacementConfiguration := assertPlacementConfiguration(component)
 	clientConfiguration, haveClientConfiguration := assertClientConfiguration(component)
 	impersonationConfiguration, haveImpersonationConfiguration := assertImpersonationConfiguration(component)
-	_, haveCustomScheme := r.resourceGenerator.(types.SchemeBuilder)
+	haveCustomScheme := func() bool { _, ok := r.resourceGenerator.(types.SchemeBuilder); return ok }() || r.options.SchemeBuilder != nil
 	// TODO: we should always return a factory client, even in the default case;
 	// however this would be an incompatible change; people who previously supplied a custom scheme via the manager's client
 	// would now have to do the same by adding AddToScheme() to the used generator.
@@ -477,6 +512,8 @@ type reconcileTarget[T Component] struct {
 	reconcilerId                 string
 	client                       cluster.Client
 	resourceGenerator            manifests.Generator
+	createMissingNamespaces      bool
+	adoptionPolicy               AdoptionPolicy
 	labelKeyOwnerId              string
 	annotationKeyDigest          string
 	annotationKeyReconcilePolicy string
@@ -487,12 +524,14 @@ type reconcileTarget[T Component] struct {
 	annotationKeyOwnerId         string
 }
 
-func newReconcileTarget[T Component](reconcilerName string, reconcilerId string, client cluster.Client, resourceGenerator manifests.Generator) *reconcileTarget[T] {
+func newReconcileTarget[T Component](reconcilerName string, reconcilerId string, client cluster.Client, resourceGenerator manifests.Generator, createMissingNamespaces bool, adoptionPolicy AdoptionPolicy) *reconcileTarget[T] {
 	return &reconcileTarget[T]{
 		reconcilerName:               reconcilerName,
 		reconcilerId:                 reconcilerId,
 		client:                       client,
 		resourceGenerator:            resourceGenerator,
+		createMissingNamespaces:      createMissingNamespaces,
+		adoptionPolicy:               adoptionPolicy,
 		labelKeyOwnerId:              reconcilerName + "/" + types.LabelKeySuffixOwnerId,
 		annotationKeyDigest:          reconcilerName + "/" + types.AnnotationKeySuffixDigest,
 		annotationKeyReconcilePolicy: reconcilerName + "/" + types.AnnotationKeySuffixReconcilePolicy,
@@ -717,13 +756,13 @@ func (t *reconcileTarget[T]) Reconcile(ctx context.Context, component T) (bool, 
 			if existingObject != nil {
 				existingOwnerId := existingObject.GetLabels()[t.labelKeyOwnerId]
 				if existingOwnerId == "" {
-					// TODO: make this configurable by some switch on Reconciler (or even per Component instance)
-					processForeign := true
-					if !processForeign {
+					if t.adoptionPolicy != AdoptionPolicyAdoptUnowned && t.adoptionPolicy != AdoptionPolicyAdoptAll {
 						return false, fmt.Errorf("found existing object %s without owner", types.ObjectKeyToString(object))
 					}
 				} else if existingOwnerId != hashedOwnerId && existingOwnerId != legacyOwnerId {
-					return false, fmt.Errorf("owner conflict; object %s is owned by %s", types.ObjectKeyToString(object), existingObject.GetAnnotations()[t.annotationKeyOwnerId])
+					if t.adoptionPolicy != AdoptionPolicyAdoptAll {
+						return false, fmt.Errorf("owner conflict; object %s is owned by %s", types.ObjectKeyToString(object), existingObject.GetAnnotations()[t.annotationKeyOwnerId])
+					}
 				}
 			}
 			status.Inventory = append(status.Inventory, &InventoryItem{})
@@ -861,14 +900,15 @@ func (t *reconcileTarget[T]) Reconcile(ctx context.Context, component T) (bool, 
 	// in other words: status.Inventory and objects contains the same resources
 
 	// create missing namespaces
-	// TODO: make auto-creation of namespaces more configurable
-	for _, namespace := range findMissingNamespaces(objects) {
-		if err := t.client.Get(ctx, apitypes.NamespacedName{Name: namespace}, &corev1.Namespace{}); err != nil {
-			if !apierrors.IsNotFound(err) {
-				return false, errors.Wrapf(err, "error reading namespace %s", namespace)
-			}
-			if err := t.client.Create(ctx, &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: namespace}}); err != nil {
-				return false, errors.Wrapf(err, "error creating namespace %s", namespace)
+	if t.createMissingNamespaces {
+		for _, namespace := range findMissingNamespaces(objects) {
+			if err := t.client.Get(ctx, apitypes.NamespacedName{Name: namespace}, &corev1.Namespace{}); err != nil {
+				if !apierrors.IsNotFound(err) {
+					return false, errors.Wrapf(err, "error reading namespace %s", namespace)
+				}
+				if err := t.client.Create(ctx, &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: namespace}}); err != nil {
+					return false, errors.Wrapf(err, "error creating namespace %s", namespace)
+				}
 			}
 		}
 	}

@@ -27,7 +27,6 @@ import (
 	"github.com/pkg/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
-	"k8s.io/client-go/discovery"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -71,8 +70,8 @@ func GetUncacheableTypes() []client.Object {
 	return defaultOperator.GetUncacheableTypes()
 }
 
-func Setup(mgr ctrl.Manager, discoveryClient discovery.DiscoveryInterface) error {
-	return defaultOperator.Setup(mgr, discoveryClient)
+func Setup(mgr ctrl.Manager) error {
+	return defaultOperator.Setup(mgr)
 }
 
 func New() *Operator {
@@ -109,7 +108,7 @@ func (o *Operator) GetUncacheableTypes() []client.Object {
 	return []client.Object{&operator{{ .groupVersion }}.{{ .kind }}{}}
 }
 
-func (o *Operator) Setup(mgr ctrl.Manager, discoveryClient discovery.DiscoveryInterface) error {
+func (o *Operator) Setup(mgr ctrl.Manager) error {
 	// Replace this by a real resource generator (e.g. manifests.HelmGenerator, or your own one).
 	resourceGenerator, err := manifests.NewDummyGenerator()
 	if err != nil {
@@ -118,11 +117,8 @@ func (o *Operator) Setup(mgr ctrl.Manager, discoveryClient discovery.DiscoveryIn
 
 	if err := component.NewReconciler[*operator{{ .groupVersion }}.{{ .kind }}](
 		o.options.Name,
-		nil,
-		nil,
-		nil,
-		nil,
 		resourceGenerator,
+		component.ReconcilerOptions{},
 	).SetupWithManager(mgr); err != nil {
 		return errors.Wrapf(err, "unable to create controller")
 	}

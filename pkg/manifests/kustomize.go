@@ -121,7 +121,6 @@ func NewKustomizeGenerator(fsys fs.FS, kustomizationPath string, templateSuffix 
 }
 
 // Create a new KustomizeGenerator as TransformableGenerator.
-// Deprecation warning: the parameter client is ignored (can be passed as nil) and will be removed in a future release.
 func NewTransformableKustomizeGenerator(fsys fs.FS, kustomizationPath string, templateSuffix string, client client.Client) (TransformableGenerator, error) {
 	g, err := NewKustomizeGenerator(fsys, kustomizationPath, templateSuffix, client)
 	if err != nil {
@@ -131,7 +130,6 @@ func NewTransformableKustomizeGenerator(fsys fs.FS, kustomizationPath string, te
 }
 
 // Create a new KustomizeGenerator with a ParameterTransformer attached (further transformers can be attached to the returned generator object).
-// Deprecation warning: the parameter client is ignored (can be passed as nil) and will be removed in a future release.
 func NewKustomizeGeneratorWithParameterTransformer(fsys fs.FS, kustomizationPath string, templateSuffix string, client client.Client, transformer ParameterTransformer) (TransformableGenerator, error) {
 	g, err := NewTransformableKustomizeGenerator(fsys, kustomizationPath, templateSuffix, client)
 	if err != nil {
@@ -141,7 +139,6 @@ func NewKustomizeGeneratorWithParameterTransformer(fsys fs.FS, kustomizationPath
 }
 
 // Create a new KustomizeGenerator with an ObjectTransformer attached (further transformers can be attached to the returned generator object).
-// Deprecation warning: the parameter client is ignored (can be passed as nil) and will be removed in a future release.
 func NewKustomizeGeneratorWithObjectTransformer(fsys fs.FS, kustomizationPath string, templateSuffix string, client client.Client, transformer ObjectTransformer) (TransformableGenerator, error) {
 	g, err := NewTransformableKustomizeGenerator(fsys, kustomizationPath, templateSuffix, client)
 	if err != nil {

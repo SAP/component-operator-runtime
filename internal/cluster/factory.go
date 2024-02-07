@@ -38,7 +38,7 @@ type ClientFactory struct {
 
 const validity = 15 * time.Minute
 
-func NewClientFactory(name string, config *rest.Config, schemeBuilder types.SchemeBuilder) (*ClientFactory, error) {
+func NewClientFactory(name string, config *rest.Config, schemeBuilders []types.SchemeBuilder) (*ClientFactory, error) {
 	scheme := runtime.NewScheme()
 	if err := clientgoscheme.AddToScheme(scheme); err != nil {
 		return nil, err
@@ -49,7 +49,7 @@ func NewClientFactory(name string, config *rest.Config, schemeBuilder types.Sche
 	if err := apiregistrationv1.AddToScheme(scheme); err != nil {
 		return nil, err
 	}
-	if schemeBuilder != nil {
+	for _, schemeBuilder := range schemeBuilders {
 		if err := schemeBuilder.AddToScheme(scheme); err != nil {
 			return nil, err
 		}

@@ -144,6 +144,9 @@ type Generator interface {
 }
 ```
 
+In addition to `namespace`, `name`, `parameters`, generators can retrieve additional contextual information, such as a
+client for the deployment target by calling `utils.ClientFromContext()`, and related functions.
+
 Component controllers can of course implement their own generator. In many cases (for example if there exists a
 Helm chart or kustomization for the component), one of the [generators bundled with this repository](../../generators) can be used.
 

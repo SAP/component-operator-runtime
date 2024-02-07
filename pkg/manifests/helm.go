@@ -23,7 +23,6 @@ import (
 
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	utilyaml "k8s.io/apimachinery/pkg/util/yaml"
-	"k8s.io/client-go/discovery"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	kyaml "sigs.k8s.io/yaml"
 
@@ -45,14 +44,12 @@ type HelmGenerator struct {
 var _ Generator = &HelmGenerator{}
 
 // Create a new HelmGenerator.
-// Deprecation warning: the parameters name and discoveryClient are ignored (can be passed as empty resp. nil) and will be removed in a future release;
-// the according values will be retrieved from the context passed to Generate().
 // The parameter client should be a client for the local cluster (i.e. the cluster where the component object resides);
 // it is used by the localLookup and mustLocalLookup template functions.
 // If fsys is nil, the local operating system filesystem will be used, and chartPath can be an absolute or relative path (in the latter case it will be considered
 // relative to the current working directory). If fsys is non-nil, then chartPath should be a relative path; if an absolute path is supplied, it will be turned
 // An empty chartPath will be treated like ".".
-func NewHelmGenerator(name string, fsys fs.FS, chartPath string, client client.Client, discoveryClient discovery.DiscoveryInterface) (*HelmGenerator, error) {
+func NewHelmGenerator(fsys fs.FS, chartPath string, client client.Client) (*HelmGenerator, error) {
 	g := HelmGenerator{
 		data: make(map[string]any),
 	}
@@ -188,9 +185,8 @@ func NewHelmGenerator(name string, fsys fs.FS, chartPath string, client client.C
 }
 
 // Create a new HelmGenerator as TransformableGenerator.
-// Deprecation warning: the parameters name, client and discoveryClient are ignored (can be passed as empty resp. nil) and will be removed in a future release.
-func NewTransformableHelmGenerator(name string, fsys fs.FS, chartPath string, client client.Client, discoveryClient discovery.DiscoveryInterface) (TransformableGenerator, error) {
-	g, err := NewHelmGenerator(name, fsys, chartPath, client, discoveryClient)
+func NewTransformableHelmGenerator(fsys fs.FS, chartPath string, client client.Client) (TransformableGenerator, error) {
+	g, err := NewHelmGenerator(fsys, chartPath, client)
 	if err != nil {
 		return nil, err
 	}
@@ -198,9 +194,8 @@ func NewTransformableHelmGenerator(name string, fsys fs.FS, chartPath string, cl
 }
 
 // Create a new HelmGenerator with a ParameterTransformer attached (further transformers can be attached to the returned generator object).
-// Deprecation warning: the parameters name, client and discoveryClient are ignored (can be passed as empty resp. nil) and will be removed in a future release.
-func NewHelmGeneratorWithParameterTransformer(name string, fsys fs.FS, chartPath string, client client.Client, discoveryClient discovery.DiscoveryInterface, transformer ParameterTransformer) (TransformableGenerator, error) {
-	g, err := NewTransformableHelmGenerator(name, fsys, chartPath, client, discoveryClient)
+func NewHelmGeneratorWithParameterTransformer(fsys fs.FS, chartPath string, client client.Client, transformer ParameterTransformer) (TransformableGenerator, error) {
+	g, err := NewTransformableHelmGenerator(fsys, chartPath, client)
 	if err != nil {
 		return nil, err
 	}
@@ -208,9 +203,8 @@ func NewHelmGeneratorWithParameterTransformer(name string, fsys fs.FS, chartPath
 }
 
 // Create a new HelmGenerator with an ObjectTransformer attached (further transformers can be attached to the returned generator object).
-// Deprecation warning: the parameters name, client and discoveryClient are ignored (can be passed as empty resp. nil) and will be removed in a future release.
-func NewHelmGeneratorWithObjectTransformer(name string, fsys fs.FS, chartPath string, client client.Client, discoveryClient discovery.DiscoveryInterface, transformer ObjectTransformer) (TransformableGenerator, error) {
-	g, err := NewTransformableHelmGenerator(name, fsys, chartPath, client, discoveryClient)
+func NewHelmGeneratorWithObjectTransformer(fsys fs.FS, chartPath string, client client.Client, transformer ObjectTransformer) (TransformableGenerator, error) {
+	g, err := NewTransformableHelmGenerator(fsys, chartPath, client)
 	if err != nil {
 		return nil, err
 	}
