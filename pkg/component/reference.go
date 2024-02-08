@@ -36,6 +36,7 @@ const (
 // ConfigMapReference defines a loadable reference to a configmap.
 type ConfigMapReference struct {
 	// +required
+	// +kubebuilder:validation:MinLength=1
 	Name   string            `json:"name"`
 	data   map[string]string `json:"-"`
 	loaded bool              `json:"-"`
@@ -82,8 +83,10 @@ func (r *ConfigMapReference) Data() map[string]string {
 // ConfigMapKeyReference defines a loadable reference to a configmap key.
 type ConfigMapKeyReference struct {
 	// +required
+	// +kubebuilder:validation:MinLength=1
 	Name string `json:"name"`
 	// +optional
+	// +kubebuilder:validation:MinLength=1
 	Key    string `json:"key,omitempty"`
 	value  string `json:"-"`
 	loaded bool   `json:"-"`
@@ -141,6 +144,7 @@ func (r *ConfigMapKeyReference) Value() string {
 // SecretReference defines a loadable reference to a secret.
 type SecretReference struct {
 	// +required
+	// +kubebuilder:validation:MinLength=1
 	Name   string            `json:"name"`
 	data   map[string][]byte `json:"-"`
 	loaded bool              `json:"-"`
@@ -187,8 +191,10 @@ func (r *SecretReference) Data() map[string][]byte {
 // SecretKeyReference defines a loadable reference to a secret key.
 type SecretKeyReference struct {
 	// +required
+	// +kubebuilder:validation:MinLength=1
 	Name string `json:"name"`
 	// +optional
+	// +kubebuilder:validation:MinLength=1
 	Key    string `json:"key,omitempty"`
 	value  []byte `json:"-"`
 	loaded bool   `json:"-"`
