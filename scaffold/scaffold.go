@@ -84,7 +84,7 @@ var templates embed.FS
 var (
 	goVersion                      = "1.21.6"
 	version                        = "latest"
-	kubernetesVersion              = "v0.29.1"
+	kubernetesVersion              = "v0.30.0-alpha.2"
 	controllerRuntimeVersion       = "v0.16.3"
 	controllerToolsVersion         = "v0.14.0"
 	codeGeneratorVersion           = "v0.30.0-alpha.2"
