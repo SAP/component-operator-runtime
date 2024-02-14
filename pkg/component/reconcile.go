@@ -11,8 +11,10 @@ import (
 	"fmt"
 	"math"
 	"reflect"
+	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/pkg/errors"
@@ -30,7 +32,6 @@ import (
 	apitypes "k8s.io/apimachinery/pkg/types"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/client-go/discovery"
-	"k8s.io/client-go/tools/record"
 	apiregistrationv1 "k8s.io/kube-aggregator/pkg/apis/apiregistration/v1"
 	kstatus "sigs.k8s.io/cli-utils/pkg/kstatus/status"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -42,15 +43,16 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
 	"github.com/sap/component-operator-runtime/internal/backoff"
-	internalcluster "github.com/sap/component-operator-runtime/internal/cluster"
-	"github.com/sap/component-operator-runtime/pkg/cluster"
+	"github.com/sap/component-operator-runtime/internal/cluster"
+	"github.com/sap/component-operator-runtime/internal/reconcile"
 	"github.com/sap/component-operator-runtime/pkg/manifests"
 	"github.com/sap/component-operator-runtime/pkg/types"
 )
 
 // TODO: we should disallow generators to produce manifests using metadata.generatName (it would break the whole inventory logic)
-
 // TODO: in general add more retry to overcome 409 update errors (also etcd storage errors because of missed precondition on delete)
+// TODO: allow to override namespace auto-creation and adoption policy settings on a per-component level
+// (e.g. through annotations or another interface that components could optionally implement)
 
 const (
 	readyConditionReasonNew                = "FirstSeen"
@@ -78,9 +80,34 @@ const (
 // HookFunc is the function signature that can be used to
 // establish callbacks at certain points in the reconciliation logic.
 // Hooks will be passed the current (potentially unsaved) state of the component.
-// Post-hooks will only be called if the previous operator (read, reconcile, delete)
+// Post-hooks will only be called if the according operation (read, reconcile, delete)
 // has been successful.
 type HookFunc[T Component] func(ctx context.Context, client client.Client, component T) error
+
+// ReconcilerOptions are creation options for a Reconciler.
+type ReconcilerOptions struct {
+	// Whether namespaces are auto-created if missing.
+	// If unspecified, true is assumed.
+	CreateMissingNamespaces *bool
+	// How to react if a dependent object exists but has no or a different owner.
+	// If unspecified, AdoptionPolicyAdoptUnowned is assumed.
+	AdoptionPolicy *AdoptionPolicy
+	// Schemebuilder allows to define additional schemes to be made available in the
+	// target client.
+	SchemeBuilder types.SchemeBuilder
+}
+
+// AdoptionPolicy defines how the reconciler reacts if a dependent object exists but has no or a different owner.
+type AdoptionPolicy string
+
+const (
+	// Fail if the dependent object exists but has no or a different owner.
+	AdoptionPolicyFail AdoptionPolicy = "Fail"
+	// Adopt existing dependent objects if they have no owner set.
+	AdoptionPolicyAdoptUnowned AdoptionPolicy = "AdoptUnowned"
+	// Adopt all existing dependent objects, even if they have a conflicting owner.
+	AdoptionPolicyAdoptAll AdoptionPolicy = "AdoptAll"
+)
 
 // Reconciler provides the implementation of controller-runtime's Reconciler interface, for a given Component type T.
 type Reconciler[T Component] struct {
@@ -88,25 +115,34 @@ type Reconciler[T Component] struct {
 	id                 string
 	client             cluster.Client
 	resourceGenerator  manifests.Generator
-	clients            *internalcluster.ClientFactory
+	options            ReconcilerOptions
+	clients            *cluster.ClientFactory
 	backoff            *backoff.Backoff
 	postReadHooks      []HookFunc[T]
 	preReconcileHooks  []HookFunc[T]
 	postReconcileHooks []HookFunc[T]
 	preDeleteHooks     []HookFunc[T]
 	postDeleteHooks    []HookFunc[T]
+	setupMutex         sync.Mutex
+	setupComplete      bool
 }
 
 // Create a new Reconciler.
 // Here, name should be a meaningful and unique name identifying this reconciler within the Kubernetes cluster; it will be used in annotations, finalizers, and so on;
 // resourceGenerator must be an implementation of the manifests.Generator interface.
-//
-// Deprecation warning: the parameters client, discoveryClient, eventRecorder, scheme are ignored (can be passed as nil) and will be removed in a future release;
-// in their place, the according clients will be derived directly from the responsible manager, as passed to SetupWithmanager().
-func NewReconciler[T Component](name string, client client.Client, discoveryClient discovery.DiscoveryInterface, eventRecorder record.EventRecorder, scheme *runtime.Scheme, resourceGenerator manifests.Generator) *Reconciler[T] {
+func NewReconciler[T Component](name string, resourceGenerator manifests.Generator, options ReconcilerOptions) *Reconciler[T] {
+	if options.CreateMissingNamespaces == nil {
+		options.CreateMissingNamespaces = &[]bool{true}[0]
+	}
+	if options.AdoptionPolicy == nil {
+		options.AdoptionPolicy = &[]AdoptionPolicy{AdoptionPolicyAdoptUnowned}[0]
+	}
+	// TOOD: validate adoption policy
+
 	return &Reconciler[T]{
 		name:              name,
 		resourceGenerator: resourceGenerator,
+		options:           options,
 		backoff:           backoff.NewBackoff(5 * time.Second),
 		postReadHooks:     []HookFunc[T]{resolveReferences[T]},
 	}
@@ -114,6 +150,13 @@ func NewReconciler[T Component](name string, client client.Client, discoveryClie
 
 // Reconcile contains the actual reconciliation logic.
 func (r *Reconciler[T]) Reconcile(ctx context.Context, req ctrl.Request) (result ctrl.Result, err error) {
+	r.setupMutex.Lock()
+	if !r.setupComplete {
+		defer r.setupMutex.Unlock()
+		panic("usage error: SetupWithManger() must be called first")
+	}
+	r.setupMutex.Unlock()
+
 	log := log.FromContext(ctx)
 	log.V(1).Info("running reconcile")
 
@@ -133,6 +176,22 @@ func (r *Reconciler[T]) Reconcile(ctx context.Context, req ctrl.Request) (result
 	status := component.GetStatus()
 	savedStatus := status.DeepCopy()
 
+	// requeue/retry interval
+	requeueInterval := time.Duration(0)
+	if requeueConfiguration, ok := assertRequeueConfiguration(component); ok {
+		requeueInterval = requeueConfiguration.GetRequeueInterval()
+	}
+	if requeueInterval == 0 {
+		requeueInterval = 10 * time.Minute
+	}
+	retryInterval := time.Duration(0)
+	if retryConfiguration, ok := assertRetryConfiguration(component); ok {
+		retryInterval = retryConfiguration.GetRetryInterval()
+	}
+	if retryInterval == 0 {
+		retryInterval = requeueInterval
+	}
+
 	// always attempt to update the status
 	skipStatusUpdate := false
 	defer func() {
@@ -149,6 +208,15 @@ func (r *Reconciler[T]) Reconcile(ctx context.Context, req ctrl.Request) (result
 			r.client.EventRecorder().Event(component, corev1.EventTypeWarning, reason, message)
 		} else {
 			r.client.EventRecorder().Event(component, corev1.EventTypeNormal, reason, message)
+		}
+		retriableError := &types.RetriableError{}
+		if errors.As(err, retriableError) {
+			retryAfter := retriableError.RetryAfter()
+			if retryAfter == nil || *retryAfter == 0 {
+				retryAfter = &retryInterval
+			}
+			result = ctrl.Result{RequeueAfter: *retryAfter}
+			err = nil
 		}
 		if skipStatusUpdate {
 			return
@@ -183,11 +251,13 @@ func (r *Reconciler[T]) Reconcile(ctx context.Context, req ctrl.Request) (result
 	if err != nil {
 		return ctrl.Result{}, errors.Wrap(err, "error getting client for component")
 	}
-	target := newReconcileTarget[T](r.name, r.id, targetClient, r.resourceGenerator)
+	target := newReconcileTarget[T](r.name, r.id, targetClient, r.resourceGenerator, *r.options.CreateMissingNamespaces, *r.options.AdoptionPolicy)
+	hookCtx := reconcile.NewContext(ctx).WithClient(targetClient)
 
 	// do the reconciliation
 	if component.GetDeletionTimestamp().IsZero() {
 		// create/update case
+		// TODO: optionally (to be completely consistent) set finalizer through a mutating webhook
 		if added := controllerutil.AddFinalizer(component, r.name); added {
 			if err := r.client.Update(ctx, component); err != nil {
 				return ctrl.Result{}, errors.Wrap(err, "error adding finalizer")
@@ -200,7 +270,7 @@ func (r *Reconciler[T]) Reconcile(ctx context.Context, req ctrl.Request) (result
 
 		log.V(2).Info("reconciling dependent resources")
 		for hookOrder, hook := range r.preReconcileHooks {
-			if err := hook(ctx, r.client, component); err != nil {
+			if err := hook(hookCtx, r.client, component); err != nil {
 				return ctrl.Result{}, errors.Wrapf(err, "error running pre-reconcile hook (%d)", hookOrder)
 			}
 		}
@@ -211,7 +281,7 @@ func (r *Reconciler[T]) Reconcile(ctx context.Context, req ctrl.Request) (result
 		}
 		if ok {
 			for hookOrder, hook := range r.postReconcileHooks {
-				if err := hook(ctx, r.client, component); err != nil {
+				if err := hook(hookCtx, r.client, component); err != nil {
 					return ctrl.Result{}, errors.Wrapf(err, "error running post-reconcile hook (%d)", hookOrder)
 				}
 			}
@@ -219,7 +289,7 @@ func (r *Reconciler[T]) Reconcile(ctx context.Context, req ctrl.Request) (result
 			status.SetState(StateReady, readyConditionReasonReady, "Dependent resources successfully reconciled")
 			status.AppliedGeneration = component.GetGeneration()
 			status.LastAppliedAt = &now
-			return ctrl.Result{RequeueAfter: 10 * time.Minute}, nil
+			return ctrl.Result{RequeueAfter: requeueInterval}, nil
 		} else {
 			log.V(1).Info("not all dependent resources successfully reconciled")
 			status.SetState(StateProcessing, readyConditionReasonProcessing, "Reconcilation of dependent resources triggered; waiting until all dependent resources are ready")
@@ -247,7 +317,7 @@ func (r *Reconciler[T]) Reconcile(ctx context.Context, req ctrl.Request) (result
 		// deletion case
 		log.V(2).Info("deleting dependent resources")
 		for hookOrder, hook := range r.preDeleteHooks {
-			if err := hook(ctx, r.client, component); err != nil {
+			if err := hook(hookCtx, r.client, component); err != nil {
 				return ctrl.Result{}, errors.Wrapf(err, "error running pre-delete hook (%d)", hookOrder)
 			}
 		}
@@ -258,7 +328,7 @@ func (r *Reconciler[T]) Reconcile(ctx context.Context, req ctrl.Request) (result
 		}
 		if ok {
 			for hookOrder, hook := range r.postDeleteHooks {
-				if err := hook(ctx, r.client, component); err != nil {
+				if err := hook(hookCtx, r.client, component); err != nil {
 					return ctrl.Result{}, errors.Wrapf(err, "error running post-delete hook (%d)", hookOrder)
 				}
 			}
@@ -289,6 +359,11 @@ func (r *Reconciler[T]) Reconcile(ctx context.Context, req ctrl.Request) (result
 // Register post-read hook with reconciler.
 // This hook will be called after the reconciled component object has been retrieved from the Kubernetes API.
 func (r *Reconciler[T]) WithPostReadHook(hook HookFunc[T]) *Reconciler[T] {
+	r.setupMutex.Lock()
+	defer r.setupMutex.Unlock()
+	if r.setupComplete {
+		panic("usage error: hooks can only be registered before SetupWithManger() was called")
+	}
 	r.postReadHooks = append(r.postReadHooks, hook)
 	return r
 }
@@ -297,6 +372,11 @@ func (r *Reconciler[T]) WithPostReadHook(hook HookFunc[T]) *Reconciler[T] {
 // This hook will be called if the reconciled component is not in deletion (has no deletionTimestamp set),
 // right before the reconcilation of the dependent objects starts.
 func (r *Reconciler[T]) WithPreReconcileHook(hook HookFunc[T]) *Reconciler[T] {
+	r.setupMutex.Lock()
+	defer r.setupMutex.Unlock()
+	if r.setupComplete {
+		panic("usage error: hooks can only be registered before SetupWithManger() was called")
+	}
 	r.preReconcileHooks = append(r.preReconcileHooks, hook)
 	return r
 }
@@ -305,6 +385,11 @@ func (r *Reconciler[T]) WithPreReconcileHook(hook HookFunc[T]) *Reconciler[T] {
 // This hook will be called if the reconciled component is not in deletion (has no deletionTimestamp set),
 // right after the reconcilation of the dependent objects happened, and was successful.
 func (r *Reconciler[T]) WithPostReconcileHook(hook HookFunc[T]) *Reconciler[T] {
+	r.setupMutex.Lock()
+	defer r.setupMutex.Unlock()
+	if r.setupComplete {
+		panic("usage error: hooks can only be registered before SetupWithManger() was called")
+	}
 	r.postReconcileHooks = append(r.postReconcileHooks, hook)
 	return r
 }
@@ -313,6 +398,11 @@ func (r *Reconciler[T]) WithPostReconcileHook(hook HookFunc[T]) *Reconciler[T] {
 // This hook will be called if the reconciled component is in deletion (has a deletionTimestamp set),
 // right before the deletion of the dependent objects starts.
 func (r *Reconciler[T]) WithPreDeleteHook(hook HookFunc[T]) *Reconciler[T] {
+	r.setupMutex.Lock()
+	defer r.setupMutex.Unlock()
+	if r.setupComplete {
+		panic("usage error: hooks can only be registered before SetupWithManger() was called")
+	}
 	r.preDeleteHooks = append(r.preDeleteHooks, hook)
 	return r
 }
@@ -321,13 +411,23 @@ func (r *Reconciler[T]) WithPreDeleteHook(hook HookFunc[T]) *Reconciler[T] {
 // This hook will be called if the reconciled component is in deletion (has a deletionTimestamp set),
 // right after the deletion of the dependent objects happened, and was successful.
 func (r *Reconciler[T]) WithPostDeleteHook(hook HookFunc[T]) *Reconciler[T] {
+	r.setupMutex.Lock()
+	defer r.setupMutex.Unlock()
+	if r.setupComplete {
+		panic("usage error: hooks can only be registered before SetupWithManger() was called")
+	}
 	r.postDeleteHooks = append(r.postDeleteHooks, hook)
 	return r
 }
 
 // Register the reconciler with a given controller-runtime Manager.
 func (r *Reconciler[T]) SetupWithManager(mgr ctrl.Manager) error {
-	// TODO: add some check (and lock?) to prevent SetupWithManager() being called more than once
+	r.setupMutex.Lock()
+	defer r.setupMutex.Unlock()
+	if r.setupComplete {
+		panic("usage error: SetupWithManger() must not be called more than once")
+	}
+
 	kubeSystemNamespace := &corev1.Namespace{}
 	if err := mgr.GetAPIReader().Get(context.Background(), apitypes.NamespacedName{Name: "kube-system"}, kubeSystemNamespace); err != nil {
 		return errors.Wrap(err, "error retrieving uid of kube-system namespace")
@@ -338,33 +438,69 @@ func (r *Reconciler[T]) SetupWithManager(mgr ctrl.Manager) error {
 	if err != nil {
 		return errors.Wrap(err, "error creating discovery client")
 	}
-	r.client = internalcluster.NewClient(mgr.GetClient(), discoveryClient, mgr.GetEventRecorderFor(r.name))
+	r.client = cluster.NewClient(mgr.GetClient(), discoveryClient, mgr.GetEventRecorderFor(r.name))
 
-	schemeBuilder, _ := r.resourceGenerator.(manifests.SchemeBuilder)
-	r.clients, err = internalcluster.NewClientFactory(r.name, mgr.GetConfig(), schemeBuilder)
+	var schemeBuilders []types.SchemeBuilder
+	if schemeBuilder, ok := r.resourceGenerator.(types.SchemeBuilder); ok {
+		schemeBuilders = append(schemeBuilders, schemeBuilder)
+	}
+	if r.options.SchemeBuilder != nil {
+		schemeBuilders = append(schemeBuilders, r.options.SchemeBuilder)
+	}
+	r.clients, err = cluster.NewClientFactory(r.name, mgr.GetConfig(), schemeBuilders)
 	if err != nil {
 		return errors.Wrap(err, "error creating client factory")
 	}
 
 	component := newComponent[T]()
-	return ctrl.NewControllerManagedBy(mgr).
+	err = ctrl.NewControllerManagedBy(mgr).
 		For(component).
 		WithEventFilter(predicate.Or(predicate.GenerationChangedPredicate{}, predicate.AnnotationChangedPredicate{})).
 		WithOptions(controller.Options{MaxConcurrentReconciles: 3}).
 		Complete(r)
+	if err != nil {
+		return errors.Wrap(err, "error creating controller")
+	}
+
+	r.setupComplete = true
+	return nil
 }
 
 func (r *Reconciler[T]) getClientForComponent(component T) (cluster.Client, error) {
-	clientConfiguration, haveClientConfiguration := Component(component).(cluster.ClientConfiguration)
-	impersonationConfiguration, haveImpersonationConfiguration := Component(component).(cluster.ImpersonationConfiguration)
-	_, haveCustomScheme := r.resourceGenerator.(manifests.SchemeBuilder)
+	placementConfiguration, havePlacementConfiguration := assertPlacementConfiguration(component)
+	clientConfiguration, haveClientConfiguration := assertClientConfiguration(component)
+	impersonationConfiguration, haveImpersonationConfiguration := assertImpersonationConfiguration(component)
+	haveCustomScheme := func() bool { _, ok := r.resourceGenerator.(types.SchemeBuilder); return ok }() || r.options.SchemeBuilder != nil
 	// TODO: we should always return a factory client, even in the default case;
 	// however this would be an incompatible change; people who previously supplied a custom scheme via the manager's client
 	// would now have to do the same by adding AddToScheme() to the used generator.
 	if !haveClientConfiguration && !haveImpersonationConfiguration && !haveCustomScheme {
 		return r.client, nil
 	}
-	client, err := r.clients.Get(clientConfiguration, impersonationConfiguration)
+	var kubeconfig []byte
+	var impersonationUser string
+	var impersonationGroups []string
+	if haveClientConfiguration {
+		kubeconfig = clientConfiguration.GetKubeConfig()
+	}
+	if haveImpersonationConfiguration {
+		impersonationUser = impersonationConfiguration.GetImpersonationUser()
+		impersonationGroups = impersonationConfiguration.GetImpersonationGroups()
+		r := regexp.MustCompile(`^(system:serviceaccount):(.*):(.+)$`)
+		if m := r.FindStringSubmatch(impersonationUser); m != nil {
+			if m[2] == "" {
+				namespace := ""
+				if havePlacementConfiguration {
+					namespace = placementConfiguration.GetDeploymentNamespace()
+				}
+				if namespace == "" {
+					namespace = component.GetNamespace()
+				}
+				impersonationUser = fmt.Sprintf("%s:%s:%s", m[1], namespace, m[3])
+			}
+		}
+	}
+	client, err := r.clients.Get(kubeconfig, impersonationUser, impersonationGroups)
 	if err != nil {
 		return nil, errors.Wrap(err, "error getting remote or impersonated client")
 	}
@@ -376,25 +512,31 @@ type reconcileTarget[T Component] struct {
 	reconcilerId                 string
 	client                       cluster.Client
 	resourceGenerator            manifests.Generator
+	createMissingNamespaces      bool
+	adoptionPolicy               AdoptionPolicy
 	labelKeyOwnerId              string
 	annotationKeyDigest          string
 	annotationKeyReconcilePolicy string
 	annotationKeyUpdatePolicy    string
+	annotationKeyDeletePolicy    string
 	annotationKeyOrder           string
 	annotationKeyPurgeOrder      string
 	annotationKeyOwnerId         string
 }
 
-func newReconcileTarget[T Component](reconcilerName string, reconcilerId string, client cluster.Client, resourceGenerator manifests.Generator) *reconcileTarget[T] {
+func newReconcileTarget[T Component](reconcilerName string, reconcilerId string, client cluster.Client, resourceGenerator manifests.Generator, createMissingNamespaces bool, adoptionPolicy AdoptionPolicy) *reconcileTarget[T] {
 	return &reconcileTarget[T]{
 		reconcilerName:               reconcilerName,
 		reconcilerId:                 reconcilerId,
 		client:                       client,
 		resourceGenerator:            resourceGenerator,
+		createMissingNamespaces:      createMissingNamespaces,
+		adoptionPolicy:               adoptionPolicy,
 		labelKeyOwnerId:              reconcilerName + "/" + types.LabelKeySuffixOwnerId,
 		annotationKeyDigest:          reconcilerName + "/" + types.AnnotationKeySuffixDigest,
 		annotationKeyReconcilePolicy: reconcilerName + "/" + types.AnnotationKeySuffixReconcilePolicy,
 		annotationKeyUpdatePolicy:    reconcilerName + "/" + types.AnnotationKeySuffixUpdatePolicy,
+		annotationKeyDeletePolicy:    reconcilerName + "/" + types.AnnotationKeySuffixDeletePolicy,
 		annotationKeyOrder:           reconcilerName + "/" + types.AnnotationKeySuffixOrder,
 		annotationKeyPurgeOrder:      reconcilerName + "/" + types.AnnotationKeySuffixPurgeOrder,
 		annotationKeyOwnerId:         reconcilerName + "/" + types.AnnotationKeySuffixOwnerId,
@@ -402,16 +544,35 @@ func newReconcileTarget[T Component](reconcilerName string, reconcilerId string,
 }
 
 func (t *reconcileTarget[T]) Reconcile(ctx context.Context, component T) (bool, error) {
-	namespace := component.GetDeploymentNamespace()
-	name := component.GetDeploymentName()
+	namespace := ""
+	name := ""
+	if placementConfiguration, ok := assertPlacementConfiguration(component); ok {
+		namespace = placementConfiguration.GetDeploymentNamespace()
+		name = placementConfiguration.GetDeploymentName()
+	}
+	if namespace == "" {
+		namespace = component.GetNamespace()
+	}
+	if name == "" {
+		name = component.GetName()
+	}
 	ownerId := t.reconcilerId + "/" + component.GetNamespace() + "/" + component.GetName()
 	hashedOwnerId := sha256base32([]byte(ownerId))
 	// TODO: remove the legacyOwnerId check (needed until we are sure that all owner id labels have the new format)
 	legacyOwnerId := component.GetNamespace() + "_" + component.GetName()
 	status := component.GetStatus()
+	componentDigest := digest(component)
 
 	// render manifests
-	generateCtx := manifests.NewContextWithClient(manifests.NewContextWithReconcilerName(ctx, t.reconcilerName), t.client)
+	// TODO: sometimes the generator needs more information about the rendered component (such as the component's name or namespace);
+	// as of now, components have to help themselves through implementing post-read hooks; to simplify this for components,
+	// we could expose the component (full object or maybe just its metadata) via the generate context;
+	// another option would be to have a special NamespacedName reuse type, where the namespace part would be auto-defaulted
+	// by the framework (similar to the auto-loading of configmap/secret references)
+	generateCtx := reconcile.NewContext(ctx).
+		WithReconcilerName(t.reconcilerName).
+		WithClient(t.client).
+		WithComponentDigest(componentDigest)
 	objects, err := t.resourceGenerator.Generate(generateCtx, namespace, name, component.GetSpec())
 	if err != nil {
 		return false, errors.Wrap(err, "error rendering manifests")
@@ -595,13 +756,13 @@ func (t *reconcileTarget[T]) Reconcile(ctx context.Context, component T) (bool, 
 			if existingObject != nil {
 				existingOwnerId := existingObject.GetLabels()[t.labelKeyOwnerId]
 				if existingOwnerId == "" {
-					// TODO: make this configurable by some switch on Reconciler (or even per Component instance)
-					processForeign := true
-					if !processForeign {
+					if t.adoptionPolicy != AdoptionPolicyAdoptUnowned && t.adoptionPolicy != AdoptionPolicyAdoptAll {
 						return false, fmt.Errorf("found existing object %s without owner", types.ObjectKeyToString(object))
 					}
 				} else if existingOwnerId != hashedOwnerId && existingOwnerId != legacyOwnerId {
-					return false, fmt.Errorf("owner conflict; object %s is owned by %s", types.ObjectKeyToString(object), existingObject.GetAnnotations()[t.annotationKeyOwnerId])
+					if t.adoptionPolicy != AdoptionPolicyAdoptAll {
+						return false, fmt.Errorf("owner conflict; object %s is owned by %s", types.ObjectKeyToString(object), existingObject.GetAnnotations()[t.annotationKeyOwnerId])
+					}
 				}
 			}
 			status.Inventory = append(status.Inventory, &InventoryItem{})
@@ -650,6 +811,7 @@ func (t *reconcileTarget[T]) Reconcile(ctx context.Context, component T) (bool, 
 	// note: after this point it is guaranteed that the persisted inventory reflects the target state
 	// now it is about to synchronize the cluster state with the inventory
 
+	// TODO: delete-order
 	// count instances of managed types which are about to be deleted
 	numManagedToBeDeleted := 0
 	for _, item := range status.Inventory {
@@ -671,9 +833,17 @@ func (t *reconcileTarget[T]) Reconcile(ctx context.Context, component T) (bool, 
 				return false, errors.Wrapf(err, "error reading object %s", item)
 			}
 
+			orphan := false
+			if existingObject != nil {
+				orphan = existingObject.GetAnnotations()[t.annotationKeyDeletePolicy] == types.DeletePolicyOrphan
+			}
+
 			switch item.Phase {
 			case PhaseScheduledForDeletion:
 				if numManagedToBeDeleted == 0 || t.isManaged(item, component) {
+					if orphan {
+						continue
+					}
 					// note: here is a theoretical risk that we delete an existing foreign object, because informers are not yet synced
 					// however not sending the delete request is also not an option, because this might lead to orphaned own dependents
 					if err := t.deleteObject(ctx, item, existingObject); err != nil {
@@ -685,6 +855,9 @@ func (t *reconcileTarget[T]) Reconcile(ctx context.Context, component T) (bool, 
 				numToBeDeleted++
 			case PhaseScheduledForCompletion:
 				if numManagedToBeDeleted == 0 || t.isManaged(item, component) {
+					if orphan {
+						return false, fmt.Errorf("invalid usage of deletion policy: object %s is scheduled for completion (due to purge order) and therefore cannot be orphaned", item)
+					}
 					// note: here is a theoretical risk that we delete an existing foreign object, because informers are not yet synced
 					// however not sending the delete request is also not an option, because this might lead to orphaned own dependents
 					if err := t.deleteObject(ctx, item, existingObject); err != nil {
@@ -727,14 +900,15 @@ func (t *reconcileTarget[T]) Reconcile(ctx context.Context, component T) (bool, 
 	// in other words: status.Inventory and objects contains the same resources
 
 	// create missing namespaces
-	// TODO: make this more configurable
-	for _, namespace := range findMissingNamespaces(objects) {
-		if err := t.client.Get(ctx, apitypes.NamespacedName{Name: namespace}, &corev1.Namespace{}); err != nil {
-			if !apierrors.IsNotFound(err) {
-				return false, errors.Wrapf(err, "error reading namespace %s", namespace)
-			}
-			if err := t.client.Create(ctx, &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: namespace}}); err != nil {
-				return false, errors.Wrapf(err, "error creating namespace %s", namespace)
+	if t.createMissingNamespaces {
+		for _, namespace := range findMissingNamespaces(objects) {
+			if err := t.client.Get(ctx, apitypes.NamespacedName{Name: namespace}, &corev1.Namespace{}); err != nil {
+				if !apierrors.IsNotFound(err) {
+					return false, errors.Wrapf(err, "error reading namespace %s", namespace)
+				}
+				if err := t.client.Create(ctx, &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: namespace}}); err != nil {
+					return false, errors.Wrapf(err, "error creating namespace %s", namespace)
+				}
 			}
 		}
 	}
@@ -870,6 +1044,7 @@ func (t *reconcileTarget[T]) Delete(ctx context.Context, component T) (bool, err
 	}
 
 	// delete objects and maintain inventory
+	// TODO: delete-order
 	var inventory []*InventoryItem
 	for _, item := range status.Inventory {
 		// fetch object (if existing)
@@ -884,6 +1059,10 @@ func (t *reconcileTarget[T]) Delete(ctx context.Context, component T) (bool, err
 		}
 
 		if numManaged == 0 || t.isManaged(item, component) {
+			// orphan the object, if according deletion policy is set
+			if existingObject != nil && existingObject.GetAnnotations()[t.annotationKeyDeletePolicy] == types.DeletePolicyOrphan {
+				continue
+			}
 			// delete the object
 			// note: here is a theoretical risk that we delete an existing (foreign) object, because informers are not yet synced
 			// however not sending the delete request is also not an option, because this might lead to orphaned own dependents

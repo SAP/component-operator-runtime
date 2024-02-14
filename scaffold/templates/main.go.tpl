@@ -126,7 +126,7 @@ func main() {
 	{{- end }}
 
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
-		Scheme:                        scheme,
+		Scheme: scheme,
 		Client: client.Options{
 			Cache: &client.CacheOptions{
 				DisableFor: append(operator.GetUncacheableTypes(), &apiextensionsv1.CustomResourceDefinition{}, &apiregistrationv1.APIService{}),
@@ -169,7 +169,7 @@ func main() {
 	//   connect to the conversion endpoint.
 	// mgr.GetWebhookServer().Register("/convert", conversion.NewWebhookHandler(mgr.GetScheme()))
 
-	if err := operator.Setup(mgr, nil); err != nil {
+	if err := operator.Setup(mgr); err != nil {
 		setupLog.Error(err, "error registering controller with manager")
 		os.Exit(1)
 	}

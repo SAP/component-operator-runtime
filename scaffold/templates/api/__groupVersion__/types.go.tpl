@@ -31,10 +31,24 @@ import (
 
 // {{ .kind }}Spec defines the desired state of {{ .kind }}.
 type {{ .kind }}Spec struct {
-	// Uncomment the following if you want to make deployment namespace and name configurable
-	// here in the spec (independently of the component's metadata.namespace and metadata.name);
-	// if you do, also review the implementations of GetDeploymentNamespace() and GetDeploymentName() below.
-	// component.Spec `json:",inline"`
+	// Uncomment the following if you want to implement the PlacementConfiguration interface
+	// (that is, want to make deployment namespace and name configurable here in the spec, independently of
+	// the component's metadata.namespace and metadata.name).
+	// component.PlacementSpec                  `json:",inline"`
+	// Uncomment the following if you want to implement the ClientConfiguration interface
+	// (that is, want to allow remote deployments via a specified kubeconfig).
+	// Note, that when implementing the ClientConfiguration interface, then also the PlacementConfiguration
+	// interface should be implemented.
+	// component.ClientSpec        `json:",inline"`
+	// Uncomment the following if you want to implement the ImpersonationConfiguratio interface
+	// (that is, want to allow use a specified service account in the target namespace for the deployment).
+	// component.ImpersonationSpec `json:",inline"`
+	// Uncomment the following if you want to implement the RequeueConfiguration interface
+	// (that is, want to allow to override the default requeue interval of 10m).
+	// component.RequeueSpec `json:",inline"`
+	// Uncomment the following if you want to implement the RetryConfiguration interface
+	// (that is, want to allow to override the default retry interval, which equals the effective requeue interval).
+	// component.RequeueSpec `json:",inline"`
 
 	// Add your own fields here, describing the deployment of the managed component.
 }
@@ -79,22 +93,6 @@ func (s *{{ .kind }}Spec) ToUnstructured() map[string]any {
 		panic(err)
 	}
 	return result
-}
-
-func (c *{{ .kind }}) GetDeploymentNamespace() string {
-	// Uncomment the following if you allow specification of deployment namespace via the component spec.
-	// if c.Spec.Namespace != "" {
-	// 	return c.Spec.Namespace
-	// }
-	return c.Namespace
-}
-
-func (c *{{ .kind }}) GetDeploymentName() string {
-	// Uncomment the following if you allow specification of deployment name via the component spec.
-	// if c.Spec.Name != "" {
-	// 	return c.Spec.Name
-	// }
-	return c.Name
 }
 
 func (c *{{ .kind }}) GetSpec() componentoperatorruntimetypes.Unstructurable {

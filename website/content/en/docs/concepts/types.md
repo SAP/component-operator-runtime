@@ -20,17 +20,9 @@ package component
 
 // Component is the central interface that component operators have to implement.
 // Besides being a conroller-runtime client.Object, the implementing type has to expose accessor
-// methods for the deployment's target namespace and name, and for the components's spec and status,
-// via methods GetSpec() and GetStatus().
+// methods for the components's spec and status, GetSpec() and GetStatus().
 type Component interface {
   client.Object
-  // Return target namespace for the component deployment.
-  // This is the value that will be passed to Generator.Generate() as namespace.
-  // In addition, rendered namespaced resources without namespace will be placed in this namespace.
-  GetDeploymentNamespace() string
-  // Return target name for the component deployment.
-  // This is the value that will be passed to Generator.Generator() as name.
-  GetDeploymentName() string
   // Return a read-only accessor to the component's spec.
   // The returned value has to implement the types.Unstructurable interface.
   GetSpec() types.Unstructurable
@@ -40,8 +32,7 @@ type Component interface {
 }
 ```
 
-The custom resource is supposed to be namespaced, and it might be desired to deploy the dependent objects into a namespace different from the namespace where the component object is residing. This explains the presence of the `GetDeploymentNamespace()` and `GetDeploymentName()` methods.
-Furthermore, two accessor methods are required to be implemented. First, `GetSpec()` exposes the parameterization of the component.
+Basically, two accessor methods have to be implemented here. First, `GetSpec()` exposes the parameterization of the component.
 The only requirement on the returned type is to implement the
 
 ```go
@@ -61,7 +52,7 @@ Finally, `GetStatus()` allows the framework to access (a part of) the custom res
 ```go
 package component
 
-// Component Status. Types implementing the Component interface must include this into their status.
+// Component Status. Components must include this into their status.
 type Status struct {
   ObservedGeneration int64            `json:"observedGeneration"`
   AppliedGeneration  int64            `json:"appliedGeneration,omitempty"`
@@ -73,41 +64,65 @@ type Status struct {
 }
 ```
 
-Note that, other than with the `GetSpec()` accessor, the framework will do changes to the returned `Status` structure.
+Note that, other than with the `GetSpec()` accessor, the framework will make changes to the returned `Status` structure.
 Thus, in almost all cases, the returned pointer should just reference the status of the component's API type (or an according substructure of that status).
 
-Components may optionally implement
+The component's custom resource type is supposed to be namespaced, and by default, dependent objects will be created in that same namespace. To be more precise, the `namespace` and `name` parameters of the used generator's `Generate()` method will be set to the component's `metadata.namespace` and `metadata.name`, respectively. Sometimes it might be desired to override these default, and to render the dependent objects with a different namespace or name. To allow this, the component (or its spec) can implement
 
 ```go
-package cluster 
+package component
 
-// The ClientConfiguration interface is meant to be implemented by components which offer remote deployments.
+// The PlacementConfiguration interface is meant to be implemented by components (or their spec) which allow
+// to explicitly specify target namespace and name of the deployment (otherwise this will be defaulted as
+// the namespace and name of the component object itself).
+type PlacementConfiguration interface {
+  // Return target namespace for the component deployment.
+  // If the returned value is not the empty string, then this is the value that will be passed
+  // to Generator.Generate() as namespace and, in addition, rendered namespaced resources with
+  // unspecified namespace will be placed in this namespace.
+  GetDeploymentNamespace() string
+  // Return target name for the component deployment.
+  // If the returned value is not the empty string, then this is the value that will be passed
+  // to Generator.Generator() as name.
+  GetDeploymentName() string
+}
+```
+
+In addition, the component (or its spec) may implement
+
+```go
+package component
+
+// The ClientConfiguration interface is meant to be implemented by components (or their spec) which offer
+// remote deployments.
 type ClientConfiguration interface {
-  // Get kubeconfig content.
+  // Get kubeconfig content. Should return nil if default local client shall be used.
   GetKubeConfig() []byte
 }
 ```
 
-in order to support remote deployments (that is, to make the deployment of the dependent objects use the specified kubeconfig).
-Furthermore, components can implement
+in order to support remote deployments (that is, to make the deployment of the dependent objects use the specified kubeconfig), and
 
 ```go
-package cluster
+package component
 
-// The ImpersonationConfiguration interface is meant to be implemented by components which offer impersonated deployments.
+// The ImpersonationConfiguration interface is meant to be implemented by components (or their spec) which offer
+// impersonated deployments.
 type ImpersonationConfiguration interface {
-  // Return impersonation user.
-  // Should return system:serviceaccount:<namespace>:<serviceaccount> if a service account is used for impersonation.
-  // Should return an empty string if user shall not be impersonated.
+  // Return impersonation user. Should return system:serviceaccount:<namespace>:<serviceaccount>
+  // if a service account is used for impersonation. Should return an empty string
+  // if user shall not be impersonated.
   GetImpersonationUser() string
-  // Return impersonation groups.
-  // Should return nil if groups shall not be impersonated.
+  // Return impersonation groups. Should return nil if groups shall not be impersonated.
   GetImpersonationGroups() []string
 }
 ```
 
-to use the given user/groups for the deployment of dependent objects. Implementing both `ClientConfiguration` and `ImpersonationConfiguration` means that
+to use different user/groups for the deployment of dependent objects. Implementing both `ClientConfiguration` and `ImpersonationConfiguration` means that
 the provided kubeconfig will be impersonated as specified.
+
+Note that, as mentioned above, the interfaces `PlacementConfiguration`, `ClientConfiguration` and `ImpersonationConfiguration` can be implemented by the component
+itself as well as by its spec type. In the theoretical case that both is the case, the implementation on the component level takes higher precedence.
 
 ## The Generator interface
 
@@ -119,22 +134,26 @@ dependent objects, according to the provided parameterization (spec) of the comp
 package manifests
 
 // Resource generator interface.
-// When called from the reconciler, the arguments namespace, name and parameters will match the return values
-// of the component's GetDeploymentNamespace(), GetDeploymentName() and GetSpec() methods, respectively.
+// When called from the reconciler, the arguments namespace and name will match the
+// component's namespace and name or, if the component or its spec implement the
+// PlacementConfiguration interface, the return values of the GetDeploymentNamespace(), GetDeploymentName()
+// methods (if non-empty). The parameters argument will be assigned the return value
+// of the component's GetSpec() method.
 type Generator interface {
   Generate(ctx context.Context, namespace string, name string, parameters types.Unstructurable) ([]client.Object, error)
 }
 ```
 
-When called by the framework, the arguments passed to `Generate()` will just match the return values of the `GetDeploymentNamespace()`, `GetDeploymentName()` and `GetSpec()` methods of the component.
+In addition to `namespace`, `name`, `parameters`, generators can retrieve additional contextual information, such as a
+client for the deployment target by calling `utils.ClientFromContext()`, and related functions.
 
-Component controllers can of course implement their own generator. In some cases (for example if there exists a 
+Component controllers can of course implement their own generator. In many cases (for example if there exists a
 Helm chart or kustomization for the component), one of the [generators bundled with this repository](../../generators) can be used.
 
 Generators may optionally implement
 
 ```go
-package manifests
+package types
 
 // SchemeBuilder interface.
 type SchemeBuilder interface {

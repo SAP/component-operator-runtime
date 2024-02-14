@@ -10,11 +10,11 @@ The operators implemented through this framework are strongly opiniated in the s
 of the managed component are described through a dedicated, specific custom resource type.
 
 The key features are:
-- Efficient and smart handling of Kubernetes API extensions (realized through custom resource definitions or API aggregation).
+- Efficient and smart handling of Kubernetes API extensions (custom resource definitions or API aggregation).
 - Ability to fully take over rendering of the component's resources by implementing
   ```go
     type Generator interface {
-        Generate(namespace string, name string, parameters types.Unstructurable) ([]client.Object, error)
+        Generate(ctx context.context, namespace string, name string, parameters types.Unstructurable) ([]client.Object, error)
     }
   ```
   (where parameters correspond to the `spec` of the describing custom resource component object).

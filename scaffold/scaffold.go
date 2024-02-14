@@ -23,7 +23,7 @@ import (
 	"github.com/spf13/pflag"
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/runtime/schema"
-	"sigs.k8s.io/yaml"
+	kyaml "sigs.k8s.io/yaml"
 )
 
 type Config struct {
@@ -57,7 +57,7 @@ func (c Config) ToJson() []byte {
 }
 
 func (c Config) ToYaml() []byte {
-	raw, err := yaml.Marshal(c)
+	raw, err := kyaml.Marshal(c)
 	if err != nil {
 		panic(err)
 	}
@@ -86,7 +86,7 @@ var (
 	version                        = "latest"
 	kubernetesVersion              = "v0.29.1"
 	controllerRuntimeVersion       = "v0.16.3"
-	controllerToolsVersion         = "v0.13.0"
+	controllerToolsVersion         = "v0.14.0"
 	codeGeneratorVersion           = "v0.30.0-alpha.2"
 	admissionWebhookRuntimeVersion = "v0.1.0"
 	envtestKubernetesVersion       = "1.28.3"
