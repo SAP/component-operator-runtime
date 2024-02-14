@@ -85,7 +85,7 @@ var (
 	goVersion                      = "1.21.6"
 	version                        = "latest"
 	kubernetesVersion              = "v0.30.0-alpha.2"
-	controllerRuntimeVersion       = "v0.16.3"
+	controllerRuntimeVersion       = "v0.17.1"
 	controllerToolsVersion         = "v0.14.0"
 	codeGeneratorVersion           = "v0.30.0-alpha.2"
 	admissionWebhookRuntimeVersion = "v0.1.0"
