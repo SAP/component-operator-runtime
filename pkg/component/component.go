@@ -91,7 +91,7 @@ func assertRetryConfiguration[T Component](component T) (RetryConfiguration, boo
 }
 
 // Calculate digest of given component, honoring annotations, spec, and references
-func digest[T Component](component T) string {
+func calculateComponentDigest[T Component](component T) string {
 	digestData := make(map[string]any)
 	spec := getSpec(component)
 	digestData["annotations"] = component.GetAnnotations()

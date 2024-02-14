@@ -7,7 +7,6 @@ package component
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"math"
 	"reflect"
@@ -49,10 +48,12 @@ import (
 	"github.com/sap/component-operator-runtime/pkg/types"
 )
 
-// TODO: we should disallow generators to produce manifests using metadata.generatName (it would break the whole inventory logic)
 // TODO: in general add more retry to overcome 409 update errors (also etcd storage errors because of missed precondition on delete)
+// TODO: optionally allow to use server-side-apply instead of create/update (e.g. through a component annotation)
+// TODO: make a can-i check before emitting events to deployment target (e.g. in the client factory when creating the client)
 // TODO: allow to override namespace auto-creation and adoption policy settings on a per-component level
 // (e.g. through annotations or another interface that components could optionally implement)
+// TODO: run admission webhooks (if present) in reconcile (e.g. as post-read hook)
 
 const (
 	readyConditionReasonNew                = "FirstSeen"
@@ -226,7 +227,7 @@ func (r *Reconciler[T]) Reconcile(ctx context.Context, req ctrl.Request) (result
 		}
 		// note: it's crucial to set the following timestamp late (otherwise the DeepEqual() check before would always be false)
 		status.LastObservedAt = &now
-		if updateErr := r.client.Status().Update(ctx, component); updateErr != nil {
+		if updateErr := r.client.Status().Update(ctx, component, client.FieldOwner(r.name)); updateErr != nil {
 			err = utilerrors.NewAggregate([]error{err, updateErr})
 			result = ctrl.Result{}
 		}
@@ -259,7 +260,7 @@ func (r *Reconciler[T]) Reconcile(ctx context.Context, req ctrl.Request) (result
 		// create/update case
 		// TODO: optionally (to be completely consistent) set finalizer through a mutating webhook
 		if added := controllerutil.AddFinalizer(component, r.name); added {
-			if err := r.client.Update(ctx, component); err != nil {
+			if err := r.client.Update(ctx, component, client.FieldOwner(r.name)); err != nil {
 				return ctrl.Result{}, errors.Wrap(err, "error adding finalizer")
 			}
 			// trigger another round trip
@@ -335,7 +336,7 @@ func (r *Reconciler[T]) Reconcile(ctx context.Context, req ctrl.Request) (result
 			// all dependent resources are already gone, so that's it
 			log.V(1).Info("all dependent resources are successfully deleted; removing finalizer")
 			if removed := controllerutil.RemoveFinalizer(component, r.name); removed {
-				if err := r.client.Update(ctx, component); err != nil {
+				if err := r.client.Update(ctx, component, client.FieldOwner(r.name)); err != nil {
 					return ctrl.Result{}, errors.Wrap(err, "error removing finalizer")
 				}
 			}
@@ -561,7 +562,7 @@ func (t *reconcileTarget[T]) Reconcile(ctx context.Context, component T) (bool, 
 	// TODO: remove the legacyOwnerId check (needed until we are sure that all owner id labels have the new format)
 	legacyOwnerId := component.GetNamespace() + "_" + component.GetName()
 	status := component.GetStatus()
-	componentDigest := digest(component)
+	componentDigest := calculateComponentDigest(component)
 
 	// render manifests
 	// TODO: sometimes the generator needs more information about the rendered component (such as the component's name or namespace);
@@ -576,6 +577,16 @@ func (t *reconcileTarget[T]) Reconcile(ctx context.Context, component T) (bool, 
 	objects, err := t.resourceGenerator.Generate(generateCtx, namespace, name, component.GetSpec())
 	if err != nil {
 		return false, errors.Wrap(err, "error rendering manifests")
+	}
+
+	// perform some validation and cleanup on rendered manifests
+	for _, object := range objects {
+		if object.GetGenerateName() != "" {
+			return false, fmt.Errorf("object %s specifies metadata.generateName (but dependent objects are not allowed to do so)", types.ObjectKeyToString(object))
+		}
+		removeLabel(object, t.labelKeyOwnerId)
+		removeAnnotation(object, t.annotationKeyOwnerId)
+		removeAnnotation(object, t.annotationKeyDigest)
 	}
 
 	/*
@@ -726,11 +737,10 @@ func (t *reconcileTarget[T]) Reconcile(ctx context.Context, component T) (bool, 
 		item := getItem(status.Inventory, object)
 
 		// calculate object digest
-		raw, err := json.Marshal(object)
+		digest, err := calculateObjectDigest(object)
 		if err != nil {
-			return false, errors.Wrapf(err, "error serializing object %s", types.ObjectKeyToString(object))
+			return false, errors.Wrapf(err, "error calculating digest for object %s", types.ObjectKeyToString(object))
 		}
-		digest := sha256hex(raw)
 
 		reconcilePolicy := object.GetAnnotations()[t.annotationKeyReconcilePolicy]
 		switch reconcilePolicy {
@@ -906,7 +916,7 @@ func (t *reconcileTarget[T]) Reconcile(ctx context.Context, component T) (bool, 
 				if !apierrors.IsNotFound(err) {
 					return false, errors.Wrapf(err, "error reading namespace %s", namespace)
 				}
-				if err := t.client.Create(ctx, &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: namespace}}); err != nil {
+				if err := t.client.Create(ctx, &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: namespace}}, client.FieldOwner(t.reconcilerName)); err != nil {
 					return false, errors.Wrapf(err, "error creating namespace %s", namespace)
 				}
 			}
@@ -1150,7 +1160,7 @@ func (t *reconcileTarget[T]) createObject(ctx context.Context, object client.Obj
 	if isCrd(object) || isApiService(object) {
 		controllerutil.AddFinalizer(object, t.reconcilerName)
 	}
-	return t.client.Create(ctx, object)
+	return t.client.Create(ctx, object, client.FieldOwner(t.reconcilerName))
 }
 
 func (t *reconcileTarget[T]) updateObject(ctx context.Context, object client.Object, existingObject *unstructured.Unstructured) (err error) {
@@ -1169,8 +1179,10 @@ func (t *reconcileTarget[T]) updateObject(ctx context.Context, object client.Obj
 	if isCrd(object) || isApiService(object) {
 		controllerutil.AddFinalizer(object, t.reconcilerName)
 	}
-	object.SetResourceVersion((existingObject.GetResourceVersion()))
-	return t.client.Update(ctx, object)
+	if object.GetResourceVersion() == "" {
+		object.SetResourceVersion((existingObject.GetResourceVersion()))
+	}
+	return t.client.Update(ctx, object, client.FieldOwner(t.reconcilerName))
 }
 
 func (t *reconcileTarget[T]) deleteObject(ctx context.Context, key types.ObjectKey, existingObject *unstructured.Unstructured) (err error) {
@@ -1218,7 +1230,7 @@ func (t *reconcileTarget[T]) deleteObject(ctx context.Context, key types.ObjectK
 			}
 			if ok := controllerutil.RemoveFinalizer(crd, t.reconcilerName); ok {
 				// note: 409 error is very likely here (because of concurrent updates happening through the API server); this is why we retry once
-				if err := t.client.Update(ctx, crd); err != nil {
+				if err := t.client.Update(ctx, crd, client.FieldOwner(t.reconcilerName)); err != nil {
 					if i == 1 && apierrors.IsConflict(err) {
 						log.V(1).Info("error while updating CustomResourcedefinition (409 conflict); doing one retry", "name", t.reconcilerName, "error", err.Error())
 						continue
@@ -1243,7 +1255,7 @@ func (t *reconcileTarget[T]) deleteObject(ctx context.Context, key types.ObjectK
 			}
 			if ok := controllerutil.RemoveFinalizer(apiService, t.reconcilerName); ok {
 				// note: 409 error is very likely here (because of concurrent updates happening through the API server); this is why we retry once
-				if err := t.client.Update(ctx, apiService); err != nil {
+				if err := t.client.Update(ctx, apiService, client.FieldOwner(t.reconcilerName)); err != nil {
 					if i == 1 && apierrors.IsConflict(err) {
 						log.V(1).Info("error while updating APIService (409 conflict); doing one retry", "name", t.reconcilerName, "error", err.Error())
 						continue

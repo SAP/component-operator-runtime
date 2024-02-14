@@ -9,8 +9,10 @@ import (
 	"crypto/sha256"
 	"encoding/base32"
 	"encoding/hex"
+	"encoding/json"
 	"strings"
 
+	"github.com/pkg/errors"
 	"github.com/sap/go-generics/slices"
 
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
@@ -33,6 +35,23 @@ func sha256base32(data []byte) string {
 	return strings.ToLower(base32.StdEncoding.WithPadding(base32.NoPadding).EncodeToString(sum[:]))
 }
 
+func calculateObjectDigest(obj client.Object) (string, error) {
+	resourceVersion := obj.GetResourceVersion()
+	defer obj.SetResourceVersion(resourceVersion)
+	obj.SetResourceVersion("")
+	generation := obj.GetGeneration()
+	defer obj.SetGeneration(generation)
+	obj.SetGeneration(0)
+	managedFields := obj.GetManagedFields()
+	defer obj.SetManagedFields(managedFields)
+	obj.SetManagedFields(nil)
+	raw, err := json.Marshal(obj)
+	if err != nil {
+		return "", errors.Wrapf(err, "error serializing object %s", types.ObjectKeyToString(obj))
+	}
+	return sha256hex(raw), nil
+}
+
 func setLabel(obj client.Object, key string, value string) {
 	labels := obj.GetLabels()
 	if labels == nil {
@@ -42,12 +61,24 @@ func setLabel(obj client.Object, key string, value string) {
 	obj.SetLabels(labels)
 }
 
+func removeLabel(obj client.Object, key string) {
+	labels := obj.GetLabels()
+	delete(labels, key)
+	obj.SetLabels(labels)
+}
+
 func setAnnotation(obj client.Object, key string, value string) {
 	annotations := obj.GetAnnotations()
 	if annotations == nil {
 		annotations = make(map[string]string)
 	}
 	annotations[key] = value
+	obj.SetAnnotations(annotations)
+}
+
+func removeAnnotation(obj client.Object, key string) {
+	annotations := obj.GetAnnotations()
+	delete(annotations, key)
 	obj.SetAnnotations(annotations)
 }
 
