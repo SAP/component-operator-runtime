@@ -65,6 +65,7 @@ func (r *ConfigMapReference) digest() string {
 	}
 	rawData, err := json.Marshal(r.data)
 	if err != nil {
+		// note: this panic should be ok because marshalling map[string]string should always work
 		panic("this cannot happen")
 	}
 	return sha256hex(rawData)
@@ -73,6 +74,7 @@ func (r *ConfigMapReference) digest() string {
 // Return the previously loaded configmap data.
 func (r *ConfigMapReference) Data() map[string]string {
 	if !r.loaded {
+		// note: this panic indicates a programmatic error on the consumer side
 		panic("access to unloaded reference")
 	}
 	return r.data
@@ -134,6 +136,7 @@ func (r *ConfigMapKeyReference) digest() string {
 // Return the previously loaded value of the configmap key.
 func (r *ConfigMapKeyReference) Value() string {
 	if !r.loaded {
+		// note: this panic indicates a programmatic error on the consumer side
 		panic("access to unloaded reference")
 	}
 	return r.value
@@ -173,6 +176,7 @@ func (r *SecretReference) digest() string {
 	}
 	rawData, err := json.Marshal(r.data)
 	if err != nil {
+		// note: this panic should be ok because marshalling map[string][]byte should always work
 		panic("this cannot happen")
 	}
 	return sha256hex(rawData)
@@ -181,6 +185,7 @@ func (r *SecretReference) digest() string {
 // Return the previously loaded secret data.
 func (r *SecretReference) Data() map[string][]byte {
 	if !r.loaded {
+		// note: this panic indicates a programmatic error on the consumer side
 		panic("access to unloaded reference")
 	}
 	return r.data
@@ -242,6 +247,7 @@ func (r *SecretKeyReference) digest() string {
 // Return the previously loaded value of the secret key.
 func (r *SecretKeyReference) Value() []byte {
 	if !r.loaded {
+		// note: this panic indicates a programmatic error on the consumer side
 		panic("access to unloaded reference")
 	}
 	return r.value

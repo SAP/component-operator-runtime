@@ -718,6 +718,7 @@ func (t *reconcileTarget[T]) Reconcile(ctx context.Context, component T) (bool, 
 	getOrder := func(object client.Object) int {
 		order, err := getAnnotationInt(object, t.annotationKeyOrder, math.MinInt16, math.MaxInt16, 0)
 		if err != nil {
+			// note: this panic is ok because we checked the generated objects above, and this function will be called for these objects only
 			panic("this cannot happen")
 		}
 		return order
@@ -725,6 +726,7 @@ func (t *reconcileTarget[T]) Reconcile(ctx context.Context, component T) (bool, 
 	getPurgeOrder := func(object client.Object) int {
 		order, err := getAnnotationInt(object, t.annotationKeyPurgeOrder, math.MinInt16, math.MaxInt16, math.MaxInt)
 		if err != nil {
+			// note: this panic is ok because we checked the generated objects above, and this function will be called for these objects only
 			panic("this cannot happen")
 		}
 		return order
@@ -893,6 +895,7 @@ func (t *reconcileTarget[T]) Reconcile(ctx context.Context, component T) (bool, 
 					numToBeDeleted++
 				}
 			default:
+				// note: any other phase value would indicate a severe code problem, so we want to see the panic in that case
 				panic("this cannot happen")
 			}
 		}
@@ -991,6 +994,7 @@ func (t *reconcileTarget[T]) Reconcile(ctx context.Context, component T) (bool, 
 							return false, errors.Wrapf(err, "error deleting (while recreating) object %s", item)
 						}
 					default:
+						// note: this panic is ok because we validated the updatePolicy above
 						panic("this cannot happen")
 					}
 					item.Phase = PhaseUpdating

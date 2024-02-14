@@ -288,8 +288,8 @@ func (g *HelmGenerator) Generate(ctx context.Context, namespace string, name str
 						return path
 					}
 				}
+				// note: this panic is ok because the way templates were selected ensures that they reside under the 'templates' directory
 				panic("this cannot happen")
-				// because templates were selected such that reside under 'templates' directory
 			}(t.Name()),
 		}
 		var buf bytes.Buffer

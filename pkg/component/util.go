@@ -103,6 +103,7 @@ func getCrds(objects []client.Object) []*apiextensionsv1.CustomResourceDefinitio
 		if crd, ok := object.(*apiextensionsv1.CustomResourceDefinition); ok {
 			crds = append(crds, crd)
 		} else {
+			// note: this panic relies on v1 being the only version in which apiextensions.k8s.io/CustomResourceDefinition is available in the cluster
 			panic("this cannot happen")
 		}
 	}
@@ -118,6 +119,7 @@ func getApiServices(objects []client.Object) []*apiregistrationv1.APIService {
 		if apiService, ok := object.(*apiregistrationv1.APIService); ok {
 			apiServices = append(apiServices, apiService)
 		} else {
+			// note: this panic relies on v1 being the only version in which apiregistration.k8s.io/APIService is available in the cluster
 			panic("this cannot happen")
 		}
 	}
@@ -131,6 +133,7 @@ func getManagedTypes(object client.Object) []TypeInfo {
 		case *apiextensionsv1.CustomResourceDefinition:
 			return []TypeInfo{{Group: crd.Spec.Group, Version: "*", Kind: crd.Spec.Names.Kind}}
 		default:
+			// note: this panic relies on v1 being the only version in which apiextensions.k8s.io/CustomResourceDefinition is available in the cluster
 			panic("this cannot happen")
 		}
 	case isApiService(object):
@@ -138,6 +141,7 @@ func getManagedTypes(object client.Object) []TypeInfo {
 		case *apiregistrationv1.APIService:
 			return []TypeInfo{{Group: apiService.Spec.Group, Version: apiService.Spec.Version, Kind: "*"}}
 		default:
+			// note: this panic relies on v1 being the only version in which apiregistration.k8s.io/APIService is available in the cluster
 			panic("this cannot happen")
 		}
 	default:
@@ -235,6 +239,8 @@ func getItem(inventory []*InventoryItem, key types.ObjectKey) *InventoryItem {
 	for _, _item := range inventory {
 		if _item.Matches(key) {
 			if item != nil {
+				// panic if there is more than one matching item in the inventory;
+				// although this is technically possible, it would indicate a severe issue elsewhere
 				panic("this cannot happen")
 			}
 			item = _item
