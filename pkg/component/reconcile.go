@@ -57,6 +57,7 @@ import (
 
 const (
 	readyConditionReasonNew                = "FirstSeen"
+	readyConditionPending                  = "Pending"
 	readyConditionReasonProcessing         = "Processing"
 	readyConditionReasonReady              = "Ready"
 	readyConditionReasonError              = "Error"
@@ -202,22 +203,24 @@ func (r *Reconciler[T]) Reconcile(ctx context.Context, req ctrl.Request) (result
 		}
 		status.ObservedGeneration = component.GetGeneration()
 		if err != nil {
-			status.SetState(StateError, readyConditionReasonError, err.Error())
+			retriableError := &types.RetriableError{}
+			if errors.As(err, retriableError) {
+				retryAfter := retriableError.RetryAfter()
+				if retryAfter == nil || *retryAfter == 0 {
+					retryAfter = &retryInterval
+				}
+				status.SetState(StatePending, readyConditionPending, err.Error())
+				result = ctrl.Result{RequeueAfter: *retryAfter}
+				err = nil
+			} else {
+				status.SetState(StateError, readyConditionReasonError, err.Error())
+			}
 		}
 		state, reason, message := status.GetState()
 		if state == StateError {
 			r.client.EventRecorder().Event(component, corev1.EventTypeWarning, reason, message)
 		} else {
 			r.client.EventRecorder().Event(component, corev1.EventTypeNormal, reason, message)
-		}
-		retriableError := &types.RetriableError{}
-		if errors.As(err, retriableError) {
-			retryAfter := retriableError.RetryAfter()
-			if retryAfter == nil || *retryAfter == 0 {
-				retryAfter = &retryInterval
-			}
-			result = ctrl.Result{RequeueAfter: *retryAfter}
-			err = nil
 		}
 		if skipStatusUpdate {
 			return

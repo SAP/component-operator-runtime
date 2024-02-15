@@ -151,7 +151,7 @@ type Status struct {
 	LastObservedAt     *metav1.Time `json:"lastObservedAt,omitempty"`
 	LastAppliedAt      *metav1.Time `json:"lastAppliedAt,omitempty"`
 	Conditions         []Condition  `json:"conditions,omitempty"`
-	// +kubebuilder:validation:Enum=Processing;Deleting;Ready;Error
+	// +kubebuilder:validation:Enum=Ready;Pending;Processing;Deleting;Error
 	State     State            `json:"state,omitempty"`
 	Inventory []*InventoryItem `json:"inventory,omitempty"`
 }
@@ -191,18 +191,20 @@ const (
 	ConditionUnknown ConditionStatus = "Unknown"
 )
 
-// Component state. Can be one of 'Ready', 'Processing', 'Error', 'Deleting'.
+// Component state. Can be one of 'Ready', 'Pending', 'Processing', 'Deleting', 'Error'.
 type State string
 
 const (
 	// Component state 'Ready'.
 	StateReady State = "Ready"
+	// Component state 'Pending'.
+	StatePending State = "Pending"
 	// Component state 'Processing'.
 	StateProcessing State = "Processing"
-	// Component state 'Error'.
-	StateError State = "Error"
 	// Component state 'Deleting'.
 	StateDeleting State = "Deleting"
+	// Component state 'Error'.
+	StateError State = "Error"
 )
 
 // TypeInfo represents a Kubernetes type.
