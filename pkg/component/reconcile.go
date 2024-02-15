@@ -34,6 +34,7 @@ import (
 	apiregistrationv1 "k8s.io/kube-aggregator/pkg/apis/apiregistration/v1"
 	kstatus "sigs.k8s.io/cli-utils/pkg/kstatus/status"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
@@ -155,7 +156,7 @@ func (r *Reconciler[T]) Reconcile(ctx context.Context, req ctrl.Request) (result
 	r.setupMutex.Lock()
 	if !r.setupComplete {
 		defer r.setupMutex.Unlock()
-		panic("usage error: SetupWithManger() must be called first")
+		panic("usage error: setup must be called first")
 	}
 	r.setupMutex.Unlock()
 
@@ -366,7 +367,7 @@ func (r *Reconciler[T]) WithPostReadHook(hook HookFunc[T]) *Reconciler[T] {
 	r.setupMutex.Lock()
 	defer r.setupMutex.Unlock()
 	if r.setupComplete {
-		panic("usage error: hooks can only be registered before SetupWithManger() was called")
+		panic("usage error: hooks can only be registered before setup was called")
 	}
 	r.postReadHooks = append(r.postReadHooks, hook)
 	return r
@@ -379,7 +380,7 @@ func (r *Reconciler[T]) WithPreReconcileHook(hook HookFunc[T]) *Reconciler[T] {
 	r.setupMutex.Lock()
 	defer r.setupMutex.Unlock()
 	if r.setupComplete {
-		panic("usage error: hooks can only be registered before SetupWithManger() was called")
+		panic("usage error: hooks can only be registered before setup was called")
 	}
 	r.preReconcileHooks = append(r.preReconcileHooks, hook)
 	return r
@@ -392,7 +393,7 @@ func (r *Reconciler[T]) WithPostReconcileHook(hook HookFunc[T]) *Reconciler[T] {
 	r.setupMutex.Lock()
 	defer r.setupMutex.Unlock()
 	if r.setupComplete {
-		panic("usage error: hooks can only be registered before SetupWithManger() was called")
+		panic("usage error: hooks can only be registered before setup was called")
 	}
 	r.postReconcileHooks = append(r.postReconcileHooks, hook)
 	return r
@@ -405,7 +406,7 @@ func (r *Reconciler[T]) WithPreDeleteHook(hook HookFunc[T]) *Reconciler[T] {
 	r.setupMutex.Lock()
 	defer r.setupMutex.Unlock()
 	if r.setupComplete {
-		panic("usage error: hooks can only be registered before SetupWithManger() was called")
+		panic("usage error: hooks can only be registered before setup was called")
 	}
 	r.preDeleteHooks = append(r.preDeleteHooks, hook)
 	return r
@@ -418,18 +419,19 @@ func (r *Reconciler[T]) WithPostDeleteHook(hook HookFunc[T]) *Reconciler[T] {
 	r.setupMutex.Lock()
 	defer r.setupMutex.Unlock()
 	if r.setupComplete {
-		panic("usage error: hooks can only be registered before SetupWithManger() was called")
+		panic("usage error: hooks can only be registered before setup was called")
 	}
 	r.postDeleteHooks = append(r.postDeleteHooks, hook)
 	return r
 }
 
-// Register the reconciler with a given controller-runtime Manager.
-func (r *Reconciler[T]) SetupWithManager(mgr ctrl.Manager) error {
+// Register the reconciler with a given controller-runtime Manager and Builder.
+// This will call For() and Complete() on the provided builder.
+func (r *Reconciler[T]) SetupWithManagerAndBuilder(mgr ctrl.Manager, blder *ctrl.Builder) error {
 	r.setupMutex.Lock()
 	defer r.setupMutex.Unlock()
 	if r.setupComplete {
-		panic("usage error: SetupWithManger() must not be called more than once")
+		panic("usage error: setup must not be called more than once")
 	}
 
 	kubeSystemNamespace := &corev1.Namespace{}
@@ -457,17 +459,23 @@ func (r *Reconciler[T]) SetupWithManager(mgr ctrl.Manager) error {
 	}
 
 	component := newComponent[T]()
-	err = ctrl.NewControllerManagedBy(mgr).
-		For(component).
-		WithEventFilter(predicate.Or(predicate.GenerationChangedPredicate{}, predicate.AnnotationChangedPredicate{})).
-		WithOptions(controller.Options{MaxConcurrentReconciles: 3}).
-		Complete(r)
-	if err != nil {
+	if err := blder.
+		For(component, builder.WithPredicates(predicate.Or(predicate.GenerationChangedPredicate{}, predicate.AnnotationChangedPredicate{}))).
+		Complete(r); err != nil {
 		return errors.Wrap(err, "error creating controller")
 	}
 
 	r.setupComplete = true
 	return nil
+}
+
+// Register the reconciler with a given controller-runtime Manager.
+func (r *Reconciler[T]) SetupWithManager(mgr ctrl.Manager) error {
+	return r.SetupWithManagerAndBuilder(
+		mgr,
+		ctrl.NewControllerManagedBy(mgr).
+			WithOptions(controller.Options{MaxConcurrentReconciles: 3}),
+	)
 }
 
 func (r *Reconciler[T]) getClientForComponent(component T) (cluster.Client, error) {
