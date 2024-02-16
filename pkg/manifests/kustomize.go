@@ -41,6 +41,8 @@ type KustomizeGenerator struct {
 
 var _ Generator = &KustomizeGenerator{}
 
+// TODO: add a way to pass custom template functions
+
 // Create a new KustomizeGenerator.
 // The parameter client should be a client for the local cluster (i.e. the cluster where the component object resides);
 // it is used by the localLookup and mustLocalLookup template functions.

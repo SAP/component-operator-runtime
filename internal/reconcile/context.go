@@ -10,23 +10,11 @@ import (
 	"fmt"
 
 	"github.com/sap/component-operator-runtime/internal/cluster"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 type reconcilerNameContextKey struct{}
 type clientContextKey struct{}
 type componentDigestContextKey struct{}
-
-// Context type the framework passes to generators' Generate() method.
-type Context interface {
-	context.Context
-	// Return new context with given reconciler name added as value.
-	WithReconcilerName(reconcilerName string) Context
-	// Return new context with given client added as value.
-	WithClient(client client.Client) Context
-	// Return new context with given component digest as value.
-	WithComponentDigest(componentDigest string) Context
-}
 
 // Create new context (i.e. wrap a context.Context into a manifests.Context).
 func NewContext(ctx context.Context) Context {
@@ -84,7 +72,7 @@ func (c *contextImpl) WithReconcilerName(reconcilerName string) Context {
 }
 
 // Return new context with given client added as value.
-func (c *contextImpl) WithClient(client client.Client) Context {
+func (c *contextImpl) WithClient(client cluster.Client) Context {
 	return &contextImpl{Context: context.WithValue(c, clientContextKey{}, client)}
 }
 

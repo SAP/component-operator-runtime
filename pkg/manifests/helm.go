@@ -43,6 +43,8 @@ type HelmGenerator struct {
 
 var _ Generator = &HelmGenerator{}
 
+// TODO: add a way to pass custom template functions
+
 // Create a new HelmGenerator.
 // The parameter client should be a client for the local cluster (i.e. the cluster where the component object resides);
 // it is used by the localLookup and mustLocalLookup template functions.
