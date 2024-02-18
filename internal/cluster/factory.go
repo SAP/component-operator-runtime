@@ -147,6 +147,7 @@ func (f *ClientFactory) Get(kubeConfig []byte, impersonationUser string, imperso
 	f.clients[key] = client
 
 	// TODO: add some (debug) log output when new client is created; unfortunately, we have no logger in here ...
+	// maybe we could (at least in Get()) get one from the reconcile context ...
 	// TODO: add metrics about running clients
 	return client, nil
 }
