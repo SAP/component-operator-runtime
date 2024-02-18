@@ -108,14 +108,10 @@ func (t *reconcileTarget[T]) Reconcile(ctx context.Context, component T) (bool, 
 	componentDigest := calculateComponentDigest(component)
 
 	// render manifests
-	// TODO: sometimes the generator needs more information about the rendered component (such as the component's name or namespace);
-	// as of now, components have to help themselves through implementing post-read hooks; to simplify this for components,
-	// we could expose the component (full object or maybe just its metadata) via the generate context;
-	// another option would be to have a special NamespacedName reuse type, where the namespace part would be auto-defaulted
-	// by the framework (similar to the auto-loading of configmap/secret references)
 	generateCtx := newContext(ctx).
 		WithReconcilerName(t.reconcilerName).
 		WithClient(t.client).
+		WithComponent(component).
 		WithComponentDigest(componentDigest)
 	objects, err := t.resourceGenerator.Generate(generateCtx, namespace, name, component.GetSpec())
 	if err != nil {

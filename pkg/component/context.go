@@ -14,6 +14,7 @@ import (
 
 type reconcilerNameContextKey struct{}
 type clientContextKey struct{}
+type componentContextKey struct{}
 type componentDigestContextKey struct{}
 
 func newContext(ctx context.Context) *reconcileContext {
@@ -32,6 +33,10 @@ func (c *reconcileContext) WithClient(client cluster.Client) *reconcileContext {
 	return &reconcileContext{Context: context.WithValue(c, clientContextKey{}, client)}
 }
 
+func (c *reconcileContext) WithComponent(component Component) *reconcileContext {
+	return &reconcileContext{Context: context.WithValue(c, componentContextKey{}, component)}
+}
+
 func (c *reconcileContext) WithComponentDigest(componentDigest string) *reconcileContext {
 	return &reconcileContext{Context: context.WithValue(c, componentDigestContextKey{}, componentDigest)}
 }
@@ -48,6 +53,13 @@ func ClientFromContext(ctx context.Context) (cluster.Client, error) {
 		return client, nil
 	}
 	return nil, fmt.Errorf("client not found in context")
+}
+
+func ComponentFromContext(ctx context.Context) (Component, error) {
+	if component, ok := ctx.Value(componentContextKey{}).(Component); ok {
+		return component, nil
+	}
+	return nil, fmt.Errorf("component not found in context")
 }
 
 func ComponentDigestFromContext(ctx context.Context) (string, error) {

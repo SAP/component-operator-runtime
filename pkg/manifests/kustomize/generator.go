@@ -12,6 +12,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"text/template"
 
@@ -106,7 +107,7 @@ func NewKustomizeGenerator(fsys fs.FS, kustomizationPath string, templateSuffix 
 					Funcs(templatex.FuncMapForTemplate(t)).
 					Funcs(templatex.FuncMapForLocalClient(client)).
 					Funcs(templatex.FuncMapForClient(nil)).
-					Funcs(funcMapForGenerateContext(nil, "", ""))
+					Funcs(funcMapForGenerateContext(nil, nil, "", ""))
 			} else {
 				t = t.New(name)
 			}
@@ -159,6 +160,10 @@ func (g *KustomizeGenerator) Generate(ctx context.Context, namespace string, nam
 	if err != nil {
 		return nil, err
 	}
+	component, err := component.ComponentFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
 
 	data := parameters.ToUnstructured()
 	fsys := kustfsys.MakeFsInMemory()
@@ -178,7 +183,7 @@ func (g *KustomizeGenerator) Generate(ctx context.Context, namespace string, nam
 			}
 			t0.Option("missingkey=zero").
 				Funcs(templatex.FuncMapForClient(client)).
-				Funcs(funcMapForGenerateContext(client, namespace, name))
+				Funcs(funcMapForGenerateContext(client, component, namespace, name))
 		}
 		var buf bytes.Buffer
 		if err := t0.ExecuteTemplate(&buf, t.Name(), data); err != nil {
@@ -234,12 +239,26 @@ func (g *KustomizeGenerator) Generate(ctx context.Context, namespace string, nam
 	return objects, nil
 }
 
-func funcMapForGenerateContext(client cluster.Client, namespace string, name string) template.FuncMap {
+func funcMapForGenerateContext(client cluster.Client, component component.Component, namespace string, name string) template.FuncMap {
 	// TODO: add accessors for Kubernetes version etc.
 	return template.FuncMap{
+		// TODO: maybe it would it be better to convert component to unstructured;
+		// then calling methods would no longer be possible, and attributes would be in lowercase
+		"component": makeFuncData(component),
 		"namespace": func() string { return namespace },
 		"name":      func() string { return name },
 	}
+}
+
+func makeFuncData(data any) any {
+	if data == nil {
+		return func() any { return nil }
+	}
+	ival := reflect.ValueOf(data)
+	ityp := ival.Type()
+	ftyp := reflect.FuncOf(nil, []reflect.Type{ityp}, false)
+	fval := reflect.MakeFunc(ftyp, func(args []reflect.Value) []reflect.Value { return []reflect.Value{ival} })
+	return fval.Interface()
 }
 
 func generateKustomization(fsys kustfsys.FileSystem) ([]byte, error) {
