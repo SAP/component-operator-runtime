@@ -226,7 +226,7 @@ func (s *Status) SetState(state State, reason string, message string) {
 	}
 	if status != cond.Status {
 		cond.Status = status
-		cond.LastTransitionTime = &[]metav1.Time{metav1.Now()}[0]
+		cond.LastTransitionTime = ref(metav1.Now())
 	}
 	cond.Reason = reason
 	cond.Message = message

@@ -25,6 +25,10 @@ import (
 	"github.com/sap/component-operator-runtime/pkg/types"
 )
 
+func ref[T any](x T) *T {
+	return &x
+}
+
 func sha256hex(data []byte) string {
 	sum := sha256.Sum256(data)
 	return hex.EncodeToString(sum[:])

@@ -752,10 +752,10 @@ func (t *reconcileTarget[T]) deleteObject(ctx context.Context, key types.ObjectK
 	object.SetGroupVersionKind(key.GetObjectKind().GroupVersionKind())
 	object.SetNamespace(key.GetNamespace())
 	object.SetName(key.GetName())
-	deleteOptions := &client.DeleteOptions{PropagationPolicy: &[]metav1.DeletionPropagation{metav1.DeletePropagationBackground}[0]}
+	deleteOptions := &client.DeleteOptions{PropagationPolicy: ref(metav1.DeletePropagationBackground)}
 	if existingObject != nil {
 		deleteOptions.Preconditions = &metav1.Preconditions{
-			ResourceVersion: &[]string{existingObject.GetResourceVersion()}[0],
+			ResourceVersion: ref(existingObject.GetResourceVersion()),
 		}
 	}
 	if err := t.client.Delete(ctx, object, deleteOptions); err != nil {

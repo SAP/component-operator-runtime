@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"reflect"
 	"strings"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -30,6 +31,8 @@ const (
 	tagFallbackKeys   = "fallbackKeys"
 
 	notFoundPolicyIgnoreOnDeletion = "ignoreOnDeletion"
+
+	retryAfter = 10 * time.Second
 )
 
 // +kubebuilder:object:generate=true
@@ -50,7 +53,7 @@ func (r *ConfigMapReference) load(ctx context.Context, clnt client.Client, names
 			if ignoreNotFound {
 				return nil
 			}
-			return types.NewRetriableError(errors.Wrapf(err, "error loading configmap %s/%s", namespace, r.Name), nil)
+			return types.NewRetriableError(errors.Wrapf(err, "error loading configmap %s/%s", namespace, r.Name), ref(retryAfter))
 		} else {
 			return errors.Wrapf(err, "error loading configmap %s/%s", namespace, r.Name)
 		}
@@ -102,7 +105,7 @@ func (r *ConfigMapKeyReference) load(ctx context.Context, clnt client.Client, na
 			if ignoreNotFound {
 				return nil
 			}
-			return types.NewRetriableError(errors.Wrapf(err, "error loading configmap %s/%s", namespace, r.Name), nil)
+			return types.NewRetriableError(errors.Wrapf(err, "error loading configmap %s/%s", namespace, r.Name), ref(retryAfter))
 		} else {
 			return errors.Wrapf(err, "error loading configmap %s/%s", namespace, r.Name)
 		}
@@ -113,7 +116,7 @@ func (r *ConfigMapKeyReference) load(ctx context.Context, clnt client.Client, na
 			r.loaded = true
 			return nil
 		} else {
-			return types.NewRetriableError(fmt.Errorf("key %s not found in configmap %s/%s", r.Key, namespace, r.Name), nil)
+			return types.NewRetriableError(fmt.Errorf("key %s not found in configmap %s/%s", r.Key, namespace, r.Name), ref(retryAfter))
 		}
 	} else {
 		for _, key := range fallbackKeys {
@@ -123,7 +126,7 @@ func (r *ConfigMapKeyReference) load(ctx context.Context, clnt client.Client, na
 				return nil
 			}
 		}
-		return types.NewRetriableError(fmt.Errorf("no matching key found in configmap %s/%s", namespace, r.Name), nil)
+		return types.NewRetriableError(fmt.Errorf("no matching key found in configmap %s/%s", namespace, r.Name), ref(retryAfter))
 	}
 }
 
@@ -161,7 +164,7 @@ func (r *SecretReference) load(ctx context.Context, clnt client.Client, namespac
 			if ignoreNotFound {
 				return nil
 			}
-			return types.NewRetriableError(errors.Wrapf(err, "error loading secret %s/%s", namespace, r.Name), nil)
+			return types.NewRetriableError(errors.Wrapf(err, "error loading secret %s/%s", namespace, r.Name), ref(retryAfter))
 		} else {
 			return errors.Wrapf(err, "error loading secret %s/%s", namespace, r.Name)
 		}
@@ -213,7 +216,7 @@ func (r *SecretKeyReference) load(ctx context.Context, clnt client.Client, names
 			if ignoreNotFound {
 				return nil
 			}
-			return types.NewRetriableError(errors.Wrapf(err, "error loading secret %s/%s", namespace, r.Name), nil)
+			return types.NewRetriableError(errors.Wrapf(err, "error loading secret %s/%s", namespace, r.Name), ref(retryAfter))
 		} else {
 			return errors.Wrapf(err, "error loading secret %s/%s", namespace, r.Name)
 		}
@@ -224,7 +227,7 @@ func (r *SecretKeyReference) load(ctx context.Context, clnt client.Client, names
 			r.loaded = true
 			return nil
 		} else {
-			return types.NewRetriableError(fmt.Errorf("key %s not found in secret %s/%s", r.Key, namespace, r.Name), nil)
+			return types.NewRetriableError(fmt.Errorf("key %s not found in secret %s/%s", r.Key, namespace, r.Name), ref(retryAfter))
 		}
 	} else {
 		for _, key := range fallbackKeys {
@@ -234,7 +237,7 @@ func (r *SecretKeyReference) load(ctx context.Context, clnt client.Client, names
 				return nil
 			}
 		}
-		return types.NewRetriableError(fmt.Errorf("no matching key found in secret %s/%s", namespace, r.Name), nil)
+		return types.NewRetriableError(fmt.Errorf("no matching key found in secret %s/%s", namespace, r.Name), ref(retryAfter))
 	}
 }
 

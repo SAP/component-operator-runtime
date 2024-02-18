@@ -44,6 +44,7 @@ import (
 // TODO: allow some timeout feature, such that component will go into error state if not ready within the given timeout
 // (e.g. through a TimeoutConfiguration interface that components could optionally implement)
 // TODO: run admission webhooks (if present) in reconcile (e.g. as post-read hook)
+// TODO: improve overall log output
 
 const (
 	readyConditionReasonNew                = "FirstSeen"
@@ -114,10 +115,10 @@ type Reconciler[T Component] struct {
 // resourceGenerator must be an implementation of the manifests.Generator interface.
 func NewReconciler[T Component](name string, resourceGenerator manifests.Generator, options ReconcilerOptions) *Reconciler[T] {
 	if options.CreateMissingNamespaces == nil {
-		options.CreateMissingNamespaces = &[]bool{true}[0]
+		options.CreateMissingNamespaces = ref(true)
 	}
 	if options.AdoptionPolicy == nil {
-		options.AdoptionPolicy = &[]AdoptionPolicy{AdoptionPolicyAdoptUnowned}[0]
+		options.AdoptionPolicy = ref(AdoptionPolicyAdoptUnowned)
 	}
 	// TOOD: validate adoption policy
 
@@ -125,7 +126,7 @@ func NewReconciler[T Component](name string, resourceGenerator manifests.Generat
 		name:              name,
 		resourceGenerator: resourceGenerator,
 		options:           options,
-		backoff:           backoff.NewBackoff(5 * time.Second),
+		backoff:           backoff.NewBackoff(10 * time.Second),
 		postReadHooks:     []HookFunc[T]{resolveReferences[T]},
 	}
 }
