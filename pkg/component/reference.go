@@ -42,9 +42,9 @@ type ConfigMapReference struct {
 	loaded bool              `json:"-"`
 }
 
-func (r *ConfigMapReference) load(ctx context.Context, client client.Client, namespace string, ignoreNotFound bool) error {
+func (r *ConfigMapReference) load(ctx context.Context, clnt client.Client, namespace string, ignoreNotFound bool) error {
 	configMap := &corev1.ConfigMap{}
-	if err := client.Get(ctx, apitypes.NamespacedName{Namespace: namespace, Name: r.Name}, configMap); err != nil {
+	if err := clnt.Get(ctx, apitypes.NamespacedName{Namespace: namespace, Name: r.Name}, configMap); err != nil {
 		if apierrors.IsNotFound(err) {
 			if ignoreNotFound {
 				return nil
@@ -94,9 +94,9 @@ type ConfigMapKeyReference struct {
 	loaded bool   `json:"-"`
 }
 
-func (r *ConfigMapKeyReference) load(ctx context.Context, client client.Client, namespace string, ignoreNotFound bool, fallbackKeys ...string) error {
+func (r *ConfigMapKeyReference) load(ctx context.Context, clnt client.Client, namespace string, ignoreNotFound bool, fallbackKeys ...string) error {
 	configMap := &corev1.ConfigMap{}
-	if err := client.Get(ctx, apitypes.NamespacedName{Namespace: namespace, Name: r.Name}, configMap); err != nil {
+	if err := clnt.Get(ctx, apitypes.NamespacedName{Namespace: namespace, Name: r.Name}, configMap); err != nil {
 		if apierrors.IsNotFound(err) {
 			if ignoreNotFound {
 				return nil
@@ -153,9 +153,9 @@ type SecretReference struct {
 	loaded bool              `json:"-"`
 }
 
-func (r *SecretReference) load(ctx context.Context, client client.Client, namespace string, ignoreNotFound bool) error {
+func (r *SecretReference) load(ctx context.Context, clnt client.Client, namespace string, ignoreNotFound bool) error {
 	secret := &corev1.Secret{}
-	if err := client.Get(ctx, apitypes.NamespacedName{Namespace: namespace, Name: r.Name}, secret); err != nil {
+	if err := clnt.Get(ctx, apitypes.NamespacedName{Namespace: namespace, Name: r.Name}, secret); err != nil {
 		if apierrors.IsNotFound(err) {
 			if ignoreNotFound {
 				return nil
@@ -205,9 +205,9 @@ type SecretKeyReference struct {
 	loaded bool   `json:"-"`
 }
 
-func (r *SecretKeyReference) load(ctx context.Context, client client.Client, namespace string, ignoreNotFound bool, fallbackKeys ...string) error {
+func (r *SecretKeyReference) load(ctx context.Context, clnt client.Client, namespace string, ignoreNotFound bool, fallbackKeys ...string) error {
 	secret := &corev1.Secret{}
-	if err := client.Get(ctx, apitypes.NamespacedName{Namespace: namespace, Name: r.Name}, secret); err != nil {
+	if err := clnt.Get(ctx, apitypes.NamespacedName{Namespace: namespace, Name: r.Name}, secret); err != nil {
 		if apierrors.IsNotFound(err) {
 			if ignoreNotFound {
 				return nil
@@ -253,7 +253,7 @@ func (r *SecretKeyReference) Value() []byte {
 	return r.value
 }
 
-func resolveReferences[T Component](ctx context.Context, client client.Client, component T) error {
+func resolveReferences[T Component](ctx context.Context, clnt client.Client, component T) error {
 	return walk.Walk(getSpec(component), func(x any, path []string, tag reflect.StructTag) error {
 		switch r := x.(type) {
 		case *ConfigMapReference:
@@ -261,7 +261,7 @@ func resolveReferences[T Component](ctx context.Context, client client.Client, c
 				return nil
 			}
 			ignoreNotFound := !component.GetDeletionTimestamp().IsZero() && tag.Get(tagNotFoundPolicy) == notFoundPolicyIgnoreOnDeletion
-			return r.load(ctx, client, component.GetNamespace(), ignoreNotFound)
+			return r.load(ctx, clnt, component.GetNamespace(), ignoreNotFound)
 		case *ConfigMapKeyReference:
 			if r == nil {
 				return nil
@@ -271,13 +271,13 @@ func resolveReferences[T Component](ctx context.Context, client client.Client, c
 			if s := tag.Get(tagFallbackKeys); s != "" {
 				fallbackKeys = strings.Split(s, ",")
 			}
-			return r.load(ctx, client, component.GetNamespace(), ignoreNotFound, fallbackKeys...)
+			return r.load(ctx, clnt, component.GetNamespace(), ignoreNotFound, fallbackKeys...)
 		case *SecretReference:
 			if r == nil {
 				return nil
 			}
 			ignoreNotFound := !component.GetDeletionTimestamp().IsZero() && tag.Get(tagNotFoundPolicy) == notFoundPolicyIgnoreOnDeletion
-			return r.load(ctx, client, component.GetNamespace(), ignoreNotFound)
+			return r.load(ctx, clnt, component.GetNamespace(), ignoreNotFound)
 		case *SecretKeyReference:
 			if r == nil {
 				return nil
@@ -287,7 +287,7 @@ func resolveReferences[T Component](ctx context.Context, client client.Client, c
 			if s := tag.Get(tagFallbackKeys); s != "" {
 				fallbackKeys = strings.Split(s, ",")
 			}
-			return r.load(ctx, client, component.GetNamespace(), ignoreNotFound, fallbackKeys...)
+			return r.load(ctx, clnt, component.GetNamespace(), ignoreNotFound, fallbackKeys...)
 		}
 		return nil
 	})

@@ -68,11 +68,11 @@ type reconcileTarget[T Component] struct {
 	annotationKeyOwnerId         string
 }
 
-func newReconcileTarget[T Component](reconcilerName string, reconcilerId string, client cluster.Client, resourceGenerator manifests.Generator, createMissingNamespaces bool, adoptionPolicy AdoptionPolicy) *reconcileTarget[T] {
+func newReconcileTarget[T Component](reconcilerName string, reconcilerId string, clnt cluster.Client, resourceGenerator manifests.Generator, createMissingNamespaces bool, adoptionPolicy AdoptionPolicy) *reconcileTarget[T] {
 	return &reconcileTarget[T]{
 		reconcilerName:               reconcilerName,
 		reconcilerId:                 reconcilerId,
-		client:                       client,
+		client:                       clnt,
 		resourceGenerator:            resourceGenerator,
 		createMissingNamespaces:      createMissingNamespaces,
 		adoptionPolicy:               adoptionPolicy,

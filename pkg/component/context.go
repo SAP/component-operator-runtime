@@ -29,8 +29,8 @@ func (c *reconcileContext) WithReconcilerName(reconcilerName string) *reconcileC
 	return &reconcileContext{Context: context.WithValue(c, reconcilerNameContextKey{}, reconcilerName)}
 }
 
-func (c *reconcileContext) WithClient(client cluster.Client) *reconcileContext {
-	return &reconcileContext{Context: context.WithValue(c, clientContextKey{}, client)}
+func (c *reconcileContext) WithClient(clnt cluster.Client) *reconcileContext {
+	return &reconcileContext{Context: context.WithValue(c, clientContextKey{}, clnt)}
 }
 
 func (c *reconcileContext) WithComponent(component Component) *reconcileContext {
@@ -49,8 +49,8 @@ func ReconcilerNameFromContext(ctx context.Context) (string, error) {
 }
 
 func ClientFromContext(ctx context.Context) (cluster.Client, error) {
-	if client, ok := ctx.Value(clientContextKey{}).(cluster.Client); ok {
-		return client, nil
+	if clnt, ok := ctx.Value(clientContextKey{}).(cluster.Client); ok {
+		return clnt, nil
 	}
 	return nil, fmt.Errorf("client not found in context")
 }

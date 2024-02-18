@@ -11,13 +11,13 @@ import (
 	"k8s.io/client-go/discovery"
 )
 
-func GetCapabilities(client discovery.DiscoveryInterface) (*CapabilitiesData, error) {
-	kubeVersion, err := client.ServerVersion()
+func GetCapabilities(discoveryClient discovery.DiscoveryInterface) (*CapabilitiesData, error) {
+	kubeVersion, err := discoveryClient.ServerVersion()
 	if err != nil {
 		return nil, err
 	}
 	var apiVersions []string
-	_, apiResourceLists, err := client.ServerGroupsAndResources()
+	_, apiResourceLists, err := discoveryClient.ServerGroupsAndResources()
 	if err != nil {
 		return nil, err
 	}

@@ -64,7 +64,7 @@ const (
 // manager), and the current (potentially unsaved) state of the component.
 // Post-hooks will only be called if the according operation (read, reconcile, delete)
 // has been successful.
-type HookFunc[T Component] func(ctx context.Context, client client.Client, component T) error
+type HookFunc[T Component] func(ctx context.Context, clnt client.Client, component T) error
 
 // ReconcilerOptions are creation options for a Reconciler.
 type ReconcilerOptions struct {
@@ -500,9 +500,9 @@ func (r *Reconciler[T]) getClientForComponent(component T) (cluster.Client, erro
 			}
 		}
 	}
-	client, err := r.clients.Get(kubeconfig, impersonationUser, impersonationGroups)
+	clnt, err := r.clients.Get(kubeconfig, impersonationUser, impersonationGroups)
 	if err != nil {
 		return nil, errors.Wrap(err, "error getting remote or impersonated client")
 	}
-	return client, nil
+	return clnt, nil
 }

@@ -53,7 +53,7 @@ var _ manifests.Generator = &HelmGenerator{}
 // If fsys is nil, the local operating system filesystem will be used, and chartPath can be an absolute or relative path (in the latter case it will be considered
 // relative to the current working directory). If fsys is non-nil, then chartPath should be a relative path; if an absolute path is supplied, it will be turned
 // An empty chartPath will be treated like ".".
-func NewHelmGenerator(fsys fs.FS, chartPath string, client client.Client) (*HelmGenerator, error) {
+func NewHelmGenerator(fsys fs.FS, chartPath string, clnt client.Client) (*HelmGenerator, error) {
 	g := HelmGenerator{
 		data: make(map[string]any),
 	}
@@ -162,7 +162,7 @@ func NewHelmGenerator(fsys fs.FS, chartPath string, client client.Client) (*Helm
 				Funcs(sprig.TxtFuncMap()).
 				Funcs(templatex.FuncMap()).
 				Funcs(templatex.FuncMapForTemplate(t)).
-				Funcs(templatex.FuncMapForLocalClient(client)).
+				Funcs(templatex.FuncMapForLocalClient(clnt)).
 				Funcs(templatex.FuncMapForClient(nil))
 		} else {
 			t = t.New(manifest)
@@ -189,8 +189,8 @@ func NewHelmGenerator(fsys fs.FS, chartPath string, client client.Client) (*Helm
 }
 
 // Create a new HelmGenerator as TransformableGenerator.
-func NewTransformableHelmGenerator(fsys fs.FS, chartPath string, client client.Client) (manifests.TransformableGenerator, error) {
-	g, err := NewHelmGenerator(fsys, chartPath, client)
+func NewTransformableHelmGenerator(fsys fs.FS, chartPath string, clnt client.Client) (manifests.TransformableGenerator, error) {
+	g, err := NewHelmGenerator(fsys, chartPath, clnt)
 	if err != nil {
 		return nil, err
 	}
@@ -198,8 +198,8 @@ func NewTransformableHelmGenerator(fsys fs.FS, chartPath string, client client.C
 }
 
 // Create a new HelmGenerator with a ParameterTransformer attached (further transformers can be attached to the returned generator object).
-func NewHelmGeneratorWithParameterTransformer(fsys fs.FS, chartPath string, client client.Client, transformer manifests.ParameterTransformer) (manifests.TransformableGenerator, error) {
-	g, err := NewTransformableHelmGenerator(fsys, chartPath, client)
+func NewHelmGeneratorWithParameterTransformer(fsys fs.FS, chartPath string, clnt client.Client, transformer manifests.ParameterTransformer) (manifests.TransformableGenerator, error) {
+	g, err := NewTransformableHelmGenerator(fsys, chartPath, clnt)
 	if err != nil {
 		return nil, err
 	}
@@ -207,8 +207,8 @@ func NewHelmGeneratorWithParameterTransformer(fsys fs.FS, chartPath string, clie
 }
 
 // Create a new HelmGenerator with an ObjectTransformer attached (further transformers can be attached to the returned generator object).
-func NewHelmGeneratorWithObjectTransformer(fsys fs.FS, chartPath string, client client.Client, transformer manifests.ObjectTransformer) (manifests.TransformableGenerator, error) {
-	g, err := NewTransformableHelmGenerator(fsys, chartPath, client)
+func NewHelmGeneratorWithObjectTransformer(fsys fs.FS, chartPath string, clnt client.Client, transformer manifests.ObjectTransformer) (manifests.TransformableGenerator, error) {
+	g, err := NewTransformableHelmGenerator(fsys, chartPath, clnt)
 	if err != nil {
 		return nil, err
 	}
@@ -223,7 +223,7 @@ func (g *HelmGenerator) Generate(ctx context.Context, namespace string, name str
 	if err != nil {
 		return nil, err
 	}
-	client, err := component.ClientFromContext(ctx)
+	clnt, err := component.ClientFromContext(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -238,7 +238,7 @@ func (g *HelmGenerator) Generate(ctx context.Context, namespace string, name str
 		data[k] = v
 	}
 
-	capabilities, err := helm.GetCapabilities(client.DiscoveryClient())
+	capabilities, err := helm.GetCapabilities(clnt.DiscoveryClient())
 	if err != nil {
 		return nil, err
 	}
@@ -280,7 +280,7 @@ func (g *HelmGenerator) Generate(ctx context.Context, namespace string, name str
 			return nil, err
 		}
 		t0.Option("missingkey=zero").
-			Funcs(templatex.FuncMapForClient(client))
+			Funcs(templatex.FuncMapForClient(clnt))
 	}
 	for _, t := range g.templates {
 		data["Template"] = &helm.TemplateData{

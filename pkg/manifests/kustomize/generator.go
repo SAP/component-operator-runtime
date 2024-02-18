@@ -52,7 +52,7 @@ var _ manifests.Generator = &KustomizeGenerator{}
 // If fsys is nil, the local operating system filesystem will be used, and kustomizationPath can be an absolute or relative path (in the latter case it will be considered
 // relative to the current working directory). If fsys is non-nil, then kustomizationPath should be a relative path; if an absolute path is supplied, it will be turned
 // An empty kustomizationPath will be treated like ".".
-func NewKustomizeGenerator(fsys fs.FS, kustomizationPath string, templateSuffix string, client client.Client) (*KustomizeGenerator, error) {
+func NewKustomizeGenerator(fsys fs.FS, kustomizationPath string, templateSuffix string, clnt client.Client) (*KustomizeGenerator, error) {
 	g := KustomizeGenerator{
 		files:     make(map[string][]byte),
 		templates: make(map[string]*template.Template),
@@ -105,7 +105,7 @@ func NewKustomizeGenerator(fsys fs.FS, kustomizationPath string, templateSuffix 
 					Funcs(sprig.TxtFuncMap()).
 					Funcs(templatex.FuncMap()).
 					Funcs(templatex.FuncMapForTemplate(t)).
-					Funcs(templatex.FuncMapForLocalClient(client)).
+					Funcs(templatex.FuncMapForLocalClient(clnt)).
 					Funcs(templatex.FuncMapForClient(nil)).
 					Funcs(funcMapForGenerateContext(nil, nil, "", ""))
 			} else {
@@ -126,8 +126,8 @@ func NewKustomizeGenerator(fsys fs.FS, kustomizationPath string, templateSuffix 
 }
 
 // Create a new KustomizeGenerator as TransformableGenerator.
-func NewTransformableKustomizeGenerator(fsys fs.FS, kustomizationPath string, templateSuffix string, client client.Client) (manifests.TransformableGenerator, error) {
-	g, err := NewKustomizeGenerator(fsys, kustomizationPath, templateSuffix, client)
+func NewTransformableKustomizeGenerator(fsys fs.FS, kustomizationPath string, templateSuffix string, clnt client.Client) (manifests.TransformableGenerator, error) {
+	g, err := NewKustomizeGenerator(fsys, kustomizationPath, templateSuffix, clnt)
 	if err != nil {
 		return nil, err
 	}
@@ -135,8 +135,8 @@ func NewTransformableKustomizeGenerator(fsys fs.FS, kustomizationPath string, te
 }
 
 // Create a new KustomizeGenerator with a ParameterTransformer attached (further transformers can be attached to the returned generator object).
-func NewKustomizeGeneratorWithParameterTransformer(fsys fs.FS, kustomizationPath string, templateSuffix string, client client.Client, transformer manifests.ParameterTransformer) (manifests.TransformableGenerator, error) {
-	g, err := NewTransformableKustomizeGenerator(fsys, kustomizationPath, templateSuffix, client)
+func NewKustomizeGeneratorWithParameterTransformer(fsys fs.FS, kustomizationPath string, templateSuffix string, clnt client.Client, transformer manifests.ParameterTransformer) (manifests.TransformableGenerator, error) {
+	g, err := NewTransformableKustomizeGenerator(fsys, kustomizationPath, templateSuffix, clnt)
 	if err != nil {
 		return nil, err
 	}
@@ -144,8 +144,8 @@ func NewKustomizeGeneratorWithParameterTransformer(fsys fs.FS, kustomizationPath
 }
 
 // Create a new KustomizeGenerator with an ObjectTransformer attached (further transformers can be attached to the returned generator object).
-func NewKustomizeGeneratorWithObjectTransformer(fsys fs.FS, kustomizationPath string, templateSuffix string, client client.Client, transformer manifests.ObjectTransformer) (manifests.TransformableGenerator, error) {
-	g, err := NewTransformableKustomizeGenerator(fsys, kustomizationPath, templateSuffix, client)
+func NewKustomizeGeneratorWithObjectTransformer(fsys fs.FS, kustomizationPath string, templateSuffix string, clnt client.Client, transformer manifests.ObjectTransformer) (manifests.TransformableGenerator, error) {
+	g, err := NewTransformableKustomizeGenerator(fsys, kustomizationPath, templateSuffix, clnt)
 	if err != nil {
 		return nil, err
 	}
@@ -156,7 +156,7 @@ func NewKustomizeGeneratorWithObjectTransformer(fsys fs.FS, kustomizationPath st
 func (g *KustomizeGenerator) Generate(ctx context.Context, namespace string, name string, parameters types.Unstructurable) ([]client.Object, error) {
 	var objects []client.Object
 
-	client, err := component.ClientFromContext(ctx)
+	clnt, err := component.ClientFromContext(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -182,8 +182,8 @@ func (g *KustomizeGenerator) Generate(ctx context.Context, namespace string, nam
 				return nil, err
 			}
 			t0.Option("missingkey=zero").
-				Funcs(templatex.FuncMapForClient(client)).
-				Funcs(funcMapForGenerateContext(client, component, namespace, name))
+				Funcs(templatex.FuncMapForClient(clnt)).
+				Funcs(funcMapForGenerateContext(clnt, component, namespace, name))
 		}
 		var buf bytes.Buffer
 		if err := t0.ExecuteTemplate(&buf, t.Name(), data); err != nil {
@@ -239,7 +239,7 @@ func (g *KustomizeGenerator) Generate(ctx context.Context, namespace string, nam
 	return objects, nil
 }
 
-func funcMapForGenerateContext(client cluster.Client, component component.Component, namespace string, name string) template.FuncMap {
+func funcMapForGenerateContext(clnt cluster.Client, component component.Component, namespace string, name string) template.FuncMap {
 	// TODO: add accessors for Kubernetes version etc.
 	return template.FuncMap{
 		// TODO: maybe it would it be better to convert component to unstructured;
