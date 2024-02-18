@@ -151,7 +151,7 @@ type Status struct {
 	LastObservedAt     *metav1.Time `json:"lastObservedAt,omitempty"`
 	LastAppliedAt      *metav1.Time `json:"lastAppliedAt,omitempty"`
 	Conditions         []Condition  `json:"conditions,omitempty"`
-	// +kubebuilder:validation:Enum=Ready;Pending;Processing;Deleting;Error
+	// +kubebuilder:validation:Enum=Ready;Pending;Processing;DeletionPending;Deleting;Error
 	State     State            `json:"state,omitempty"`
 	Inventory []*InventoryItem `json:"inventory,omitempty"`
 }
@@ -191,7 +191,7 @@ const (
 	ConditionUnknown ConditionStatus = "Unknown"
 )
 
-// Component state. Can be one of 'Ready', 'Pending', 'Processing', 'Deleting', 'Error'.
+// Component state. Can be one of 'Ready', 'Pending', 'Processing', 'DeletionPending', 'Deleting', 'Error'.
 type State string
 
 const (
@@ -201,6 +201,8 @@ const (
 	StatePending State = "Pending"
 	// Component state 'Processing'.
 	StateProcessing State = "Processing"
+	// Component state 'DeletionPending'.
+	StateDeletionPending State = "DeletionPending"
 	// Component state 'Deleting'.
 	StateDeleting State = "Deleting"
 	// Component state 'Error'.

@@ -41,21 +41,27 @@ import (
 // TODO: make a can-i check before emitting events to deployment target (e.g. in the client factory when creating the client)
 // TODO: allow to override namespace auto-creation and adoption policy settings on a per-component level
 // (e.g. through annotations or another interface that components could optionally implement)
+// TODO: allow some timeout feature, such that component will go into error state if not ready within the given timeout
+// (e.g. through a TimeoutConfiguration interface that components could optionally implement)
 // TODO: run admission webhooks (if present) in reconcile (e.g. as post-read hook)
 
 const (
 	readyConditionReasonNew                = "FirstSeen"
-	readyConditionPending                  = "Pending"
+	readyConditionReasonPending            = "Pending"
 	readyConditionReasonProcessing         = "Processing"
 	readyConditionReasonReady              = "Ready"
 	readyConditionReasonError              = "Error"
+	readyConditionReasonDeletionPending    = "DeletionPending"
 	readyConditionReasonDeletionBlocked    = "DeletionBlocked"
 	readyConditionReasonDeletionProcessing = "DeletionProcessing"
 )
 
+// TODO: should we pass cluster.Client to hooks instead of just client.Client?
+
 // HookFunc is the function signature that can be used to
 // establish callbacks at certain points in the reconciliation logic.
-// Hooks will be passed the current (potentially unsaved) state of the component.
+// Hooks will be passed a local client (to be precise, the one belonging to the owning
+// manager), and the current (potentially unsaved) state of the component.
 // Post-hooks will only be called if the according operation (read, reconcile, delete)
 // has been successful.
 type HookFunc[T Component] func(ctx context.Context, client client.Client, component T) error
@@ -183,13 +189,20 @@ func (r *Reconciler[T]) Reconcile(ctx context.Context, req ctrl.Request) (result
 				if retryAfter == nil || *retryAfter == 0 {
 					retryAfter = &retryInterval
 				}
-				status.SetState(StatePending, readyConditionPending, err.Error())
+				// TODO: allow RetriableError to provide custom reason and message
+				if component.GetDeletionTimestamp().IsZero() {
+					status.SetState(StatePending, readyConditionReasonPending, capitalize(err.Error()))
+				} else {
+					status.SetState(StateDeletionPending, readyConditionReasonDeletionPending, capitalize(err.Error()))
+				}
 				result = ctrl.Result{RequeueAfter: *retryAfter}
 				err = nil
 			} else {
 				status.SetState(StateError, readyConditionReasonError, err.Error())
 			}
 		}
+		// TODO: should we move this behind the DeepEqual check below?
+		// TODO: follow-up on missing events
 		state, reason, message := status.GetState()
 		if state == StateError {
 			r.client.EventRecorder().Event(component, corev1.EventTypeWarning, reason, message)
@@ -284,11 +297,13 @@ func (r *Reconciler[T]) Reconcile(ctx context.Context, req ctrl.Request) (result
 			return ctrl.Result{}, errors.Wrap(err, "error checking whether deletion is possible")
 		}
 		log.V(1).Info("deletion not allowed")
+		// TODO: have an additional StateDeletionBlocked?
 		status.SetState(StateDeleting, readyConditionReasonDeletionBlocked, "Deletion blocked: "+msg)
 		return ctrl.Result{RequeueAfter: 1*time.Second + r.backoff.Next(req, readyConditionReasonDeletionBlocked)}, nil
 	} else if len(slices.Remove(component.GetFinalizers(), r.name)) > 0 {
 		// deletion is blocked because of foreign finalizers
 		log.V(1).Info("deleted blocked due to existence of foreign finalizers")
+		// TODO: have an additional StateDeletionBlocked?
 		status.SetState(StateDeleting, readyConditionReasonDeletionBlocked, "Deletion blocked due to existing foreign finalizers")
 		return ctrl.Result{RequeueAfter: 1*time.Second + r.backoff.Next(req, readyConditionReasonDeletionBlocked)}, nil
 	} else {

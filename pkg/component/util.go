@@ -35,6 +35,13 @@ func sha256base32(data []byte) string {
 	return strings.ToLower(base32.StdEncoding.WithPadding(base32.NoPadding).EncodeToString(sum[:]))
 }
 
+func capitalize(s string) string {
+	if len(s) <= 1 {
+		return s
+	}
+	return strings.ToUpper(s[0:1]) + s[1:]
+}
+
 func calculateObjectDigest(obj client.Object) (string, error) {
 	resourceVersion := obj.GetResourceVersion()
 	defer obj.SetResourceVersion(resourceVersion)
