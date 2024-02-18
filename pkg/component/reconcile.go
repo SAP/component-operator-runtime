@@ -191,9 +191,9 @@ func (r *Reconciler[T]) Reconcile(ctx context.Context, req ctrl.Request) (result
 				}
 				// TODO: allow RetriableError to provide custom reason and message
 				if component.GetDeletionTimestamp().IsZero() {
-					status.SetState(StatePending, readyConditionReasonPending, capitalize(err.Error()))
+					status.SetState(StatePending, readyConditionReasonPending, capitalize(retriableError.Error()))
 				} else {
-					status.SetState(StateDeletionPending, readyConditionReasonDeletionPending, capitalize(err.Error()))
+					status.SetState(StateDeletionPending, readyConditionReasonDeletionPending, capitalize(retriableError.Error()))
 				}
 				result = ctrl.Result{RequeueAfter: *retryAfter}
 				err = nil

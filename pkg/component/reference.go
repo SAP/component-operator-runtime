@@ -17,6 +17,7 @@ import (
 	apitypes "k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	"github.com/pkg/errors"
 	"github.com/sap/component-operator-runtime/internal/walk"
 	"github.com/sap/component-operator-runtime/pkg/types"
 )
@@ -49,9 +50,9 @@ func (r *ConfigMapReference) load(ctx context.Context, clnt client.Client, names
 			if ignoreNotFound {
 				return nil
 			}
-			return types.NewRetriableError(err, nil)
+			return types.NewRetriableError(errors.Wrapf(err, "error loading configmap %s/%s", namespace, r.Name), nil)
 		} else {
-			return err
+			return errors.Wrapf(err, "error loading configmap %s/%s", namespace, r.Name)
 		}
 	}
 	r.data = configMap.Data
@@ -101,9 +102,9 @@ func (r *ConfigMapKeyReference) load(ctx context.Context, clnt client.Client, na
 			if ignoreNotFound {
 				return nil
 			}
-			return types.NewRetriableError(err, nil)
+			return types.NewRetriableError(errors.Wrapf(err, "error loading configmap %s/%s", namespace, r.Name), nil)
 		} else {
-			return err
+			return errors.Wrapf(err, "error loading configmap %s/%s", namespace, r.Name)
 		}
 	}
 	if r.Key != "" {
@@ -160,9 +161,9 @@ func (r *SecretReference) load(ctx context.Context, clnt client.Client, namespac
 			if ignoreNotFound {
 				return nil
 			}
-			return types.NewRetriableError(err, nil)
+			return types.NewRetriableError(errors.Wrapf(err, "error loading secret %s/%s", namespace, r.Name), nil)
 		} else {
-			return err
+			return errors.Wrapf(err, "error loading secret %s/%s", namespace, r.Name)
 		}
 	}
 	r.data = secret.Data
@@ -212,9 +213,9 @@ func (r *SecretKeyReference) load(ctx context.Context, clnt client.Client, names
 			if ignoreNotFound {
 				return nil
 			}
-			return types.NewRetriableError(err, nil)
+			return types.NewRetriableError(errors.Wrapf(err, "error loading secret %s/%s", namespace, r.Name), nil)
 		} else {
-			return err
+			return errors.Wrapf(err, "error loading secret %s/%s", namespace, r.Name)
 		}
 	}
 	if r.Key != "" {
