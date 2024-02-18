@@ -522,7 +522,7 @@ func (t *reconcileTarget[T]) Reconcile(ctx context.Context, component T) (bool, 
 					item.Phase = PhaseCreating
 					item.Status = kstatus.InProgressStatus.String()
 					numUnready++
-				} else if existingObject.GetAnnotations()[t.annotationKeyDigest] != item.Digest {
+				} else if existingObject.GetDeletionTimestamp().IsZero() && existingObject.GetAnnotations()[t.annotationKeyDigest] != item.Digest {
 					switch updatePolicy {
 					case types.UpdatePolicyDefault:
 						if err := t.updateObject(ctx, object, existingObject); err != nil {
@@ -544,7 +544,7 @@ func (t *reconcileTarget[T]) Reconcile(ctx context.Context, component T) (bool, 
 					if err != nil {
 						return false, errors.Wrapf(err, "error checking status of object %s", item)
 					}
-					if res.Status == kstatus.CurrentStatus {
+					if existingObject.GetDeletionTimestamp().IsZero() && res.Status == kstatus.CurrentStatus {
 						item.Phase = PhaseReady
 					} else {
 						numUnready++
@@ -714,6 +714,10 @@ func (t *reconcileTarget[T]) updateObject(ctx context.Context, object client.Obj
 			t.client.EventRecorder().Eventf(existingObject, corev1.EventTypeWarning, objectReasonUpdateError, "Error updating object: %s", err)
 		}
 	}()
+	if !existingObject.GetDeletionTimestamp().IsZero() {
+		// note: we must not update objects which are in deletion (e.g. to avoid unintentionally clearing finalizers), so we want to see the panic in that case
+		panic("this cannot happen")
+	}
 	data, err := runtime.DefaultUnstructuredConverter.ToUnstructured(object)
 	if err != nil {
 		return err
@@ -721,6 +725,9 @@ func (t *reconcileTarget[T]) updateObject(ctx context.Context, object client.Obj
 	object = &unstructured.Unstructured{Object: data}
 	if isCrd(object) || isApiService(object) {
 		controllerutil.AddFinalizer(object, t.reconcilerName)
+	}
+	for _, finalizer := range existingObject.GetFinalizers() {
+		controllerutil.AddFinalizer(object, finalizer)
 	}
 	if object.GetResourceVersion() == "" {
 		object.SetResourceVersion((existingObject.GetResourceVersion()))
@@ -818,6 +825,7 @@ func (t *reconcileTarget[T]) isCrdUsed(ctx context.Context, crd *apiextensionsv1
 		Version: crd.Spec.Versions[0].Name,
 		Kind:    crd.Spec.Names.Kind,
 	}
+	// TODO: better use metav1.PartialObjectMetadataList?
 	list := &unstructured.UnstructuredList{}
 	list.SetGroupVersionKind(gvk)
 	labelSelector := labels.Everything()
@@ -874,6 +882,7 @@ func (t *reconcileTarget[T]) isApiServiceUsed(ctx context.Context, apiService *a
 			Version: apiService.Spec.Version,
 			Kind:    kind,
 		}
+		// TODO: better use metav1.PartialObjectMetadataList?
 		list := &unstructured.UnstructuredList{}
 		list.SetGroupVersionKind(gvk)
 		if err := t.client.List(ctx, list, &client.ListOptions{LabelSelector: labelSelector, Limit: 1}); err != nil {
