@@ -109,7 +109,7 @@ func (o *Operator) GetUncacheableTypes() []client.Object {
 }
 
 func (o *Operator) Setup(mgr ctrl.Manager) error {
-	// Replace this by a real resource generator (e.g. manifests.HelmGenerator, or your own one).
+	// Replace this by a real resource generator (e.g. HelmGenerator or KustomizeGenerator, or your own one).
 	resourceGenerator, err := manifests.NewDummyGenerator()
 	if err != nil {
 		return errors.Wrap(err, "error initializing resource generator")

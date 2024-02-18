@@ -18,7 +18,7 @@ In the generation step, first, all the go templates will be rendered, and the re
 A kustomize generator can be instantiated by calling the following constructor:
 
 ```go
-package manifests
+package kustomize
 
 func NewKustomizeGenerator(
   fsys fs.FS,

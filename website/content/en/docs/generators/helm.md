@@ -10,7 +10,7 @@ description: >
 Sometimes it is desired to write a component operator (using component-operator-runtime) for some cluster component, which already has a productive Helm chart. Then it can make sense to use the `HelmGenerator` implementation of the `Generator` interface included in this module:
 
 ```go
-package manifests
+package helm
 
 func NewHelmGenerator(
   fsys                  fs.FS,
