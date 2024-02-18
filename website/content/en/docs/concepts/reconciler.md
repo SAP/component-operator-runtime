@@ -21,18 +21,32 @@ package component
 
 func NewReconciler[T Component](
   name              string,
-  client            client.Client,
-  discoveryClient   discovery.DiscoveryInterface,
-  eventRecorder     record.EventRecorder,
-  scheme            *runtime.Scheme,
   resourceGenerator manifests.Generator
+  options           ReconcilerOptions
 ) *Reconciler[T]
 ```
 
 The passed type parameter `T Component` is the concrete runtime type of the component's custom resource type. Furthermore,
 - `name` is supposed to be a unique name (typically a DNS name) identifying this component operator in the cluster; ìt will be used in annotations, labels, for leader election, ...
-- `client`, `discoveryClient`, `eventRecorder` and `scheme` are ignored and will be removed in future releases; they can be passed as `nil`
 - `resourceGenerator` is an implementation of the `Generator` interface, describing how the dependent objects are rendered from the component's spec.
+- `options` can be used to tune the behavior of the reconciler:
+
+  ```go
+  package component
+
+  // ReconcilerOptions are creation options for a Reconciler.
+  type ReconcilerOptions struct {
+    // Whether namespaces are auto-created if missing.
+    // If unspecified, true is assumed.
+    CreateMissingNamespaces *bool
+    // How to react if a dependent object exists but has no or a different owner.
+    // If unspecified, AdoptionPolicyAdoptUnowned is assumed.
+    AdoptionPolicy *AdoptionPolicy
+    // Schemebuilder allows to define additional schemes to be made available in the
+    // target client.
+    SchemeBuilder types.SchemeBuilder
+  }
+  ```
 
 The object returned by `NewReconciler` implements controller-runtime's `Reconciler` interface, and can therefore be used as a drop-in
 in kubebuilder managed projects. After creation, the reconciler  has to be registered with the responsible controller-runtime manager instance by calling
@@ -100,7 +114,8 @@ func (r *Reconciler[T]) WithPostDeleteHook(hook HookFunc[T]) *Reconciler[T]
 ```
 
 Note that the client passed to the hook functions is the client of the manager that was used when calling `SetupWithManager()`
-(that is, the return value of that manager's `GetClient()` method).
+(that is, the return value of that manager's `GetClient()` method). In addition, reconcile and delete hooks (that is all except the
+post-read hook) can retrieve a client for the deployment target by calling `utils.ClientFromContext()`.
 
 ## Tuning the retry behavior
 

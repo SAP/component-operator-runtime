@@ -10,23 +10,19 @@ description: >
 Sometimes it is desired to write a component operator (using component-operator-runtime) for some cluster component, which already has a productive Helm chart. Then it can make sense to use the `HelmGenerator` implementation of the `Generator` interface included in this module:
 
 ```go
-package manifests
+package helm
 
 func NewHelmGenerator(
-  name                  string,
   fsys                  fs.FS,
   chartPath             string,
   client                client.Client,
-  discoveryClient       discovery.DiscoveryInterface
 ) (*HelmGenerator, error)
 ```
 
 Here:
-- `name` is deprecated and will be removed in future releases; it can be passed as empty string.
 - `fsys` must be an implementation of `fs.FS`, such as `embed.FS`; or it can be passed as nil; then, all file operations will be executed on the current OS filesystem.
 - `chartPath` is the path containing the used Helm chart; if `fsys` was provided, this has to be a relative path; otherwise, it will be interpreted with respect to the OS filesystem (as an absolute path, or relative to the current working directory of the controller).
 - `client` should be a client for the local cluster (i.e. the cluster where the component object exists).
-- `discoveryClient` is deprecated and will be removed in future releases; they can be passed as nil.
 
 It should be noted that `HelmGenerator` does not use the Helm SDK; instead it tries to emulate the Helm behavior as good as possible.
 A few differences and restrictions arise from this:

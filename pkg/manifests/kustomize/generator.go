@@ -3,7 +3,7 @@ SPDX-FileCopyrightText: 2023 SAP SE or an SAP affiliate company and component-op
 SPDX-License-Identifier: Apache-2.0
 */
 
-package manifests
+package kustomize
 
 import (
 	"bytes"
@@ -12,6 +12,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"text/template"
 
@@ -27,7 +28,10 @@ import (
 	kyaml "sigs.k8s.io/yaml"
 
 	"github.com/sap/component-operator-runtime/internal/cluster"
+	"github.com/sap/component-operator-runtime/internal/fileutils"
 	"github.com/sap/component-operator-runtime/internal/templatex"
+	"github.com/sap/component-operator-runtime/pkg/component"
+	"github.com/sap/component-operator-runtime/pkg/manifests"
 	"github.com/sap/component-operator-runtime/pkg/types"
 )
 
@@ -38,7 +42,9 @@ type KustomizeGenerator struct {
 	templates  map[string]*template.Template
 }
 
-var _ Generator = &KustomizeGenerator{}
+var _ manifests.Generator = &KustomizeGenerator{}
+
+// TODO: add a way to pass custom template functions
 
 // Create a new KustomizeGenerator.
 // The parameter client should be a client for the local cluster (i.e. the cluster where the component object resides);
@@ -46,7 +52,7 @@ var _ Generator = &KustomizeGenerator{}
 // If fsys is nil, the local operating system filesystem will be used, and kustomizationPath can be an absolute or relative path (in the latter case it will be considered
 // relative to the current working directory). If fsys is non-nil, then kustomizationPath should be a relative path; if an absolute path is supplied, it will be turned
 // An empty kustomizationPath will be treated like ".".
-func NewKustomizeGenerator(fsys fs.FS, kustomizationPath string, templateSuffix string, client client.Client) (*KustomizeGenerator, error) {
+func NewKustomizeGenerator(fsys fs.FS, kustomizationPath string, templateSuffix string, clnt client.Client) (*KustomizeGenerator, error) {
 	g := KustomizeGenerator{
 		files:     make(map[string][]byte),
 		templates: make(map[string]*template.Template),
@@ -76,7 +82,7 @@ func NewKustomizeGenerator(fsys fs.FS, kustomizationPath string, templateSuffix 
 	// (which is probably a common usecase); however it has to be clarified how to handle template scopes;
 	// for example it might be desired that subtrees with a kustomization.yaml file are processed in an own
 	// template context
-	files, err := find(fsys, kustomizationPath, "*", fileTypeRegular, 0)
+	files, err := fileutils.Find(fsys, kustomizationPath, "*", fileutils.FileTypeRegular, 0)
 	if err != nil {
 		return nil, err
 	}
@@ -99,9 +105,9 @@ func NewKustomizeGenerator(fsys fs.FS, kustomizationPath string, templateSuffix 
 					Funcs(sprig.TxtFuncMap()).
 					Funcs(templatex.FuncMap()).
 					Funcs(templatex.FuncMapForTemplate(t)).
-					Funcs(templatex.FuncMapForLocalClient(client)).
+					Funcs(templatex.FuncMapForLocalClient(clnt)).
 					Funcs(templatex.FuncMapForClient(nil)).
-					Funcs(funcMapForGenerateContext(nil, "", ""))
+					Funcs(funcMapForGenerateContext(nil, nil, "", ""))
 			} else {
 				t = t.New(name)
 			}
@@ -120,19 +126,17 @@ func NewKustomizeGenerator(fsys fs.FS, kustomizationPath string, templateSuffix 
 }
 
 // Create a new KustomizeGenerator as TransformableGenerator.
-// Deprecation warning: the parameter client is ignored (can be passed as nil) and will be removed in a future release.
-func NewTransformableKustomizeGenerator(fsys fs.FS, kustomizationPath string, templateSuffix string, client client.Client) (TransformableGenerator, error) {
-	g, err := NewKustomizeGenerator(fsys, kustomizationPath, templateSuffix, client)
+func NewTransformableKustomizeGenerator(fsys fs.FS, kustomizationPath string, templateSuffix string, clnt client.Client) (manifests.TransformableGenerator, error) {
+	g, err := NewKustomizeGenerator(fsys, kustomizationPath, templateSuffix, clnt)
 	if err != nil {
 		return nil, err
 	}
-	return NewGenerator(g), nil
+	return manifests.NewGenerator(g), nil
 }
 
 // Create a new KustomizeGenerator with a ParameterTransformer attached (further transformers can be attached to the returned generator object).
-// Deprecation warning: the parameter client is ignored (can be passed as nil) and will be removed in a future release.
-func NewKustomizeGeneratorWithParameterTransformer(fsys fs.FS, kustomizationPath string, templateSuffix string, client client.Client, transformer ParameterTransformer) (TransformableGenerator, error) {
-	g, err := NewTransformableKustomizeGenerator(fsys, kustomizationPath, templateSuffix, client)
+func NewKustomizeGeneratorWithParameterTransformer(fsys fs.FS, kustomizationPath string, templateSuffix string, clnt client.Client, transformer manifests.ParameterTransformer) (manifests.TransformableGenerator, error) {
+	g, err := NewTransformableKustomizeGenerator(fsys, kustomizationPath, templateSuffix, clnt)
 	if err != nil {
 		return nil, err
 	}
@@ -140,9 +144,8 @@ func NewKustomizeGeneratorWithParameterTransformer(fsys fs.FS, kustomizationPath
 }
 
 // Create a new KustomizeGenerator with an ObjectTransformer attached (further transformers can be attached to the returned generator object).
-// Deprecation warning: the parameter client is ignored (can be passed as nil) and will be removed in a future release.
-func NewKustomizeGeneratorWithObjectTransformer(fsys fs.FS, kustomizationPath string, templateSuffix string, client client.Client, transformer ObjectTransformer) (TransformableGenerator, error) {
-	g, err := NewTransformableKustomizeGenerator(fsys, kustomizationPath, templateSuffix, client)
+func NewKustomizeGeneratorWithObjectTransformer(fsys fs.FS, kustomizationPath string, templateSuffix string, clnt client.Client, transformer manifests.ObjectTransformer) (manifests.TransformableGenerator, error) {
+	g, err := NewTransformableKustomizeGenerator(fsys, kustomizationPath, templateSuffix, clnt)
 	if err != nil {
 		return nil, err
 	}
@@ -153,7 +156,11 @@ func NewKustomizeGeneratorWithObjectTransformer(fsys fs.FS, kustomizationPath st
 func (g *KustomizeGenerator) Generate(ctx context.Context, namespace string, name string, parameters types.Unstructurable) ([]client.Object, error) {
 	var objects []client.Object
 
-	client, err := ClientFromContext(ctx)
+	clnt, err := component.ClientFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	component, err := component.ComponentFromContext(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -175,8 +182,8 @@ func (g *KustomizeGenerator) Generate(ctx context.Context, namespace string, nam
 				return nil, err
 			}
 			t0.Option("missingkey=zero").
-				Funcs(templatex.FuncMapForClient(client)).
-				Funcs(funcMapForGenerateContext(client, namespace, name))
+				Funcs(templatex.FuncMapForClient(clnt)).
+				Funcs(funcMapForGenerateContext(clnt, component, namespace, name))
 		}
 		var buf bytes.Buffer
 		if err := t0.ExecuteTemplate(&buf, t.Name(), data); err != nil {
@@ -232,12 +239,26 @@ func (g *KustomizeGenerator) Generate(ctx context.Context, namespace string, nam
 	return objects, nil
 }
 
-func funcMapForGenerateContext(client cluster.Client, namespace string, name string) template.FuncMap {
+func funcMapForGenerateContext(clnt cluster.Client, component component.Component, namespace string, name string) template.FuncMap {
 	// TODO: add accessors for Kubernetes version etc.
 	return template.FuncMap{
+		// TODO: maybe it would it be better to convert component to unstructured;
+		// then calling methods would no longer be possible, and attributes would be in lowercase
+		"component": makeFuncData(component),
 		"namespace": func() string { return namespace },
 		"name":      func() string { return name },
 	}
+}
+
+func makeFuncData(data any) any {
+	if data == nil {
+		return func() any { return nil }
+	}
+	ival := reflect.ValueOf(data)
+	ityp := ival.Type()
+	ftyp := reflect.FuncOf(nil, []reflect.Type{ityp}, false)
+	fval := reflect.MakeFunc(ftyp, func(args []reflect.Value) []reflect.Value { return []reflect.Value{ival} })
+	return fval.Interface()
 }
 
 func generateKustomization(fsys kustfsys.FileSystem) ([]byte, error) {
