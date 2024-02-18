@@ -182,6 +182,11 @@ func (s *RetrySpec) GetRetryInterval() time.Duration {
 	return time.Duration(0)
 }
 
+// Check if state is Ready.
+func (s *Status) IsReady() bool {
+	return s.State == StateReady
+}
+
 // Get state (and related details).
 func (s *Status) GetState() (State, string, string) {
 	var cond *Condition
