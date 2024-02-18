@@ -3,7 +3,7 @@ SPDX-FileCopyrightText: 2023 SAP SE or an SAP affiliate company and component-op
 SPDX-License-Identifier: Apache-2.0
 */
 
-package manifests
+package kustomize
 
 import (
 	"bytes"
@@ -27,8 +27,10 @@ import (
 	kyaml "sigs.k8s.io/yaml"
 
 	"github.com/sap/component-operator-runtime/internal/cluster"
-	"github.com/sap/component-operator-runtime/internal/reconcile"
+	"github.com/sap/component-operator-runtime/internal/fileutils"
 	"github.com/sap/component-operator-runtime/internal/templatex"
+	"github.com/sap/component-operator-runtime/pkg/component"
+	"github.com/sap/component-operator-runtime/pkg/manifests"
 	"github.com/sap/component-operator-runtime/pkg/types"
 )
 
@@ -39,7 +41,7 @@ type KustomizeGenerator struct {
 	templates  map[string]*template.Template
 }
 
-var _ Generator = &KustomizeGenerator{}
+var _ manifests.Generator = &KustomizeGenerator{}
 
 // TODO: add a way to pass custom template functions
 
@@ -79,7 +81,7 @@ func NewKustomizeGenerator(fsys fs.FS, kustomizationPath string, templateSuffix 
 	// (which is probably a common usecase); however it has to be clarified how to handle template scopes;
 	// for example it might be desired that subtrees with a kustomization.yaml file are processed in an own
 	// template context
-	files, err := find(fsys, kustomizationPath, "*", fileTypeRegular, 0)
+	files, err := fileutils.Find(fsys, kustomizationPath, "*", fileutils.FileTypeRegular, 0)
 	if err != nil {
 		return nil, err
 	}
@@ -123,16 +125,16 @@ func NewKustomizeGenerator(fsys fs.FS, kustomizationPath string, templateSuffix 
 }
 
 // Create a new KustomizeGenerator as TransformableGenerator.
-func NewTransformableKustomizeGenerator(fsys fs.FS, kustomizationPath string, templateSuffix string, client client.Client) (TransformableGenerator, error) {
+func NewTransformableKustomizeGenerator(fsys fs.FS, kustomizationPath string, templateSuffix string, client client.Client) (manifests.TransformableGenerator, error) {
 	g, err := NewKustomizeGenerator(fsys, kustomizationPath, templateSuffix, client)
 	if err != nil {
 		return nil, err
 	}
-	return NewGenerator(g), nil
+	return manifests.NewGenerator(g), nil
 }
 
 // Create a new KustomizeGenerator with a ParameterTransformer attached (further transformers can be attached to the returned generator object).
-func NewKustomizeGeneratorWithParameterTransformer(fsys fs.FS, kustomizationPath string, templateSuffix string, client client.Client, transformer ParameterTransformer) (TransformableGenerator, error) {
+func NewKustomizeGeneratorWithParameterTransformer(fsys fs.FS, kustomizationPath string, templateSuffix string, client client.Client, transformer manifests.ParameterTransformer) (manifests.TransformableGenerator, error) {
 	g, err := NewTransformableKustomizeGenerator(fsys, kustomizationPath, templateSuffix, client)
 	if err != nil {
 		return nil, err
@@ -141,7 +143,7 @@ func NewKustomizeGeneratorWithParameterTransformer(fsys fs.FS, kustomizationPath
 }
 
 // Create a new KustomizeGenerator with an ObjectTransformer attached (further transformers can be attached to the returned generator object).
-func NewKustomizeGeneratorWithObjectTransformer(fsys fs.FS, kustomizationPath string, templateSuffix string, client client.Client, transformer ObjectTransformer) (TransformableGenerator, error) {
+func NewKustomizeGeneratorWithObjectTransformer(fsys fs.FS, kustomizationPath string, templateSuffix string, client client.Client, transformer manifests.ObjectTransformer) (manifests.TransformableGenerator, error) {
 	g, err := NewTransformableKustomizeGenerator(fsys, kustomizationPath, templateSuffix, client)
 	if err != nil {
 		return nil, err
@@ -153,7 +155,7 @@ func NewKustomizeGeneratorWithObjectTransformer(fsys fs.FS, kustomizationPath st
 func (g *KustomizeGenerator) Generate(ctx context.Context, namespace string, name string, parameters types.Unstructurable) ([]client.Object, error) {
 	var objects []client.Object
 
-	client, err := reconcile.ClientFromContext(ctx)
+	client, err := component.ClientFromContext(ctx)
 	if err != nil {
 		return nil, err
 	}

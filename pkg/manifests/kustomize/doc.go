@@ -4,6 +4,6 @@ SPDX-License-Identifier: Apache-2.0
 */
 
 /*
-Package utils contains reuse functionality exposed by the component-operator-runtime framework.
+Package manifests contains the KustomizeGenerator implementation of the Generator interface.
 */
-package utils
+package kustomize

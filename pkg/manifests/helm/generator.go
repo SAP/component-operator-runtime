@@ -3,7 +3,7 @@ SPDX-FileCopyrightText: 2023 SAP SE or an SAP affiliate company and component-op
 SPDX-License-Identifier: Apache-2.0
 */
 
-package manifests
+package helm
 
 import (
 	"bytes"
@@ -26,9 +26,11 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	kyaml "sigs.k8s.io/yaml"
 
+	"github.com/sap/component-operator-runtime/internal/fileutils"
 	"github.com/sap/component-operator-runtime/internal/helm"
-	"github.com/sap/component-operator-runtime/internal/reconcile"
 	"github.com/sap/component-operator-runtime/internal/templatex"
+	"github.com/sap/component-operator-runtime/pkg/component"
+	"github.com/sap/component-operator-runtime/pkg/manifests"
 	"github.com/sap/component-operator-runtime/pkg/types"
 )
 
@@ -41,7 +43,7 @@ type HelmGenerator struct {
 	data      map[string]any
 }
 
-var _ Generator = &HelmGenerator{}
+var _ manifests.Generator = &HelmGenerator{}
 
 // TODO: add a way to pass custom template functions
 
@@ -96,7 +98,7 @@ func NewHelmGenerator(fsys fs.FS, chartPath string, client client.Client) (*Helm
 		return nil, err
 	}
 
-	crds, err := find(fsys, filepath.Clean(chartPath+"/crds"), "*.yaml", fileTypeRegular, 0)
+	crds, err := fileutils.Find(fsys, filepath.Clean(chartPath+"/crds"), "*.yaml", fileutils.FileTypeRegular, 0)
 	if err != nil {
 		return nil, err
 	}
@@ -108,12 +110,12 @@ func NewHelmGenerator(fsys fs.FS, chartPath string, client client.Client) (*Helm
 		g.crds = append(g.crds, raw)
 	}
 
-	includes, err := find(fsys, filepath.Clean(chartPath+"/templates"), "_*", fileTypeRegular, 0)
+	includes, err := fileutils.Find(fsys, filepath.Clean(chartPath+"/templates"), "_*", fileutils.FileTypeRegular, 0)
 	if err != nil {
 		return nil, err
 	}
 
-	manifests, err := find(fsys, filepath.Clean(chartPath+"/templates"), "[^_]*.yaml", fileTypeRegular, 0)
+	manifests, err := fileutils.Find(fsys, filepath.Clean(chartPath+"/templates"), "[^_]*.yaml", fileutils.FileTypeRegular, 0)
 	if err != nil {
 		return nil, err
 	}
@@ -123,7 +125,7 @@ func NewHelmGenerator(fsys fs.FS, chartPath string, client client.Client) (*Helm
 
 	// TODO: for now, one level of library subcharts is supported
 	// we should enhance the support of subcharts (nested charts, application charts)
-	subChartPaths, err := find(fsys, filepath.Clean(chartPath+"/charts"), "*", fileTypeDir, 1)
+	subChartPaths, err := fileutils.Find(fsys, filepath.Clean(chartPath+"/charts"), "*", fileutils.FileTypeDir, 1)
 	if err != nil {
 		return nil, err
 	}
@@ -139,7 +141,7 @@ func NewHelmGenerator(fsys fs.FS, chartPath string, client client.Client) (*Helm
 		if subChartData.Type != helm.ChartTypeLibrary {
 			return nil, fmt.Errorf("only library subcharts are supported (path: %s)", subChartPath)
 		}
-		subIncludes, err := find(fsys, filepath.Clean(subChartPath+"/templates"), "_*", fileTypeRegular, 0)
+		subIncludes, err := fileutils.Find(fsys, filepath.Clean(subChartPath+"/templates"), "_*", fileutils.FileTypeRegular, 0)
 		if err != nil {
 			return nil, err
 		}
@@ -187,16 +189,16 @@ func NewHelmGenerator(fsys fs.FS, chartPath string, client client.Client) (*Helm
 }
 
 // Create a new HelmGenerator as TransformableGenerator.
-func NewTransformableHelmGenerator(fsys fs.FS, chartPath string, client client.Client) (TransformableGenerator, error) {
+func NewTransformableHelmGenerator(fsys fs.FS, chartPath string, client client.Client) (manifests.TransformableGenerator, error) {
 	g, err := NewHelmGenerator(fsys, chartPath, client)
 	if err != nil {
 		return nil, err
 	}
-	return NewGenerator(g), nil
+	return manifests.NewGenerator(g), nil
 }
 
 // Create a new HelmGenerator with a ParameterTransformer attached (further transformers can be attached to the returned generator object).
-func NewHelmGeneratorWithParameterTransformer(fsys fs.FS, chartPath string, client client.Client, transformer ParameterTransformer) (TransformableGenerator, error) {
+func NewHelmGeneratorWithParameterTransformer(fsys fs.FS, chartPath string, client client.Client, transformer manifests.ParameterTransformer) (manifests.TransformableGenerator, error) {
 	g, err := NewTransformableHelmGenerator(fsys, chartPath, client)
 	if err != nil {
 		return nil, err
@@ -205,7 +207,7 @@ func NewHelmGeneratorWithParameterTransformer(fsys fs.FS, chartPath string, clie
 }
 
 // Create a new HelmGenerator with an ObjectTransformer attached (further transformers can be attached to the returned generator object).
-func NewHelmGeneratorWithObjectTransformer(fsys fs.FS, chartPath string, client client.Client, transformer ObjectTransformer) (TransformableGenerator, error) {
+func NewHelmGeneratorWithObjectTransformer(fsys fs.FS, chartPath string, client client.Client, transformer manifests.ObjectTransformer) (manifests.TransformableGenerator, error) {
 	g, err := NewTransformableHelmGenerator(fsys, chartPath, client)
 	if err != nil {
 		return nil, err
@@ -217,11 +219,11 @@ func NewHelmGeneratorWithObjectTransformer(fsys fs.FS, chartPath string, client 
 func (g *HelmGenerator) Generate(ctx context.Context, namespace string, name string, parameters types.Unstructurable) ([]client.Object, error) {
 	var objects []client.Object
 
-	reconcilerName, err := reconcile.ReconcilerNameFromContext(ctx)
+	reconcilerName, err := component.ReconcilerNameFromContext(ctx)
 	if err != nil {
 		return nil, err
 	}
-	client, err := reconcile.ClientFromContext(ctx)
+	client, err := component.ClientFromContext(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -252,7 +254,7 @@ func (g *HelmGenerator) Generate(ctx context.Context, namespace string, name str
 		IsUpgrade: false,
 	}
 
-	data["Values"] = MergeMaps(*data["Values"].(*map[string]any), parameters.ToUnstructured())
+	data["Values"] = manifests.MergeMaps(*data["Values"].(*map[string]any), parameters.ToUnstructured())
 
 	for _, f := range g.crds {
 		decoder := utilyaml.NewYAMLToJSONDecoder(bytes.NewBuffer(f))
