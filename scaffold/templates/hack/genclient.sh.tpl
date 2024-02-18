@@ -45,5 +45,6 @@ rm -rf "$BASEDIR"/pkg/client
 mv "$TEMPDIR"/pkg/client/{{ .goModule }}/pkg/client "$BASEDIR"/pkg
 
 cd "$BASEDIR"
+go mod tidy
 go fmt ./pkg/client/...
 go vet ./pkg/client/...

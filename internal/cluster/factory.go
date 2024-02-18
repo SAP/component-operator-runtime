@@ -68,9 +68,9 @@ func NewClientFactory(name string, config *rest.Config, schemeBuilders []types.S
 			<-ticker.C
 			now := time.Now()
 			factory.mutex.Lock()
-			for key, client := range factory.clients {
-				if client.validUntil.Before(now) {
-					client.eventBroadcaster.Shutdown()
+			for key, clnt := range factory.clients {
+				if clnt.validUntil.Before(now) {
+					clnt.eventBroadcaster.Shutdown()
 					// TODO: add some (debug) log output when client is removed; unfortunately, we have no logger in here ...
 					// TODO: add metrics about running clients
 					delete(factory.clients, key)
@@ -117,16 +117,16 @@ func (f *ClientFactory) Get(kubeConfig []byte, impersonationUser string, imperso
 
 	key := sha256sum(keyData)
 
-	if client, ok := f.clients[key]; ok {
-		client.validUntil = time.Now().Add(validity)
-		return client, nil
+	if clnt, ok := f.clients[key]; ok {
+		clnt.validUntil = time.Now().Add(validity)
+		return clnt, nil
 	}
 
 	httpClient, err := rest.HTTPClientFor(config)
 	if err != nil {
 		return nil, err
 	}
-	ctrlclient, err := client.New(config, client.Options{HTTPClient: httpClient, Scheme: f.scheme})
+	ctrlClient, err := client.New(config, client.Options{HTTPClient: httpClient, Scheme: f.scheme})
 	if err != nil {
 		return nil, err
 	}
@@ -137,18 +137,19 @@ func (f *ClientFactory) Get(kubeConfig []byte, impersonationUser string, imperso
 	eventBroadcaster := record.NewBroadcaster()
 	eventBroadcaster.StartRecordingToSink(&typedcorev1.EventSinkImpl{Interface: clientset.CoreV1().Events("")})
 	eventRecorder := eventBroadcaster.NewRecorder(f.scheme, corev1.EventSource{Component: f.name})
-	client := &clientImpl{
-		Client:           ctrlclient,
+	clnt := &clientImpl{
+		Client:           ctrlClient,
 		discoveryClient:  clientset,
 		eventBroadcaster: eventBroadcaster,
 		eventRecorder:    eventRecorder,
 		validUntil:       time.Now().Add(validity),
 	}
-	f.clients[key] = client
+	f.clients[key] = clnt
 
 	// TODO: add some (debug) log output when new client is created; unfortunately, we have no logger in here ...
+	// maybe we could (at least in Get()) get one from the reconcile context ...
 	// TODO: add metrics about running clients
-	return client, nil
+	return clnt, nil
 }
 
 func sha256sum(data any) string {

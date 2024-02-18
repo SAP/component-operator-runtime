@@ -91,7 +91,7 @@ func assertRetryConfiguration[T Component](component T) (RetryConfiguration, boo
 }
 
 // Calculate digest of given component, honoring annotations, spec, and references
-func digest[T Component](component T) string {
+func calculateComponentDigest[T Component](component T) string {
 	digestData := make(map[string]any)
 	spec := getSpec(component)
 	digestData["annotations"] = component.GetAnnotations()
@@ -99,6 +99,7 @@ func digest[T Component](component T) string {
 	if err := walk.Walk(getSpec(component), func(x any, path []string, _ reflect.StructTag) error {
 		rawPath, err := json.Marshal(path)
 		if err != nil {
+			// note: this panic should be ok because marshalling []string should always work
 			panic(err)
 		}
 		switch r := x.(type) {
@@ -121,10 +122,12 @@ func digest[T Component](component T) string {
 		}
 		return nil
 	}); err != nil {
+		// note: this panic is ok because walk.Walk() only produces errors if the given walker function raises any (which ours here does not do)
 		panic("this cannot happen")
 	}
 	rawDigestData, err := json.Marshal(digestData)
 	if err != nil {
+		// note: this panic should be ok because digestData should contain only serializable stuff
 		panic("this cannot happen")
 	}
 	return sha256hex(rawDigestData)
@@ -179,6 +182,11 @@ func (s *RetrySpec) GetRetryInterval() time.Duration {
 	return time.Duration(0)
 }
 
+// Check if state is Ready.
+func (s *Status) IsReady() bool {
+	return s.State == StateReady
+}
+
 // Get state (and related details).
 func (s *Status) GetState() (State, string, string) {
 	var cond *Condition
@@ -218,7 +226,7 @@ func (s *Status) SetState(state State, reason string, message string) {
 	}
 	if status != cond.Status {
 		cond.Status = status
-		cond.LastTransitionTime = &[]metav1.Time{metav1.Now()}[0]
+		cond.LastTransitionTime = ref(metav1.Now())
 	}
 	cond.Reason = reason
 	cond.Message = message

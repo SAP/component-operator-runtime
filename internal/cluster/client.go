@@ -13,9 +13,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-func NewClient(client client.Client, discoveryClient discovery.DiscoveryInterface, eventRecorder record.EventRecorder) Client {
+func NewClient(clnt client.Client, discoveryClient discovery.DiscoveryInterface, eventRecorder record.EventRecorder) Client {
 	return &clientImpl{
-		Client:          client,
+		Client:          clnt,
 		discoveryClient: discoveryClient,
 		eventRecorder:   eventRecorder,
 	}
