@@ -82,10 +82,10 @@ var templates embed.FS
 
 // default verions
 var (
-	goVersion                      = "1.21.6"
+	goVersion                      = "1.21.7"
 	version                        = "latest"
-	kubernetesVersion              = "v0.28.5"
-	controllerRuntimeVersion       = "v0.16.3"
+	kubernetesVersion              = "v0.29.2"
+	controllerRuntimeVersion       = "v0.17.2"
 	controllerToolsVersion         = "v0.14.0"
 	codeGeneratorVersion           = "v0.29.0"
 	admissionWebhookRuntimeVersion = "v0.1.0"
@@ -158,6 +158,10 @@ func main() {
 		// TODO: beautify the following a bit (e.g. only print the stdout/stderr in case of errors)
 		fmt.Println(">>> Post-processing: go get")
 		if err := run(outputDir, "go", "get"); err != nil {
+			errlog.Fatal(err)
+		}
+		fmt.Println(">>> Post-processing: go mod tidy")
+		if err := run(outputDir, "go", "mod", "tidy"); err != nil {
 			errlog.Fatal(err)
 		}
 		fmt.Println(">>> Post-processing: make generate")
