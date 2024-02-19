@@ -30,6 +30,8 @@ func NewKustomizeGenerator(
 
 Here:
 - `fsys` must be an implementation of `fs.FS`, such as `embed.FS`; or it can be passed as nil; then, all file operations will be executed on the current OS filesystem.
-- `kustomizationPath` is the path containing the (potentially templatized) kustomatization; if `fsys` was provided, this has to be a relative path; otherwise, it will be interpreted with respect to the OS filesystem (as an absolute path, or relative to the current working directory of the controller).
+- `kustomizationPath` is the directory containing the (potentially templatized) kustomatization; if `fsys` was provided, this has to be a relative path; otherwise, it will be interpreted with respect to the OS filesystem (as an absolute path, or relative to the current working directory of the controller).
 - `templateSuffx` is optional; if empty, all files under `kustomizationPath` will be subject to go templating; otherwise, only files matching the specified suffix will be considered as templates.
 - `client` should be a client for the local cluster (i.e. the cluster where the component object exists).
+
+As of now, the specified kustomization must not reference files or paths outside `kustomizationPath`. Remote references are generally not supported.
