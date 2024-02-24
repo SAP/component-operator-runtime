@@ -10,6 +10,7 @@ import (
 	"encoding/base32"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"strings"
 
 	"github.com/pkg/errors"
@@ -29,6 +30,13 @@ func ref[T any](x T) *T {
 	return &x
 }
 
+func must[T any](x T, err error) T {
+	if err != nil {
+		panic(err)
+	}
+	return x
+}
+
 func sha256hex(data []byte) string {
 	sum := sha256.Sum256(data)
 	return hex.EncodeToString(sum[:])
@@ -44,6 +52,13 @@ func capitalize(s string) string {
 		return s
 	}
 	return strings.ToUpper(s[0:1]) + s[1:]
+}
+
+func checkRange(x int, min int, max int) error {
+	if x < min || x > max {
+		return fmt.Errorf("value %d not in allowed range [%d,%d]", x, min, max)
+	}
+	return nil
 }
 
 func calculateObjectDigest(obj client.Object) (string, error) {
@@ -203,6 +218,7 @@ func scopeFromCrd(crd *apiextensionsv1.CustomResourceDefinition) int {
 }
 
 func sortObjectsForApply[T client.Object](s []T, orderFunc func(client.Object) int) []T {
+	// TODO: consider *Class types (such as PriorityClass, StorageClass, ...) specifically
 	priority := map[string]int{
 		"Namespace": -4,
 		"ValidatingWebhookConfiguration.admissionregistration.k8s.io": -3,
@@ -227,6 +243,7 @@ func sortObjectsForApply[T client.Object](s []T, orderFunc func(client.Object) i
 }
 
 func sortObjectsForDelete[T types.ObjectKey](s []T) []T {
+	// TODO: consider *Class types (such as PriorityClass, StorageClass, ...) specifically
 	priority := map[string]int{
 		"CustomResourceDefinition.apiextensions.k8s.io":               -1,
 		"APIService.apiregistration.k8s.io":                           -1,

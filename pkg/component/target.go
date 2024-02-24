@@ -231,44 +231,33 @@ func (t *reconcileTarget[T]) Reconcile(ctx context.Context, component T) (bool, 
 		}
 	}
 
-	// validate order annotations and define getter functions for later usage
-	getAnnotationInt := func(obj client.Object, key string, minValue int, maxValue int, defaultValue int) (int, error) {
-		if value, ok := obj.GetAnnotations()[key]; ok {
-			value, err := strconv.Atoi(value)
-			if err != nil {
-				return 0, err
-			}
-			if value < minValue || value > maxValue {
-				return 0, fmt.Errorf("value %d not in allowed range [%d,%d]", value, minValue, maxValue)
-			}
-			return value, nil
-		} else {
-			return defaultValue, nil
-		}
-	}
+	// validate annotations
 	for _, object := range objects {
-		if _, err := getAnnotationInt(object, t.annotationKeyOrder, math.MinInt16, math.MaxInt16, 0); err != nil {
-			return false, errors.Wrapf(err, "invalid value for annotation %s", t.annotationKeyOrder)
+		if _, err := t.getReconcilePolicy(object); err != nil {
+			return false, errors.Wrapf(err, "error validating object %s", types.ObjectKeyToString(object))
 		}
-		if _, err := getAnnotationInt(object, t.annotationKeyPurgeOrder, math.MinInt16, math.MaxInt16, math.MaxInt); err != nil {
-			return false, errors.Wrapf(err, "invalid value for annotation %s", t.annotationKeyPurgeOrder)
+		if _, err := t.getUpdatePolicy(object); err != nil {
+			return false, errors.Wrapf(err, "error validating object %s", types.ObjectKeyToString(object))
+		}
+		if _, err := t.getDeletePolicy(object); err != nil {
+			return false, errors.Wrapf(err, "error validating object %s", types.ObjectKeyToString(object))
+		}
+		if _, err := t.getOrder(object); err != nil {
+			return false, errors.Wrapf(err, "error validating object %s", types.ObjectKeyToString(object))
+		}
+		if _, err := t.getPurgeOrder(object); err != nil {
+			return false, errors.Wrapf(err, "error validating object %s", types.ObjectKeyToString(object))
 		}
 	}
+
+	// define getter functions for later usage
 	getOrder := func(object client.Object) int {
-		order, err := getAnnotationInt(object, t.annotationKeyOrder, math.MinInt16, math.MaxInt16, 0)
-		if err != nil {
-			// note: this panic is ok because we checked the generated objects above, and this function will be called for these objects only
-			panic("this cannot happen")
-		}
-		return order
+		// note: this must() is ok because we checked the generated objects above, and this function will be called for these objects only
+		return must(t.getOrder(object))
 	}
 	getPurgeOrder := func(object client.Object) int {
-		order, err := getAnnotationInt(object, t.annotationKeyPurgeOrder, math.MinInt16, math.MaxInt16, math.MaxInt)
-		if err != nil {
-			// note: this panic is ok because we checked the generated objects above, and this function will be called for these objects only
-			panic("this cannot happen")
-		}
-		return order
+		// note: this must() is ok because we checked the generated objects above, and this function will be called for these objects only
+		return must(t.getPurgeOrder(object))
 	}
 
 	// add/update inventory with target objects
@@ -282,18 +271,13 @@ func (t *reconcileTarget[T]) Reconcile(ctx context.Context, component T) (bool, 
 		if err != nil {
 			return false, errors.Wrapf(err, "error calculating digest for object %s", types.ObjectKeyToString(object))
 		}
-
-		reconcilePolicy := object.GetAnnotations()[t.annotationKeyReconcilePolicy]
-		switch reconcilePolicy {
-		case types.ReconcilePolicyOnObjectChange, "":
-			reconcilePolicy = types.ReconcilePolicyOnObjectChange
+		// note: this must() is ok because we checked the generated objects above
+		switch must(t.getReconcilePolicy(object)) {
 		case types.ReconcilePolicyOnObjectOrComponentChange:
 			digest = fmt.Sprintf("%s@%d", digest, component.GetGeneration())
 		case types.ReconcilePolicyOnce:
 			// note: if the object already existed with a different reconcile policy, then it will get reconciled one (and only one) more time
 			digest = "__once__"
-		default:
-			return false, fmt.Errorf("invalid value for annotation %s: %s", t.annotationKeyReconcilePolicy, reconcilePolicy)
 		}
 
 		// if item was not found, append an empty item
@@ -386,7 +370,12 @@ func (t *reconcileTarget[T]) Reconcile(ctx context.Context, component T) (bool, 
 
 			orphan := false
 			if existingObject != nil {
-				orphan = existingObject.GetAnnotations()[t.annotationKeyDeletePolicy] == types.DeletePolicyOrphan
+				deletePolicy, err := t.getDeletePolicy(existingObject)
+				if err != nil {
+					// note: this should not happen under normal circumstances, because we checked the annotation when persisting it
+					return false, errors.Wrapf(err, "error validating existing object %s", types.ObjectKeyToString(existingObject))
+				}
+				orphan = deletePolicy == types.DeletePolicyOrphan
 			}
 
 			switch item.Phase {
@@ -472,16 +461,6 @@ func (t *reconcileTarget[T]) Reconcile(ctx context.Context, component T) (bool, 
 	numUnready := 0
 	numNotManagedToBeApplied := 0
 	for k, object := range objects {
-		// retreive update policy
-		updatePolicy := object.GetAnnotations()[t.annotationKeyUpdatePolicy]
-		switch updatePolicy {
-		case types.UpdatePolicyDefault, "":
-			updatePolicy = types.UpdatePolicyDefault
-		case types.UpdatePolicyRecreate:
-		default:
-			return false, fmt.Errorf("invalid value for annotation %s: %s", t.annotationKeyUpdatePolicy, updatePolicy)
-		}
-
 		// retrieve object order
 		order := getOrder(object)
 
@@ -523,18 +502,16 @@ func (t *reconcileTarget[T]) Reconcile(ctx context.Context, component T) (bool, 
 					item.Status = kstatus.InProgressStatus.String()
 					numUnready++
 				} else if existingObject.GetDeletionTimestamp().IsZero() && existingObject.GetAnnotations()[t.annotationKeyDigest] != item.Digest {
-					switch updatePolicy {
+					// note: this must() is ok because we checked the generated objects above
+					switch must(t.getUpdatePolicy(object)) {
 					case types.UpdatePolicyDefault:
 						if err := t.updateObject(ctx, object, existingObject); err != nil {
-							return false, errors.Wrapf(err, "error creating object %s", item)
+							return false, errors.Wrapf(err, "error updating object %s", item)
 						}
 					case types.UpdatePolicyRecreate:
 						if err := t.deleteObject(ctx, object, existingObject); err != nil {
 							return false, errors.Wrapf(err, "error deleting (while recreating) object %s", item)
 						}
-					default:
-						// note: this panic is ok because we validated the updatePolicy above
-						panic("this cannot happen")
 					}
 					item.Phase = PhaseUpdating
 					item.Status = kstatus.InProgressStatus.String()
@@ -613,8 +590,15 @@ func (t *reconcileTarget[T]) Delete(ctx context.Context, component T) (bool, err
 
 		if numManaged == 0 || t.isManaged(item, component) {
 			// orphan the object, if according deletion policy is set
-			if existingObject != nil && existingObject.GetAnnotations()[t.annotationKeyDeletePolicy] == types.DeletePolicyOrphan {
-				continue
+			if existingObject != nil {
+				deletePolicy, err := t.getDeletePolicy(existingObject)
+				if err != nil {
+					// note: this should not happen under normal circumstances, because we checked the annotation when persisting it
+					return false, errors.Wrapf(err, "error validating existing object %s", types.ObjectKeyToString(existingObject))
+				}
+				if deletePolicy == types.DeletePolicyOrphan {
+					continue
+				}
 			}
 			// delete the object
 			// note: here is a theoretical risk that we delete an existing (foreign) object, because informers are not yet synced
@@ -817,6 +801,94 @@ func (t *reconcileTarget[T]) deleteObject(ctx context.Context, key types.ObjectK
 		}
 	}
 	return nil
+}
+
+// TODO: needs testing
+func (t *reconcileTarget[T]) getReconcilePolicy(object client.Object) (string, error) {
+	reconcilePolicy := object.GetAnnotations()[t.annotationKeyReconcilePolicy]
+	switch reconcilePolicy {
+	case types.ReconcilePolicyOnObjectChange, "":
+		return types.ReconcilePolicyOnObjectChange, nil
+	case types.ReconcilePolicyOnObjectOrComponentChange, types.ReconcilePolicyOnce:
+		return reconcilePolicy, nil
+	default:
+		return "", fmt.Errorf("invalid value for annotation %s: %s", t.annotationKeyReconcilePolicy, reconcilePolicy)
+	}
+}
+
+// TODO: needs testing
+func (t *reconcileTarget[T]) getUpdatePolicy(object client.Object) (string, error) {
+	updatePolicy := object.GetAnnotations()[t.annotationKeyUpdatePolicy]
+	switch updatePolicy {
+	case types.UpdatePolicyDefault, "":
+		return types.UpdatePolicyDefault, nil
+	case types.UpdatePolicyRecreate:
+		return updatePolicy, nil
+	default:
+		return "", fmt.Errorf("invalid value for annotation %s: %s", t.annotationKeyUpdatePolicy, updatePolicy)
+	}
+}
+
+// TODO: needs testing
+func (t *reconcileTarget[T]) getDeletePolicy(object client.Object) (string, error) {
+	deletePolicy := object.GetAnnotations()[t.annotationKeyDeletePolicy]
+	switch deletePolicy {
+	case types.DeletePolicyDefault, "":
+		return types.DeletePolicyDefault, nil
+	case types.DeletePolicyOrphan:
+		return deletePolicy, nil
+	default:
+		return "", fmt.Errorf("invalid value for annotation %s: %s", t.annotationKeyDeletePolicy, deletePolicy)
+	}
+}
+
+/*
+func getAnnotationInt(obj client.Object, key string, minValue int, maxValue int, defaultValue int) (int, error) {
+	if value, ok := obj.GetAnnotations()[key]; ok {
+		value, err := strconv.Atoi(value)
+		if err != nil {
+			return 0, err
+		}
+		if value < minValue || value > maxValue {
+			return 0, fmt.Errorf("value %d not in allowed range [%d,%d]", value, minValue, maxValue)
+		}
+		return value, nil
+	} else {
+		return defaultValue, nil
+	}
+}
+*/
+
+// TODO: needs testing
+func (t *reconcileTarget[T]) getOrder(object client.Object) (int, error) {
+	value, ok := object.GetAnnotations()[t.annotationKeyOrder]
+	if !ok {
+		return 0, nil
+	}
+	order, err := strconv.Atoi(value)
+	if err != nil {
+		return 0, errors.Wrapf(err, "invalid value for annotation %s: %s", t.annotationKeyOrder, value)
+	}
+	if err := checkRange(order, math.MinInt16, math.MaxInt16); err != nil {
+		return 0, errors.Wrapf(err, "invalid value for annotation %s: %s", t.annotationKeyOrder, value)
+	}
+	return order, nil
+}
+
+// TODO: needs testing
+func (t *reconcileTarget[T]) getPurgeOrder(object client.Object) (int, error) {
+	value, ok := object.GetAnnotations()[t.annotationKeyPurgeOrder]
+	if !ok {
+		return math.MaxInt, nil
+	}
+	purgeOrder, err := strconv.Atoi(value)
+	if err != nil {
+		return 0, errors.Wrapf(err, "invalid value for annotation %s: %s", t.annotationKeyPurgeOrder, value)
+	}
+	if err := checkRange(purgeOrder, math.MinInt16, math.MaxInt16); err != nil {
+		return 0, errors.Wrapf(err, "invalid value for annotation %s: %s", t.annotationKeyPurgeOrder, value)
+	}
+	return purgeOrder, nil
 }
 
 func (t *reconcileTarget[T]) isCrdUsed(ctx context.Context, crd *apiextensionsv1.CustomResourceDefinition, onlyForeign bool) (bool, error) {
