@@ -291,6 +291,18 @@ func mustGetItem(inventory []*InventoryItem, key types.ObjectKey) *InventoryItem
 	return item
 }
 
+func isManaged(inventory []*InventoryItem, key types.TypeKey) bool {
+	gvk := key.GetObjectKind().GroupVersionKind()
+	for _, item := range inventory {
+		for _, t := range item.ManagedTypes {
+			if (t.Group == "*" || t.Group == gvk.Group) && (t.Version == "*" || t.Version == gvk.Version) && (t.Kind == "*" || t.Kind == gvk.Kind) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 func mustParseLabelSelector(s string) labels.Selector {
 	selector, err := labels.Parse(s)
 	if err != nil {

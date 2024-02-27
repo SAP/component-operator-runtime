@@ -365,7 +365,7 @@ func (t *reconcileTarget[T]) Reconcile(ctx context.Context, component T) (bool, 
 	numManagedToBeDeleted := 0
 	for _, item := range status.Inventory {
 		if item.Phase == PhaseScheduledForDeletion || item.Phase == PhaseScheduledForCompletion || item.Phase == PhaseDeleting || item.Phase == PhaseCompleting {
-			if t.isManaged(item, component) {
+			if isManaged(status.Inventory, item) {
 				numManagedToBeDeleted++
 			}
 		}
@@ -394,7 +394,7 @@ func (t *reconcileTarget[T]) Reconcile(ctx context.Context, component T) (bool, 
 
 			switch item.Phase {
 			case PhaseScheduledForDeletion:
-				if numManagedToBeDeleted == 0 || t.isManaged(item, component) {
+				if numManagedToBeDeleted == 0 || isManaged(status.Inventory, item) {
 					if orphan {
 						continue
 					}
@@ -408,7 +408,7 @@ func (t *reconcileTarget[T]) Reconcile(ctx context.Context, component T) (bool, 
 				}
 				numToBeDeleted++
 			case PhaseScheduledForCompletion:
-				if numManagedToBeDeleted == 0 || t.isManaged(item, component) {
+				if numManagedToBeDeleted == 0 || isManaged(status.Inventory, item) {
 					if orphan {
 						return false, fmt.Errorf("invalid usage of deletion policy: object %s is scheduled for completion (due to purge order) and therefore cannot be orphaned", item)
 					}
@@ -488,7 +488,7 @@ func (t *reconcileTarget[T]) Reconcile(ctx context.Context, component T) (bool, 
 			for j := k; j < len(objects) && getOrder(objects[j]) == order; j++ {
 				_object := objects[j]
 				_item := mustGetItem(status.Inventory, _object)
-				if _item.Phase != PhaseReady && _item.Phase != PhaseCompleted && !t.isManaged(_object, component) {
+				if _item.Phase != PhaseReady && _item.Phase != PhaseCompleted && !isManaged(status.Inventory, _object) {
 					// that means: _item.Phase is one of PhaseScheduledForApplication, PhaseCreating, PhaseUpdating
 					numNotManagedToBeApplied++
 				}
@@ -497,7 +497,7 @@ func (t *reconcileTarget[T]) Reconcile(ctx context.Context, component T) (bool, 
 
 		// for non-completed objects, compute and update status, and apply (create or update) the object if necessary
 		if item.Phase != PhaseCompleted {
-			if numNotManagedToBeApplied == 0 || !t.isManaged(object, component) {
+			if numNotManagedToBeApplied == 0 || !isManaged(status.Inventory, object) {
 				// fetch object (if existing)
 				existingObject, err := t.readObject(ctx, item)
 				if err != nil {
@@ -583,7 +583,7 @@ func (t *reconcileTarget[T]) Delete(ctx context.Context, component T) (bool, err
 	// count instances of managed types
 	numManaged := 0
 	for _, item := range status.Inventory {
-		if t.isManaged(item, component) {
+		if isManaged(status.Inventory, item) {
 			numManaged++
 		}
 	}
@@ -603,7 +603,7 @@ func (t *reconcileTarget[T]) Delete(ctx context.Context, component T) (bool, err
 			continue
 		}
 
-		if numManaged == 0 || t.isManaged(item, component) {
+		if numManaged == 0 || isManaged(status.Inventory, item) {
 			// orphan the object, if according deletion policy is set
 			if existingObject != nil {
 				deletePolicy, err := t.getDeletePolicy(existingObject)
@@ -1033,17 +1033,4 @@ func (t *reconcileTarget[T]) isApiServiceUsed(ctx context.Context, apiService *a
 		}
 	}
 	return false, nil
-}
-
-func (t *reconcileTarget[T]) isManaged(key types.TypeKey, component T) bool {
-	status := component.GetStatus()
-	gvk := key.GetObjectKind().GroupVersionKind()
-	for _, item := range status.Inventory {
-		for _, t := range item.ManagedTypes {
-			if (t.Group == "*" || t.Group == gvk.Group) && (t.Version == "*" || t.Version == gvk.Version) && (t.Kind == "*" || t.Kind == gvk.Kind) {
-				return true
-			}
-		}
-	}
-	return false
 }
