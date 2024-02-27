@@ -369,15 +369,15 @@ func (r *Reconciler[T]) Reconcile(ctx context.Context, req ctrl.Request) (result
 		}
 		log.V(1).Info("deletion not allowed")
 		// TODO: have an additional StateDeletionBlocked?
-		// TODO: emit an event
 		status.SetState(StateDeleting, readyConditionReasonDeletionBlocked, "Deletion blocked: "+msg)
+		r.client.EventRecorder().Event(component, corev1.EventTypeNormal, readyConditionReasonDeletionBlocked, "Deletion blocked: "+msg)
 		return ctrl.Result{RequeueAfter: 1*time.Second + r.backoff.Next(req, readyConditionReasonDeletionBlocked)}, nil
 	} else if len(slices.Remove(component.GetFinalizers(), r.name)) > 0 {
 		// deletion is blocked because of foreign finalizers
 		log.V(1).Info("deleted blocked due to existence of foreign finalizers")
 		// TODO: have an additional StateDeletionBlocked?
-		// TODO: emit an event
 		status.SetState(StateDeleting, readyConditionReasonDeletionBlocked, "Deletion blocked due to existing foreign finalizers")
+		r.client.EventRecorder().Event(component, corev1.EventTypeNormal, readyConditionReasonDeletionBlocked, "Deletion blocked due to existing foreign finalizers")
 		return ctrl.Result{RequeueAfter: 1*time.Second + r.backoff.Next(req, readyConditionReasonDeletionBlocked)}, nil
 	} else {
 		// deletion case
