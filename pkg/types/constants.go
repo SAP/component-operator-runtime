@@ -8,6 +8,7 @@ package types
 const (
 	LabelKeySuffixOwnerId              = "owner-id"
 	AnnotationKeySuffixDigest          = "digest"
+	AnnotationKeySuffixAdoptionPolicy  = "adoption-policy"
 	AnnotationKeySuffixReconcilePolicy = "reconcile-policy"
 	AnnotationKeySuffixUpdatePolicy    = "update-policy"
 	AnnotationKeySuffixDeletePolicy    = "delete-policy"
@@ -17,17 +18,27 @@ const (
 )
 
 const (
+	AdoptionPolicyNever     = "never"
+	AdoptionPolicyIfUnowned = "if-unowned"
+	AdoptionPolicyAlways    = "always"
+)
+
+const (
 	ReconcilePolicyOnObjectChange            = "on-object-change"
 	ReconcilePolicyOnObjectOrComponentChange = "on-object-or-component-change"
 	ReconcilePolicyOnce                      = "once"
 )
 
 const (
-	UpdatePolicyDefault  = "default"
-	UpdatePolicyRecreate = "recreate"
+	UpdatePolicyDefault     = "default"
+	UpdatePolicyRecreate    = "recreate"
+	UpdatePolicyReplace     = "replace"
+	UpdatePolicySsaMerge    = "ssa-merge"
+	UpdatePolicySsaOverride = "ssa-override"
 )
 
 const (
 	DeletePolicyDefault = "default"
+	DeletePolicyDelete  = "delete"
 	DeletePolicyOrphan  = "orphan"
 )

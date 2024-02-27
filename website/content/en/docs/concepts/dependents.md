@@ -19,18 +19,26 @@ instances of the managed custom resource definition in the cluster.
 
 In some special situations, it is desirable to have even more control on the lifecycle of the dependent objects.
 To support such cases, the `Generator` implementation can set the following annotations in the manifests of the dependents:
+- `mycomponent-operator.mydomain.io/adoption-policy`: defines how the reconciler reacts if the object exists but has no or a different owner; can be one of:
+  - `never`: fail if the object exists but has no or a different owner
+  - `if-unowned` (which is the default): adopt the object if it has no owner set
+  - `always`: adopt the object, even if it has a conflicting owner
 - `mycomponent-operator.mydomain.io/reconcile-policy`: defines how the object is reconciled; can be one of:
   - `on-object-change` (which is the default): the object will be reconciled whenever its generated manifest changes
   - `on-object-or-component-change`: the object will be reconciled whenever its generated manifest changes, or whenever the responsible component object changes by generation
   - `once`: the object will be reconciled once, but never be touched again
 - `mycomponent-operator.mydomain.io/update-policy`: defines how the object (if existing) is updated; can be one of:
-  - `default` (which is the default): a regular update (i.e. PUT) call will be made to the Kubernetes API server
+  - `default` (deprecated): equivalent to the annotation being unset (which means that the reconciler default will be used)
+  - `replace` (which is the default): a regular update (i.e. PUT) call will be made to the Kubernetes API server
+  - `ssa-merge`: use server side apply to update existing dependents
+  - `ssa-override`: use server side apply to update existing dependents and, in addition, reclaim fields owned by certain field owners, such as kubectl or helm 
   - `recreate`: if the object would be updated, it will be deleted and recreated instead
 - `mycomponent-operator.mydomain.io/delete-policy`: defines what happens if the object is deleted; can be one of:
-  - `default` (which is the default): a delete call will be sent to the Kubernetes API server
+  - `default` (deprecated): equivalent to the annotation being unset (which means that the reconciler default will be used)
+  - `delete` (which is the default): a delete call will be sent to the Kubernetes API server
   - `orphan`: the object will not be deleted, and it will be no longer tracked
 - `mycomponent-operator.mydomain.io/order`: the order at which this object will be reconciled; dependents will be reconciled order by order; that is, objects of the same order will be deployed in the canonical order, and the controller will only proceed to the next order if all objects of previous orders are ready; specified orders can be negative or positive numbers between -32768 and 32767, objects with no explicit order set are treated as if they would specify order 0.
-- `mycomponent-operator.mydomain.io/purge-order`: (optional) the order by which this object will be purged
+- `mycomponent-operator.mydomain.io/purge-order` (optional): the order by which this object will be purged
 
 Note that, in the above paragraph, `mycomponent-operator.mydomain.io` has to be replaced with whatever was passed as `name` when calling `NewReconciler()`.
 

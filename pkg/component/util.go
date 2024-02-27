@@ -218,19 +218,22 @@ func scopeFromCrd(crd *apiextensionsv1.CustomResourceDefinition) int {
 }
 
 func sortObjectsForApply[T client.Object](s []T, orderFunc func(client.Object) int) []T {
-	// TODO: consider *Class types (such as PriorityClass, StorageClass, ...) specifically
 	priority := map[string]int{
 		"Namespace": -4,
 		"ValidatingWebhookConfiguration.admissionregistration.k8s.io": -3,
 		"MutatingWebhookConfiguration.admissionregistration.k8s.io":   -3,
 		"CustomResourceDefinition.apiextensions.k8s.io":               -2,
-		"ConfigMap":                             -1,
-		"Secret":                                -1,
-		"ClusterRole.rbac.authorization.k8s.io": -1,
-		"Role.rbac.authorization.k8s.io":        -1,
-		"ClusterRoleBinding.rbac.authorization.k8s.io": -1,
-		"RoleBinding.rbac.authorization.k8s.io":        -1,
-		"APIService.apiregistration.k8s.io":            1,
+		"IngressClass.networking.k8s.io":                              -2,
+		"RuntimeClass.node.k8s.io":                                    -2,
+		"PriorityClass.scheduling.k8s.io":                             -2,
+		"StorageClass.storage.k8s.io":                                 -2,
+		"ConfigMap":                                                   -1,
+		"Secret":                                                      -1,
+		"ClusterRole.rbac.authorization.k8s.io":                       -1,
+		"Role.rbac.authorization.k8s.io":                              -1,
+		"ClusterRoleBinding.rbac.authorization.k8s.io":                -1,
+		"RoleBinding.rbac.authorization.k8s.io":                       -1,
+		"APIService.apiregistration.k8s.io":                           1,
 	}
 	f := func(x T, y T) bool {
 		orderx := orderFunc(x)
@@ -243,16 +246,19 @@ func sortObjectsForApply[T client.Object](s []T, orderFunc func(client.Object) i
 }
 
 func sortObjectsForDelete[T types.ObjectKey](s []T) []T {
-	// TODO: consider *Class types (such as PriorityClass, StorageClass, ...) specifically
 	priority := map[string]int{
 		"CustomResourceDefinition.apiextensions.k8s.io":               -1,
 		"APIService.apiregistration.k8s.io":                           -1,
 		"ValidatingWebhookConfiguration.admissionregistration.k8s.io": 1,
 		"MutatingWebhookConfiguration.admissionregistration.k8s.io":   1,
-		"Service":   2,
-		"ConfigMap": 2,
-		"Secret":    2,
-		"Namespace": 3,
+		"Service":                         2,
+		"ConfigMap":                       2,
+		"Secret":                          2,
+		"Namespace":                       3,
+		"IngressClass.networking.k8s.io":  4,
+		"RuntimeClass.node.k8s.io":        4,
+		"PriorityClass.scheduling.k8s.io": 4,
+		"StorageClass.storage.k8s.io":     4,
 	}
 	f := func(x T, y T) bool {
 		gvx := x.GetObjectKind().GroupVersionKind().GroupKind().String()

@@ -67,12 +67,8 @@ func (r *ConfigMapReference) digest() string {
 	if !r.loaded {
 		return ""
 	}
-	rawData, err := json.Marshal(r.data)
-	if err != nil {
-		// note: this panic should be ok because marshalling map[string]string should always work
-		panic("this cannot happen")
-	}
-	return sha256hex(rawData)
+	// note: this must() is ok because marshalling map[string]string should always work
+	return sha256hex(must(json.Marshal(r.data)))
 }
 
 // Return the previously loaded configmap data.
@@ -178,12 +174,8 @@ func (r *SecretReference) digest() string {
 	if !r.loaded {
 		return ""
 	}
-	rawData, err := json.Marshal(r.data)
-	if err != nil {
-		// note: this panic should be ok because marshalling map[string][]byte should always work
-		panic("this cannot happen")
-	}
-	return sha256hex(rawData)
+	// note: this must() is ok because marshalling map[string][]byte should always work
+	return sha256hex(must(json.Marshal(r.data)))
 }
 
 // Return the previously loaded secret data.

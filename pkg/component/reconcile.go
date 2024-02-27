@@ -37,10 +37,10 @@ import (
 )
 
 // TODO: in general add more retry to overcome 409 update errors (also etcd storage errors because of missed precondition on delete)
-// TODO: optionally allow to use server-side-apply instead of create/update (e.g. through a component annotation)
 // TODO: make a can-i check before emitting events to deployment target (e.g. in the client factory when creating the client)
-// TODO: allow to override namespace auto-creation and adoption policy settings on a per-component level
+// TODO: allow to override namespace auto-creation and policies on a per-component level
 // (e.g. through annotations or another interface that components could optionally implement)
+// TODO: allow to override namespace auto-creation on a per-object level
 // TODO: allow some timeout feature, such that component will go into error state if not ready within the given timeout
 // (e.g. through a TimeoutConfiguration interface that components could optionally implement)
 // TODO: run admission webhooks (if present) in reconcile (e.g. as post-read hook)
@@ -73,8 +73,13 @@ type ReconcilerOptions struct {
 	// If unspecified, true is assumed.
 	CreateMissingNamespaces *bool
 	// How to react if a dependent object exists but has no or a different owner.
-	// If unspecified, AdoptionPolicyAdoptUnowned is assumed.
+	// If unspecified, AdoptionPolicyIfUnowned is assumed.
+	// Can be overridden by annotation on object level.
 	AdoptionPolicy *AdoptionPolicy
+	// How to perform updates to dependent objects.
+	// If unspecified, UpdatePolicyReplace is assumed.
+	// Can be overridden by annotation on object level.
+	UpdatePolicy *UpdatePolicy
 	// Schemebuilder allows to define additional schemes to be made available in the
 	// target client.
 	SchemeBuilder types.SchemeBuilder
@@ -85,12 +90,74 @@ type AdoptionPolicy string
 
 const (
 	// Fail if the dependent object exists but has no or a different owner.
-	AdoptionPolicyFail AdoptionPolicy = "Fail"
+	AdoptionPolicyNever AdoptionPolicy = "Never"
 	// Adopt existing dependent objects if they have no owner set.
-	AdoptionPolicyAdoptUnowned AdoptionPolicy = "AdoptUnowned"
-	// Adopt all existing dependent objects, even if they have a conflicting owner.
-	AdoptionPolicyAdoptAll AdoptionPolicy = "AdoptAll"
+	AdoptionPolicyIfUnowned AdoptionPolicy = "IfUnowned"
+	// Adopt existing dependent objects, even if they have a conflicting owner.
+	AdoptionPolicyAlways AdoptionPolicy = "Always"
 )
+
+var adoptionPolicyByAnnotation = map[string]AdoptionPolicy{
+	types.AdoptionPolicyNever:     AdoptionPolicyNever,
+	types.AdoptionPolicyIfUnowned: AdoptionPolicyIfUnowned,
+	types.AdoptionPolicyAlways:    AdoptionPolicyAlways,
+}
+
+// ReconcilePolicy defines when the reconciler will reconcile the dependent object.
+type ReconcilePolicy string
+
+const (
+	// Reconcile the dependent object if its manifest, as produced by the generator, changes.
+	ReconcilePolicyOnObjectChange ReconcilePolicy = "OnObjectChange"
+	// Reconcile the dependent object if its manifest, as produced by the generator, changes, or if the owning
+	// component changes (identified by a change of its metadata.generation).
+	ReconcilePolicyOnObjectOrComponentChange ReconcilePolicy = "OnObjectOrComponentChange"
+	// Reconcile the dependent object only once; afterwards it will never be touched again by the reconciler.
+	ReconcilePolicyOnce ReconcilePolicy = "Once"
+)
+
+var reconcilePolicyByAnnotation = map[string]ReconcilePolicy{
+	types.ReconcilePolicyOnObjectChange:            ReconcilePolicyOnObjectChange,
+	types.ReconcilePolicyOnObjectOrComponentChange: ReconcilePolicyOnObjectOrComponentChange,
+	types.ReconcilePolicyOnce:                      ReconcilePolicyOnce,
+}
+
+// UpdatePolicy defines how the reconciler will update dependent objects.
+type UpdatePolicy string
+
+const (
+	// Recreate (that is: delete and create) existing dependent objects.
+	UpdatePolicyRecreate UpdatePolicy = "Recreate"
+	// Replace existing dependent objects.
+	UpdatePolicyReplace UpdatePolicy = "Replace"
+	// Use server side apply to update existing dependents.
+	UpdatePolicySsaMerge UpdatePolicy = "SsaMerge"
+	// Use server side apply to update existing dependents and, in addition, reclaim fields owned by certain
+	// field owners, such as kubectl or helm.
+	UpdatePolicySsaOverride UpdatePolicy = "SsaOverride"
+)
+
+var updatePolicyByAnnotation = map[string]UpdatePolicy{
+	types.UpdatePolicyRecreate:    UpdatePolicyRecreate,
+	types.UpdatePolicyReplace:     UpdatePolicyReplace,
+	types.UpdatePolicySsaMerge:    UpdatePolicySsaMerge,
+	types.UpdatePolicySsaOverride: UpdatePolicySsaOverride,
+}
+
+// DeletePolicy defines how the reconciler will delete dependent objects.
+type DeletePolicy string
+
+const (
+	// Delete dependent objects.
+	DeletePolicyDelete DeletePolicy = "Delete"
+	// Orphan dependent objects.
+	DeletePolicyOrphan DeletePolicy = "Orphan"
+)
+
+var deletePolicyByAnnotation = map[string]DeletePolicy{
+	types.DeletePolicyDelete: DeletePolicyDelete,
+	types.DeletePolicyOrphan: DeletePolicyOrphan,
+}
 
 // Reconciler provides the implementation of controller-runtime's Reconciler interface, for a given Component type T.
 type Reconciler[T Component] struct {
@@ -114,13 +181,16 @@ type Reconciler[T Component] struct {
 // Here, name should be a meaningful and unique name identifying this reconciler within the Kubernetes cluster; it will be used in annotations, finalizers, and so on;
 // resourceGenerator must be an implementation of the manifests.Generator interface.
 func NewReconciler[T Component](name string, resourceGenerator manifests.Generator, options ReconcilerOptions) *Reconciler[T] {
+	// TOOD: validate options
 	if options.CreateMissingNamespaces == nil {
 		options.CreateMissingNamespaces = ref(true)
 	}
 	if options.AdoptionPolicy == nil {
-		options.AdoptionPolicy = ref(AdoptionPolicyAdoptUnowned)
+		options.AdoptionPolicy = ref(AdoptionPolicyIfUnowned)
 	}
-	// TOOD: validate adoption policy
+	if options.UpdatePolicy == nil {
+		options.UpdatePolicy = ref(UpdatePolicyReplace)
+	}
 
 	return &Reconciler[T]{
 		name:              name,
@@ -243,7 +313,7 @@ func (r *Reconciler[T]) Reconcile(ctx context.Context, req ctrl.Request) (result
 	if err != nil {
 		return ctrl.Result{}, errors.Wrap(err, "error getting client for component")
 	}
-	target := newReconcileTarget[T](r.name, r.id, targetClient, r.resourceGenerator, *r.options.CreateMissingNamespaces, *r.options.AdoptionPolicy)
+	target := newReconcileTarget[T](r.name, r.id, targetClient, r.resourceGenerator, *r.options.CreateMissingNamespaces, *r.options.AdoptionPolicy, *r.options.UpdatePolicy)
 	hookCtx := newContext(ctx).WithClient(targetClient)
 
 	// do the reconciliation
@@ -299,12 +369,14 @@ func (r *Reconciler[T]) Reconcile(ctx context.Context, req ctrl.Request) (result
 		}
 		log.V(1).Info("deletion not allowed")
 		// TODO: have an additional StateDeletionBlocked?
+		// TODO: emit an event
 		status.SetState(StateDeleting, readyConditionReasonDeletionBlocked, "Deletion blocked: "+msg)
 		return ctrl.Result{RequeueAfter: 1*time.Second + r.backoff.Next(req, readyConditionReasonDeletionBlocked)}, nil
 	} else if len(slices.Remove(component.GetFinalizers(), r.name)) > 0 {
 		// deletion is blocked because of foreign finalizers
 		log.V(1).Info("deleted blocked due to existence of foreign finalizers")
 		// TODO: have an additional StateDeletionBlocked?
+		// TODO: emit an event
 		status.SetState(StateDeleting, readyConditionReasonDeletionBlocked, "Deletion blocked due to existing foreign finalizers")
 		return ctrl.Result{RequeueAfter: 1*time.Second + r.backoff.Next(req, readyConditionReasonDeletionBlocked)}, nil
 	} else {

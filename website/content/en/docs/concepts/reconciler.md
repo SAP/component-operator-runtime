@@ -40,8 +40,13 @@ The passed type parameter `T Component` is the concrete runtime type of the comp
     // If unspecified, true is assumed.
     CreateMissingNamespaces *bool
     // How to react if a dependent object exists but has no or a different owner.
-    // If unspecified, AdoptionPolicyAdoptUnowned is assumed.
+	  // If unspecified, AdoptionPolicyIfUnowned is assumed.
+    // Can be overridden by annotation on object level.
     AdoptionPolicy *AdoptionPolicy
+    // How to perform updates to dependent objects.
+    // If unspecified, UpdatePolicyReplace is assumed.
+    // Can be overridden by annotation on object level.
+    UpdatePolicy *UpdatePolicy
     // Schemebuilder allows to define additional schemes to be made available in the
     // target client.
     SchemeBuilder types.SchemeBuilder

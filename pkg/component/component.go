@@ -97,11 +97,8 @@ func calculateComponentDigest[T Component](component T) string {
 	digestData["annotations"] = component.GetAnnotations()
 	digestData["spec"] = spec
 	if err := walk.Walk(getSpec(component), func(x any, path []string, _ reflect.StructTag) error {
-		rawPath, err := json.Marshal(path)
-		if err != nil {
-			// note: this panic should be ok because marshalling []string should always work
-			panic(err)
-		}
+		// note: this must() is ok because marshalling []string should always work
+		rawPath := must(json.Marshal(path))
 		switch r := x.(type) {
 		case *ConfigMapReference:
 			if r != nil {
@@ -125,12 +122,8 @@ func calculateComponentDigest[T Component](component T) string {
 		// note: this panic is ok because walk.Walk() only produces errors if the given walker function raises any (which ours here does not do)
 		panic("this cannot happen")
 	}
-	rawDigestData, err := json.Marshal(digestData)
-	if err != nil {
-		// note: this panic should be ok because digestData should contain only serializable stuff
-		panic("this cannot happen")
-	}
-	return sha256hex(rawDigestData)
+	// note: this must() is ok because digestData should contain only serializable stuff
+	return sha256hex(must(json.Marshal(digestData)))
 }
 
 // Implement the PlacementConfiguration interface.
@@ -248,7 +241,7 @@ func (i *InventoryItem) SetGroupVersionKind(gvk schema.GroupVersionKind) {
 	i.TypeInfo = TypeInfo(gvk)
 }
 
-// Get inventory item's  namespace.
+// Get inventory item's namespace.
 func (i InventoryItem) GetNamespace() string {
 	return i.Namespace
 }

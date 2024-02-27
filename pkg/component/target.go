@@ -7,6 +7,7 @@ package component
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"math"
 	"strconv"
@@ -58,8 +59,12 @@ type reconcileTarget[T Component] struct {
 	resourceGenerator            manifests.Generator
 	createMissingNamespaces      bool
 	adoptionPolicy               AdoptionPolicy
+	reconcilePolicy              ReconcilePolicy
+	updatePolicy                 UpdatePolicy
+	deletePolicy                 DeletePolicy
 	labelKeyOwnerId              string
 	annotationKeyDigest          string
+	annotationKeyAdoptionPolicy  string
 	annotationKeyReconcilePolicy string
 	annotationKeyUpdatePolicy    string
 	annotationKeyDeletePolicy    string
@@ -68,7 +73,7 @@ type reconcileTarget[T Component] struct {
 	annotationKeyOwnerId         string
 }
 
-func newReconcileTarget[T Component](reconcilerName string, reconcilerId string, clnt cluster.Client, resourceGenerator manifests.Generator, createMissingNamespaces bool, adoptionPolicy AdoptionPolicy) *reconcileTarget[T] {
+func newReconcileTarget[T Component](reconcilerName string, reconcilerId string, clnt cluster.Client, resourceGenerator manifests.Generator, createMissingNamespaces bool, adoptionPolicy AdoptionPolicy, updatePolicy UpdatePolicy) *reconcileTarget[T] {
 	return &reconcileTarget[T]{
 		reconcilerName:               reconcilerName,
 		reconcilerId:                 reconcilerId,
@@ -76,8 +81,12 @@ func newReconcileTarget[T Component](reconcilerName string, reconcilerId string,
 		resourceGenerator:            resourceGenerator,
 		createMissingNamespaces:      createMissingNamespaces,
 		adoptionPolicy:               adoptionPolicy,
+		reconcilePolicy:              ReconcilePolicyOnObjectChange,
+		updatePolicy:                 updatePolicy,
+		deletePolicy:                 DeletePolicyDelete,
 		labelKeyOwnerId:              reconcilerName + "/" + types.LabelKeySuffixOwnerId,
 		annotationKeyDigest:          reconcilerName + "/" + types.AnnotationKeySuffixDigest,
+		annotationKeyAdoptionPolicy:  reconcilerName + "/" + types.AnnotationKeySuffixAdoptionPolicy,
 		annotationKeyReconcilePolicy: reconcilerName + "/" + types.AnnotationKeySuffixReconcilePolicy,
 		annotationKeyUpdatePolicy:    reconcilerName + "/" + types.AnnotationKeySuffixUpdatePolicy,
 		annotationKeyDeletePolicy:    reconcilerName + "/" + types.AnnotationKeySuffixDeletePolicy,
@@ -233,6 +242,9 @@ func (t *reconcileTarget[T]) Reconcile(ctx context.Context, component T) (bool, 
 
 	// validate annotations
 	for _, object := range objects {
+		if _, err := t.getAdoptionPolicy(object); err != nil {
+			return false, errors.Wrapf(err, "error validating object %s", types.ObjectKeyToString(object))
+		}
 		if _, err := t.getReconcilePolicy(object); err != nil {
 			return false, errors.Wrapf(err, "error validating object %s", types.ObjectKeyToString(object))
 		}
@@ -273,9 +285,9 @@ func (t *reconcileTarget[T]) Reconcile(ctx context.Context, component T) (bool, 
 		}
 		// note: this must() is ok because we checked the generated objects above
 		switch must(t.getReconcilePolicy(object)) {
-		case types.ReconcilePolicyOnObjectOrComponentChange:
+		case ReconcilePolicyOnObjectOrComponentChange:
 			digest = fmt.Sprintf("%s@%d", digest, component.GetGeneration())
-		case types.ReconcilePolicyOnce:
+		case ReconcilePolicyOnce:
 			// note: if the object already existed with a different reconcile policy, then it will get reconciled one (and only one) more time
 			digest = "__once__"
 		}
@@ -289,13 +301,15 @@ func (t *reconcileTarget[T]) Reconcile(ctx context.Context, component T) (bool, 
 			}
 			// check ownership
 			if existingObject != nil {
+				// note: this must() is ok because we checked the generated objects above
+				adoptionPolicy := must(t.getAdoptionPolicy(object))
 				existingOwnerId := existingObject.GetLabels()[t.labelKeyOwnerId]
 				if existingOwnerId == "" {
-					if t.adoptionPolicy != AdoptionPolicyAdoptUnowned && t.adoptionPolicy != AdoptionPolicyAdoptAll {
+					if adoptionPolicy != AdoptionPolicyIfUnowned && adoptionPolicy != AdoptionPolicyAlways {
 						return false, fmt.Errorf("found existing object %s without owner", types.ObjectKeyToString(object))
 					}
 				} else if existingOwnerId != hashedOwnerId && existingOwnerId != legacyOwnerId {
-					if t.adoptionPolicy != AdoptionPolicyAdoptAll {
+					if adoptionPolicy != AdoptionPolicyAlways {
 						return false, fmt.Errorf("owner conflict; object %s is owned by %s", types.ObjectKeyToString(object), existingObject.GetAnnotations()[t.annotationKeyOwnerId])
 					}
 				}
@@ -375,7 +389,7 @@ func (t *reconcileTarget[T]) Reconcile(ctx context.Context, component T) (bool, 
 					// note: this should not happen under normal circumstances, because we checked the annotation when persisting it
 					return false, errors.Wrapf(err, "error validating existing object %s", types.ObjectKeyToString(existingObject))
 				}
-				orphan = deletePolicy == types.DeletePolicyOrphan
+				orphan = deletePolicy == DeletePolicyOrphan
 			}
 
 			switch item.Phase {
@@ -457,7 +471,7 @@ func (t *reconcileTarget[T]) Reconcile(ctx context.Context, component T) (bool, 
 	// put objects into right order for applying
 	objects = sortObjectsForApply(objects, getOrder)
 
-	// apply new objects and maintain inventory
+	// apply objects and maintain inventory
 	numUnready := 0
 	numNotManagedToBeApplied := 0
 	for k, object := range objects {
@@ -503,14 +517,15 @@ func (t *reconcileTarget[T]) Reconcile(ctx context.Context, component T) (bool, 
 					numUnready++
 				} else if existingObject.GetDeletionTimestamp().IsZero() && existingObject.GetAnnotations()[t.annotationKeyDigest] != item.Digest {
 					// note: this must() is ok because we checked the generated objects above
-					switch must(t.getUpdatePolicy(object)) {
-					case types.UpdatePolicyDefault:
-						if err := t.updateObject(ctx, object, existingObject); err != nil {
-							return false, errors.Wrapf(err, "error updating object %s", item)
-						}
-					case types.UpdatePolicyRecreate:
+					updatePolicy := must(t.getUpdatePolicy(object))
+					switch updatePolicy {
+					case UpdatePolicyRecreate:
 						if err := t.deleteObject(ctx, object, existingObject); err != nil {
 							return false, errors.Wrapf(err, "error deleting (while recreating) object %s", item)
+						}
+					default:
+						if err := t.updateObject(ctx, object, existingObject, updatePolicy); err != nil {
+							return false, errors.Wrapf(err, "error updating object %s", item)
 						}
 					}
 					item.Phase = PhaseUpdating
@@ -596,7 +611,7 @@ func (t *reconcileTarget[T]) Delete(ctx context.Context, component T) (bool, err
 					// note: this should not happen under normal circumstances, because we checked the annotation when persisting it
 					return false, errors.Wrapf(err, "error validating existing object %s", types.ObjectKeyToString(existingObject))
 				}
-				if deletePolicy == types.DeletePolicyOrphan {
+				if deletePolicy == DeletePolicyOrphan {
 					continue
 				}
 			}
@@ -660,6 +675,7 @@ func (t *reconcileTarget[T]) IsDeletionAllowed(ctx context.Context, component T)
 	return true, "", nil
 }
 
+// reaad object and return as unstructured
 func (t *reconcileTarget[T]) readObject(ctx context.Context, key types.ObjectKey) (*unstructured.Unstructured, error) {
 	object := &unstructured.Unstructured{}
 	object.SetGroupVersionKind(key.GetObjectKind().GroupVersionKind())
@@ -673,6 +689,8 @@ func (t *reconcileTarget[T]) readObject(ctx context.Context, key types.ObjectKey
 	return object, nil
 }
 
+// create object; object may be a concrete type or unstructured; in any case, type meta must be populated;
+// if object is a crd or an api services, the reconciler's name will be added as finalizer
 func (t *reconcileTarget[T]) createObject(ctx context.Context, object client.Object) (err error) {
 	defer func() {
 		if err == nil {
@@ -690,7 +708,15 @@ func (t *reconcileTarget[T]) createObject(ctx context.Context, object client.Obj
 	return t.client.Create(ctx, object, client.FieldOwner(t.reconcilerName))
 }
 
-func (t *reconcileTarget[T]) updateObject(ctx context.Context, object client.Object, existingObject *unstructured.Unstructured) (err error) {
+// update object; object may be a concrete type or unstructured; in any case, type meta must be populated;
+// if object is a crd or an api services, the reconciler's name will be added as finalizer;
+// existingObject is required, and should represent the last-read state of the object; it must not have a deletionTimestamp set;
+// object may have a resourceVersion; if it does not, the resourceVersion of existingObject will be used for conflict checks during put/patch;
+// if updatePolicy equals UpdatePolicyReplace, an update (put) will be performed; finalizers of existingObject will be copied;
+// if updatePolicy equals UpdatePolicySsaMerge, a conflict-forcing server-side-apply (patch) will be performed;
+// if updatePolicy equals UpdatePolicySsaOverride, then in addition, a preparation patch request will be performed before doing the conflict-forcing
+// server-side-apply patch; this preparation patch will adjust managedFields, reclaiming fields/values previously owned by kubectl or helm
+func (t *reconcileTarget[T]) updateObject(ctx context.Context, object client.Object, existingObject *unstructured.Unstructured, updatePolicy UpdatePolicy) (err error) {
 	defer func() {
 		if err == nil {
 			t.client.EventRecorder().Event(object, corev1.EventTypeNormal, objectReasonUpdated, "Object successfully updated")
@@ -710,15 +736,56 @@ func (t *reconcileTarget[T]) updateObject(ctx context.Context, object client.Obj
 	if isCrd(object) || isApiService(object) {
 		controllerutil.AddFinalizer(object, t.reconcilerName)
 	}
-	for _, finalizer := range existingObject.GetFinalizers() {
-		controllerutil.AddFinalizer(object, finalizer)
-	}
 	if object.GetResourceVersion() == "" {
 		object.SetResourceVersion((existingObject.GetResourceVersion()))
 	}
-	return t.client.Update(ctx, object, client.FieldOwner(t.reconcilerName))
+	// note: clearing managedFields is anyway required for ssa; but also in the replace (put, update) case it does not harm;
+	// because replace will only claim fields which are new or which have changed; the field owner of declared (but unmodified)
+	// fields will not be touched
+	object.SetManagedFields(nil)
+	// note: this must() is ok because we checked the generated objects before
+	switch updatePolicy {
+	case UpdatePolicySsaMerge:
+		return t.client.Patch(ctx, object, client.Apply, client.FieldOwner(t.reconcilerName), client.ForceOwnership)
+	case UpdatePolicySsaOverride:
+		// TODO: add ways (per reconciler, per component, per object) to configure the list of field manager (prefixes) which are reclaimed
+		if managedFields, changed, err := replaceFieldManager(existingObject.GetManagedFields(), []string{"kubectl", "helm"}, t.reconcilerName); err != nil {
+			return err
+		} else if changed {
+			gvk := object.GetObjectKind().GroupVersionKind()
+			obj := &metav1.PartialObjectMetadata{
+				TypeMeta: metav1.TypeMeta{
+					APIVersion: gvk.GroupVersion().String(),
+					Kind:       gvk.Kind,
+				},
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: object.GetNamespace(),
+					Name:      object.GetName(),
+				},
+			}
+			preparePatch := []map[string]any{
+				{"op": "replace", "path": "/metadata/managedFields", "value": managedFields},
+				{"op": "replace", "path": "/metadata/resourceVersion", "value": object.GetResourceVersion()},
+			}
+			// note: this must() is ok because marshalling the patch should always work
+			if err := t.client.Patch(ctx, obj, client.RawPatch(apitypes.JSONPatchType, must(json.Marshal(preparePatch))), client.FieldOwner(t.reconcilerName)); err != nil {
+				return err
+			}
+			object.SetResourceVersion(obj.GetResourceVersion())
+		}
+		return t.client.Patch(ctx, object, client.Apply, client.FieldOwner(t.reconcilerName), client.ForceOwnership)
+	default:
+		for _, finalizer := range existingObject.GetFinalizers() {
+			controllerutil.AddFinalizer(object, finalizer)
+		}
+		return t.client.Update(ctx, object, client.FieldOwner(t.reconcilerName))
+	}
 }
 
+// delete object; existingObject is optional; if present, its resourceVersion will be used as a delete precondition;
+// deletion will always be performed with background propagation; if the object is a crd or an api service which is still in use,
+// then an error will be returned; otherwise, if it is not in use, then our finalizer (i.e. the finalizer equal to the reconciler name)
+// will be cleared, such that the object can be physically removed (unless other finalizers prevent this)
 func (t *reconcileTarget[T]) deleteObject(ctx context.Context, key types.ObjectKey, existingObject *unstructured.Unstructured) (err error) {
 	defer func() {
 		if existingObject == nil {
@@ -803,63 +870,54 @@ func (t *reconcileTarget[T]) deleteObject(ctx context.Context, key types.ObjectK
 	return nil
 }
 
-// TODO: needs testing
-func (t *reconcileTarget[T]) getReconcilePolicy(object client.Object) (string, error) {
+func (t *reconcileTarget[T]) getAdoptionPolicy(object client.Object) (AdoptionPolicy, error) {
+	adoptionPolicy := object.GetAnnotations()[t.annotationKeyAdoptionPolicy]
+	switch adoptionPolicy {
+	case "":
+		return t.adoptionPolicy, nil
+	case types.AdoptionPolicyNever, types.AdoptionPolicyIfUnowned, types.AdoptionPolicyAlways:
+		return adoptionPolicyByAnnotation[adoptionPolicy], nil
+	default:
+		return "", fmt.Errorf("invalid value for annotation %s: %s", t.annotationKeyAdoptionPolicy, adoptionPolicy)
+	}
+}
+
+func (t *reconcileTarget[T]) getReconcilePolicy(object client.Object) (ReconcilePolicy, error) {
 	reconcilePolicy := object.GetAnnotations()[t.annotationKeyReconcilePolicy]
 	switch reconcilePolicy {
-	case types.ReconcilePolicyOnObjectChange, "":
-		return types.ReconcilePolicyOnObjectChange, nil
-	case types.ReconcilePolicyOnObjectOrComponentChange, types.ReconcilePolicyOnce:
-		return reconcilePolicy, nil
+	case "":
+		return t.reconcilePolicy, nil
+	case types.ReconcilePolicyOnObjectChange, types.ReconcilePolicyOnObjectOrComponentChange, types.ReconcilePolicyOnce:
+		return reconcilePolicyByAnnotation[reconcilePolicy], nil
 	default:
 		return "", fmt.Errorf("invalid value for annotation %s: %s", t.annotationKeyReconcilePolicy, reconcilePolicy)
 	}
 }
 
-// TODO: needs testing
-func (t *reconcileTarget[T]) getUpdatePolicy(object client.Object) (string, error) {
+func (t *reconcileTarget[T]) getUpdatePolicy(object client.Object) (UpdatePolicy, error) {
 	updatePolicy := object.GetAnnotations()[t.annotationKeyUpdatePolicy]
 	switch updatePolicy {
-	case types.UpdatePolicyDefault, "":
-		return types.UpdatePolicyDefault, nil
-	case types.UpdatePolicyRecreate:
-		return updatePolicy, nil
+	case "", types.UpdatePolicyDefault:
+		return t.updatePolicy, nil
+	case types.UpdatePolicyRecreate, types.UpdatePolicyReplace, types.UpdatePolicySsaMerge, types.UpdatePolicySsaOverride:
+		return updatePolicyByAnnotation[updatePolicy], nil
 	default:
 		return "", fmt.Errorf("invalid value for annotation %s: %s", t.annotationKeyUpdatePolicy, updatePolicy)
 	}
 }
 
-// TODO: needs testing
-func (t *reconcileTarget[T]) getDeletePolicy(object client.Object) (string, error) {
+func (t *reconcileTarget[T]) getDeletePolicy(object client.Object) (DeletePolicy, error) {
 	deletePolicy := object.GetAnnotations()[t.annotationKeyDeletePolicy]
 	switch deletePolicy {
-	case types.DeletePolicyDefault, "":
-		return types.DeletePolicyDefault, nil
-	case types.DeletePolicyOrphan:
-		return deletePolicy, nil
+	case "", types.DeletePolicyDefault:
+		return t.deletePolicy, nil
+	case types.DeletePolicyDelete, types.DeletePolicyOrphan:
+		return deletePolicyByAnnotation[deletePolicy], nil
 	default:
 		return "", fmt.Errorf("invalid value for annotation %s: %s", t.annotationKeyDeletePolicy, deletePolicy)
 	}
 }
 
-/*
-func getAnnotationInt(obj client.Object, key string, minValue int, maxValue int, defaultValue int) (int, error) {
-	if value, ok := obj.GetAnnotations()[key]; ok {
-		value, err := strconv.Atoi(value)
-		if err != nil {
-			return 0, err
-		}
-		if value < minValue || value > maxValue {
-			return 0, fmt.Errorf("value %d not in allowed range [%d,%d]", value, minValue, maxValue)
-		}
-		return value, nil
-	} else {
-		return defaultValue, nil
-	}
-}
-*/
-
-// TODO: needs testing
 func (t *reconcileTarget[T]) getOrder(object client.Object) (int, error) {
 	value, ok := object.GetAnnotations()[t.annotationKeyOrder]
 	if !ok {
@@ -875,7 +933,6 @@ func (t *reconcileTarget[T]) getOrder(object client.Object) (int, error) {
 	return order, nil
 }
 
-// TODO: needs testing
 func (t *reconcileTarget[T]) getPurgeOrder(object client.Object) (int, error) {
 	value, ok := object.GetAnnotations()[t.annotationKeyPurgeOrder]
 	if !ok {
