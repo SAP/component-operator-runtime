@@ -14,6 +14,8 @@ type Unstructurable interface {
 // UnstructurableMap is a string-keyed map, implementing the Unstructurable interface in the natural way.
 type UnstructurableMap map[string]any
 
+var _ Unstructurable = UnstructurableMap(nil)
+
 // ToUnstructured() just returns the map itself.
 func (m UnstructurableMap) ToUnstructured() map[string]any {
 	return m

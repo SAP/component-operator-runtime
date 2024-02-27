@@ -509,7 +509,7 @@ func (t *reconcileTarget[T]) Reconcile(ctx context.Context, component T) (bool, 
 				setAnnotation(object, t.annotationKeyDigest, item.Digest)
 
 				if existingObject == nil {
-					if err := t.createObject(ctx, object); err != nil {
+					if err := t.createObject(ctx, object, nil); err != nil {
 						return false, errors.Wrapf(err, "error creating object %s", item)
 					}
 					item.Phase = PhaseCreating
@@ -524,7 +524,7 @@ func (t *reconcileTarget[T]) Reconcile(ctx context.Context, component T) (bool, 
 							return false, errors.Wrapf(err, "error deleting (while recreating) object %s", item)
 						}
 					default:
-						if err := t.updateObject(ctx, object, existingObject, updatePolicy); err != nil {
+						if err := t.updateObject(ctx, object, existingObject, nil, updatePolicy); err != nil {
 							return false, errors.Wrapf(err, "error updating object %s", item)
 						}
 					}
@@ -690,9 +690,13 @@ func (t *reconcileTarget[T]) readObject(ctx context.Context, key types.ObjectKey
 }
 
 // create object; object may be a concrete type or unstructured; in any case, type meta must be populated;
+// createdObject is optional; if non-nil, it will be populated with the created object; the same variable can be supplied as object and createObject;
 // if object is a crd or an api services, the reconciler's name will be added as finalizer
-func (t *reconcileTarget[T]) createObject(ctx context.Context, object client.Object) (err error) {
+func (t *reconcileTarget[T]) createObject(ctx context.Context, object client.Object, createdObject any) (err error) {
 	defer func() {
+		if err == nil && createdObject != nil {
+			err = runtime.DefaultUnstructuredConverter.FromUnstructured(object.(*unstructured.Unstructured).Object, createdObject)
+		}
 		if err == nil {
 			t.client.EventRecorder().Event(object, corev1.EventTypeNormal, objectReasonCreated, "Object successfully created")
 		}
@@ -709,21 +713,26 @@ func (t *reconcileTarget[T]) createObject(ctx context.Context, object client.Obj
 }
 
 // update object; object may be a concrete type or unstructured; in any case, type meta must be populated;
-// if object is a crd or an api services, the reconciler's name will be added as finalizer;
 // existingObject is required, and should represent the last-read state of the object; it must not have a deletionTimestamp set;
+// updatedObject is optional; if non-nil, it will be populated with the updated object; the same variable can be supplied as object and updatedObject;
+// if object is a crd or an api services, the reconciler's name will be added as finalizer;
 // object may have a resourceVersion; if it does not, the resourceVersion of existingObject will be used for conflict checks during put/patch;
 // if updatePolicy equals UpdatePolicyReplace, an update (put) will be performed; finalizers of existingObject will be copied;
-// if updatePolicy equals UpdatePolicySsaMerge, a conflict-forcing server-side-apply (patch) will be performed;
+// if updatePolicy equals UpdatePolicySsaMerge, a conflict-forcing server-side-apply patch will be performed;
 // if updatePolicy equals UpdatePolicySsaOverride, then in addition, a preparation patch request will be performed before doing the conflict-forcing
 // server-side-apply patch; this preparation patch will adjust managedFields, reclaiming fields/values previously owned by kubectl or helm
-func (t *reconcileTarget[T]) updateObject(ctx context.Context, object client.Object, existingObject *unstructured.Unstructured, updatePolicy UpdatePolicy) (err error) {
+func (t *reconcileTarget[T]) updateObject(ctx context.Context, object client.Object, existingObject *unstructured.Unstructured, updatedObject any, updatePolicy UpdatePolicy) (err error) {
 	defer func() {
+		if err == nil && updatedObject != nil {
+			err = runtime.DefaultUnstructuredConverter.FromUnstructured(object.(*unstructured.Unstructured).Object, updatedObject)
+		}
 		if err == nil {
 			t.client.EventRecorder().Event(object, corev1.EventTypeNormal, objectReasonUpdated, "Object successfully updated")
 		} else {
 			t.client.EventRecorder().Eventf(existingObject, corev1.EventTypeWarning, objectReasonUpdateError, "Error updating object: %s", err)
 		}
 	}()
+	// TODO: validate (by panic) that existingObject fits to object
 	if !existingObject.GetDeletionTimestamp().IsZero() {
 		// note: we must not update objects which are in deletion (e.g. to avoid unintentionally clearing finalizers), so we want to see the panic in that case
 		panic("this cannot happen")
@@ -784,8 +793,9 @@ func (t *reconcileTarget[T]) updateObject(ctx context.Context, object client.Obj
 
 // delete object; existingObject is optional; if present, its resourceVersion will be used as a delete precondition;
 // deletion will always be performed with background propagation; if the object is a crd or an api service which is still in use,
-// then an error will be returned; otherwise, if it is not in use, then our finalizer (i.e. the finalizer equal to the reconciler name)
-// will be cleared, such that the object can be physically removed (unless other finalizers prevent this)
+// then an error will be returned after issuing the delete call; otherwise, if the crd or api service is not in use, then our
+// finalizer (i.e. the finalizer equal to the reconciler name) will be cleared, such that the object can be physically
+// removed (unless other finalizers prevent this)
 func (t *reconcileTarget[T]) deleteObject(ctx context.Context, key types.ObjectKey, existingObject *unstructured.Unstructured) (err error) {
 	defer func() {
 		if existingObject == nil {
@@ -797,6 +807,7 @@ func (t *reconcileTarget[T]) deleteObject(ctx context.Context, key types.ObjectK
 			t.client.EventRecorder().Eventf(existingObject, corev1.EventTypeWarning, objectReasonDeleteError, "Error deleting object: %s", err)
 		}
 	}()
+	// TODO: validate (by panic) that existingObject (if present) fits to key
 	log := log.FromContext(ctx)
 
 	object := &unstructured.Unstructured{}
@@ -1024,7 +1035,7 @@ func (t *reconcileTarget[T]) isApiServiceUsed(ctx context.Context, apiService *a
 	return false, nil
 }
 
-func (t *reconcileTarget[T]) isManaged(key types.ObjectKey, component T) bool {
+func (t *reconcileTarget[T]) isManaged(key types.TypeKey, component T) bool {
 	status := component.GetStatus()
 	gvk := key.GetObjectKind().GroupVersionKind()
 	for _, item := range status.Inventory {
