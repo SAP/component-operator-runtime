@@ -273,7 +273,7 @@ func (r *Reconciler[T]) Reconcile(ctx context.Context, req ctrl.Request) (result
 			}
 		}
 		// TODO: should we move this behind the DeepEqual check below?
-		// TODO: follow-up on missing events
+		// note: it seems that no events will be written if the component's namespace is in deletion
 		state, reason, message := status.GetState()
 		if state == StateError {
 			r.client.EventRecorder().Event(component, corev1.EventTypeWarning, reason, message)
@@ -360,33 +360,36 @@ func (r *Reconciler[T]) Reconcile(ctx context.Context, req ctrl.Request) (result
 			}
 			return ctrl.Result{RequeueAfter: r.backoff.Next(req, readyConditionReasonProcessing)}, nil
 		}
-	} else if allowed, msg, err := target.IsDeletionAllowed(ctx, component); err != nil || !allowed {
-		// deletion is blocked because of existing managed CROs and so on
-		// TODO: eliminate this msg logic
-		if err != nil {
-			log.V(1).Info("error while checking if deletion is allowed")
-			return ctrl.Result{}, errors.Wrap(err, "error checking whether deletion is possible")
-		}
-		log.V(1).Info("deletion not allowed")
-		// TODO: have an additional StateDeletionBlocked?
-		status.SetState(StateDeleting, readyConditionReasonDeletionBlocked, "Deletion blocked: "+msg)
-		r.client.EventRecorder().Event(component, corev1.EventTypeNormal, readyConditionReasonDeletionBlocked, "Deletion blocked: "+msg)
-		return ctrl.Result{RequeueAfter: 1*time.Second + r.backoff.Next(req, readyConditionReasonDeletionBlocked)}, nil
-	} else if len(slices.Remove(component.GetFinalizers(), r.name)) > 0 {
-		// deletion is blocked because of foreign finalizers
-		log.V(1).Info("deleted blocked due to existence of foreign finalizers")
-		// TODO: have an additional StateDeletionBlocked?
-		status.SetState(StateDeleting, readyConditionReasonDeletionBlocked, "Deletion blocked due to existing foreign finalizers")
-		r.client.EventRecorder().Event(component, corev1.EventTypeNormal, readyConditionReasonDeletionBlocked, "Deletion blocked due to existing foreign finalizers")
-		return ctrl.Result{RequeueAfter: 1*time.Second + r.backoff.Next(req, readyConditionReasonDeletionBlocked)}, nil
 	} else {
-		// deletion case
-		log.V(2).Info("deleting dependent resources")
 		for hookOrder, hook := range r.preDeleteHooks {
 			if err := hook(hookCtx, r.client, component); err != nil {
 				return ctrl.Result{}, errors.Wrapf(err, "error running pre-delete hook (%d)", hookOrder)
 			}
 		}
+		allowed, msg, err := target.IsDeletionAllowed(ctx, component)
+		if err != nil {
+			log.V(1).Info("error while checking if deletion is allowed")
+			return ctrl.Result{}, errors.Wrap(err, "error checking whether deletion is possible")
+		}
+		if !allowed {
+			// deletion is blocked because of existing managed CROs and so on
+			log.V(1).Info("deletion not allowed")
+			// TODO: have an additional StateDeletionBlocked?
+			// TODO: eliminate this msg logic
+			status.SetState(StateDeleting, readyConditionReasonDeletionBlocked, "Deletion blocked: "+msg)
+			r.client.EventRecorder().Event(component, corev1.EventTypeNormal, readyConditionReasonDeletionBlocked, "Deletion blocked: "+msg)
+			return ctrl.Result{RequeueAfter: 1*time.Second + r.backoff.Next(req, readyConditionReasonDeletionBlocked)}, nil
+		}
+		if len(slices.Remove(component.GetFinalizers(), r.name)) > 0 {
+			// deletion is blocked because of foreign finalizers
+			log.V(1).Info("deleted blocked due to existence of foreign finalizers")
+			// TODO: have an additional StateDeletionBlocked?
+			status.SetState(StateDeleting, readyConditionReasonDeletionBlocked, "Deletion blocked due to existing foreign finalizers")
+			r.client.EventRecorder().Event(component, corev1.EventTypeNormal, readyConditionReasonDeletionBlocked, "Deletion blocked due to existing foreign finalizers")
+			return ctrl.Result{RequeueAfter: 1*time.Second + r.backoff.Next(req, readyConditionReasonDeletionBlocked)}, nil
+		}
+		// deletion case
+		log.V(2).Info("deleting dependent resources")
 		ok, err := target.Delete(ctx, component)
 		if err != nil {
 			log.V(1).Info("error while deleting dependent resources")
