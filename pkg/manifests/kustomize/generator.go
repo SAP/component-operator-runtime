@@ -191,6 +191,9 @@ func (g *KustomizeGenerator) Generate(ctx context.Context, namespace string, nam
 				Funcs(funcMapForGenerateContext(serverInfo, component, namespace, name))
 		}
 		var buf bytes.Buffer
+		// TODO: templates (accidentally or intentionally) could modify data, or even some of the objects supplied through builtin functions;
+		// such as serverInfo or component; this should be hardened, e.g. by deep-copying things upfront, or serializing them; see the comment in
+		// funcMapForGenerateContext()
 		if err := t0.ExecuteTemplate(&buf, t.Name(), data); err != nil {
 			return nil, err
 		}

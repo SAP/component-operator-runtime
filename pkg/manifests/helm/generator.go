@@ -297,6 +297,7 @@ func (g *HelmGenerator) Generate(ctx context.Context, namespace string, name str
 			}(t.Name()),
 		}
 		var buf bytes.Buffer
+		// TODO: templates (accidentally or intentionally) could modify data,e.g. by deep-copying things upfront
 		if err := t0.ExecuteTemplate(&buf, t.Name(), data); err != nil {
 			return nil, err
 		}
