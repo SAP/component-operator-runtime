@@ -1,0 +1,167 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.9.2
+  creationTimestamp: null
+  name: mycomponents.testing.cs.sap.com
+spec:
+  group: testing.cs.sap.com
+  names:
+    kind: MyComponent
+    listKind: MyComponentList
+    plural: mycomponents
+    singular: mycomponent
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .status.state
+      name: State
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: MyComponent is the Schema for the mycomponents API.
+        properties:
+          apiVersion:
+            description: 'APIVersion defines the versioned schema of this representation
+              of an object. Servers should convert recognized schemas to the latest
+              internal value, and may reject unrecognized values. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources'
+            type: string
+          kind:
+            description: 'Kind is a string value representing the REST resource this
+              object represents. Servers may infer this from the endpoint the client
+              submits requests to. Cannot be updated. In CamelCase. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds'
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: MyComponentSpec defines the desired state of MyComponent.
+            type: object
+          status:
+            default:
+              observedGeneration: -1
+            description: MyComponentStatus defines the observed state of MyComponent.
+            properties:
+              appliedGeneration:
+                format: int64
+                type: integer
+              conditions:
+                items:
+                  description: Component status Condition.
+                  properties:
+                    lastTransitionTime:
+                      format: date-time
+                      type: string
+                    message:
+                      type: string
+                    reason:
+                      type: string
+                    status:
+                      description: Condition Status. Can be one of 'True', 'False',
+                        'Unknown'.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: Condition type. Currently, only the 'Ready' type
+                        is used.
+                      type: string
+                  required:
+                  - status
+                  - type
+                  type: object
+                type: array
+              inventory:
+                items:
+                  description: InventoryItem represents a dependent object managed
+                    by this operator.
+                  properties:
+                    digest:
+                      description: Digest of the descriptor of the dependent object.
+                      type: string
+                    group:
+                      description: API group.
+                      type: string
+                    kind:
+                      description: API kind.
+                      type: string
+                    managedTypes:
+                      description: Managed types
+                      items:
+                        description: TypeInfo represents a Kubernetes type.
+                        properties:
+                          group:
+                            description: API group.
+                            type: string
+                          kind:
+                            description: API kind.
+                            type: string
+                          version:
+                            description: API group version.
+                            type: string
+                        required:
+                        - group
+                        - kind
+                        - version
+                        type: object
+                      type: array
+                    name:
+                      description: Name of the referenced object.
+                      type: string
+                    namespace:
+                      description: Namespace of the referenced object; empty for non-namespaced
+                        objects
+                      type: string
+                    phase:
+                      description: Phase of the dependent object.
+                      type: string
+                    status:
+                      description: Observed status of the dependent object, as observed
+                        by kstatus.
+                      type: string
+                    version:
+                      description: API group version.
+                      type: string
+                  required:
+                  - digest
+                  - group
+                  - kind
+                  - name
+                  - version
+                  type: object
+                type: array
+              lastAppliedAt:
+                format: date-time
+                type: string
+              lastObservedAt:
+                format: date-time
+                type: string
+              observedGeneration:
+                format: int64
+                type: integer
+              state:
+                description: Component state. Can be one of 'Ready', 'Pending', 'Processing',
+                  'DeletionPending', 'Deleting', 'Error'.
+                enum:
+                - Ready
+                - Pending
+                - Processing
+                - DeletionPending
+                - Deleting
+                - Error
+                type: string
+            required:
+            - observedGeneration
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}
