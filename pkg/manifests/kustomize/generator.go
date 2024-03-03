@@ -20,6 +20,7 @@ import (
 
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	utilyaml "k8s.io/apimachinery/pkg/util/yaml"
+	"k8s.io/apimachinery/pkg/version"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/kustomize/api/konfig"
 	"sigs.k8s.io/kustomize/api/krusty"
@@ -27,7 +28,6 @@ import (
 	kustfsys "sigs.k8s.io/kustomize/kyaml/filesys"
 	kyaml "sigs.k8s.io/yaml"
 
-	"github.com/sap/component-operator-runtime/internal/cluster"
 	"github.com/sap/component-operator-runtime/internal/fileutils"
 	"github.com/sap/component-operator-runtime/internal/templatex"
 	"github.com/sap/component-operator-runtime/pkg/component"
@@ -165,6 +165,11 @@ func (g *KustomizeGenerator) Generate(ctx context.Context, namespace string, nam
 		return nil, err
 	}
 
+	serverInfo, err := clnt.DiscoveryClient().ServerVersion()
+	if err != nil {
+		return nil, err
+	}
+
 	data := parameters.ToUnstructured()
 	fsys := kustfsys.MakeFsInMemory()
 
@@ -183,7 +188,7 @@ func (g *KustomizeGenerator) Generate(ctx context.Context, namespace string, nam
 			}
 			t0.Option("missingkey=zero").
 				Funcs(templatex.FuncMapForClient(clnt)).
-				Funcs(funcMapForGenerateContext(clnt, component, namespace, name))
+				Funcs(funcMapForGenerateContext(serverInfo, component, namespace, name))
 		}
 		var buf bytes.Buffer
 		if err := t0.ExecuteTemplate(&buf, t.Name(), data); err != nil {
@@ -239,14 +244,14 @@ func (g *KustomizeGenerator) Generate(ctx context.Context, namespace string, nam
 	return objects, nil
 }
 
-func funcMapForGenerateContext(clnt cluster.Client, component component.Component, namespace string, name string) template.FuncMap {
-	// TODO: add accessors for Kubernetes version etc.
+func funcMapForGenerateContext(serverInfo *version.Info, component component.Component, namespace string, name string) template.FuncMap {
 	return template.FuncMap{
 		// TODO: maybe it would it be better to convert component to unstructured;
 		// then calling methods would no longer be possible, and attributes would be in lowercase
-		"component": makeFuncData(component),
-		"namespace": func() string { return namespace },
-		"name":      func() string { return name },
+		"component":         makeFuncData(component),
+		"namespace":         func() string { return namespace },
+		"name":              func() string { return name },
+		"kubernetesVersion": func() *version.Info { return serverInfo },
 	}
 }
 

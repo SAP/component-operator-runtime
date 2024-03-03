@@ -11,7 +11,9 @@ This generator allows to generate the manifests of the component's resources fro
 As a special case, one or more simple Kubernetes manifests (without a `kustomization.yaml`) are supported as well.
 In addition, all (or selected; see below) files in the kustomization directory can be templatized in a helm'ish way.
 That means, they will be considered as a common template group (where all templates are associated with each other),
-and the same template function set that is available on helm can be used; so, all the [sprig](http://masterminds.github.io/sprig) functions, and custom functions such as `include`, `tpl`, `lookup` can be used. In addition, parameterless functions `namespace` and `name` are defined, which return the corresponding arguments passed to `Generate()`.
+and the same template function set that is available on helm can be used; so, all the [sprig](http://masterminds.github.io/sprig) functions, and custom functions such as `include`, `tpl`, `lookup` can be used. In addition:
+- parameterless functions `namespace` and `name` are defined, which return the corresponding arguments passed to `Generate()`
+- a function `kubernetesVersion` is available, which returns the version information of the target cluster, as a [version.Info](https://pkg.go.dev/k8s.io/apimachinery/pkg/version#Info) structure.
 
 In the generation step, first, all the go templates will be rendered, and the result of this pre-step will be passed to kustomize.
 

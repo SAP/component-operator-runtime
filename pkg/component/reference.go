@@ -25,6 +25,8 @@ import (
 
 // TODO: should below reference actions be thread safe?
 // If not, it should be stated somewhere explicitly that they are not.
+// TODO: allow to skip loading of references upon deletion in general (e.g. by a tagLoadPolicy)
+// (currently it is only possible to ignore not-found errors upon deletion)
 
 const (
 	tagNotFoundPolicy = "notFoundPolicy"
