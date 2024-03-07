@@ -1,6 +1,6 @@
 module github.com/sap/component-operator-runtime
 
-go 1.21.7
+go 1.22.1
 
 require (
 	github.com/Masterminds/sprig/v3 v3.2.3
