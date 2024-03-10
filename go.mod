@@ -1,13 +1,14 @@
 module github.com/sap/component-operator-runtime
 
-go 1.21.7
+go 1.22.1
 
 require (
 	github.com/Masterminds/sprig/v3 v3.2.3
 	github.com/hashicorp/go-multierror v1.1.1
 	github.com/pkg/errors v0.9.1
-	github.com/sap/go-generics v0.2.0
+	github.com/sap/go-generics v0.2.3
 	github.com/spf13/pflag v1.0.5
+	golang.org/x/time v0.5.0
 	k8s.io/api v0.29.2
 	k8s.io/apiextensions-apiserver v0.29.2
 	k8s.io/apimachinery v0.29.2
@@ -71,7 +72,6 @@ require (
 	golang.org/x/sys v0.17.0 // indirect
 	golang.org/x/term v0.17.0 // indirect
 	golang.org/x/text v0.14.0 // indirect
-	golang.org/x/time v0.5.0 // indirect
 	gomodules.xyz/jsonpatch/v2 v2.4.0 // indirect
 	google.golang.org/appengine v1.6.8 // indirect
 	google.golang.org/protobuf v1.32.0 // indirect

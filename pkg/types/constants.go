@@ -7,14 +7,15 @@ package types
 
 const (
 	LabelKeySuffixOwnerId              = "owner-id"
+	AnnotationKeySuffixOwnerId         = "owner-id"
 	AnnotationKeySuffixDigest          = "digest"
 	AnnotationKeySuffixAdoptionPolicy  = "adoption-policy"
 	AnnotationKeySuffixReconcilePolicy = "reconcile-policy"
 	AnnotationKeySuffixUpdatePolicy    = "update-policy"
 	AnnotationKeySuffixDeletePolicy    = "delete-policy"
-	AnnotationKeySuffixOrder           = "order"
+	AnnotationKeySuffixApplyOrder      = "apply-order"
 	AnnotationKeySuffixPurgeOrder      = "purge-order"
-	AnnotationKeySuffixOwnerId         = "owner-id"
+	AnnotationKeySuffixDeleteOrder     = "delete-order"
 )
 
 const (
