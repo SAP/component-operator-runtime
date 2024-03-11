@@ -340,6 +340,24 @@ func (t *reconcileTarget[T]) Reconcile(ctx context.Context, component T) (bool, 
 		return must(t.getDeleteOrder(object))
 	}
 
+	// perform further validations of object set
+	for _, object := range objects {
+		switch {
+		case isNamespace(object):
+			if getPurgeOrder(object) <= maxOrder {
+				return false, errors.Wrapf(fmt.Errorf("namespaces must not define a purge order"), "error validating object %s", types.ObjectKeyToString(object))
+			}
+		case isCrd(object):
+			if getPurgeOrder(object) <= maxOrder {
+				return false, errors.Wrapf(fmt.Errorf("custom resource definitions must not define a purge order"), "error validating object %s", types.ObjectKeyToString(object))
+			}
+		case isApiService(object):
+			if getPurgeOrder(object) <= maxOrder {
+				return false, errors.Wrapf(fmt.Errorf("api services must not define a purge order"), "error validating object %s", types.ObjectKeyToString(object))
+			}
+		}
+	}
+
 	// add/update inventory with target objects
 	// TODO: review this; it would be cleaner to use a DeepCopy method for a []*InventoryItem type (if there would be such a type)
 	inventory := slices.Collect(status.Inventory, func(item *InventoryItem) *InventoryItem { return item.DeepCopy() })
@@ -400,7 +418,6 @@ func (t *reconcileTarget[T]) Reconcile(ctx context.Context, component T) (bool, 
 		item.UpdatePolicy = getUpdatePolicy(object)
 		item.DeletePolicy = getDeletePolicy(object)
 		item.ApplyOrder = getApplyOrder(object)
-		item.PurgeOrder = getPurgeOrder(object)
 		item.DeleteOrder = getDeleteOrder(object)
 		item.ManagedTypes = getManagedTypes(object)
 		if digest != item.Digest {
@@ -427,19 +444,14 @@ func (t *reconcileTarget[T]) Reconcile(ctx context.Context, component T) (bool, 
 	}
 
 	// validate object set:
-	// - check that no managed types have a purge order
 	// - check that all managed instances have apply-order greater than or equal to the according managed type
 	// - check that all managed instances have delete-order less than or equal to the according managed type
 	// - check that no managed types are about to be deleted (empty digest) unless all related managed instances are as well
-	// - check that no namespaces have a purge order
 	// - check that all contained objects have apply-order greater than or equal to the according namespace
 	// - check that all contained objects have delete-order less than or equal to the according namespace
 	// - check that no namespaces are about to be deleted (empty digest) unless all contained objects are as well
 	for _, item := range inventory {
 		if isCrd(item) || isApiService(item) {
-			if item.PurgeOrder <= maxOrder {
-				return false, fmt.Errorf("error valdidating object set (%s): managed type must not specify a purge order", item)
-			}
 			for _, _item := range inventory {
 				if isManagedBy(item, _item) {
 					if _item.ApplyOrder < item.ApplyOrder {
@@ -455,9 +467,6 @@ func (t *reconcileTarget[T]) Reconcile(ctx context.Context, component T) (bool, 
 			}
 		}
 		if isNamespace(item) {
-			if item.PurgeOrder <= maxOrder {
-				return false, fmt.Errorf("error valdidating object set (%s): namespace must not specify a purge order", item)
-			}
 			for _, _item := range inventory {
 				if _item.Namespace == item.Name {
 					if _item.ApplyOrder < item.ApplyOrder {
@@ -1023,7 +1032,7 @@ func (t *reconcileTarget[T]) deleteObject(ctx context.Context, key types.ObjectK
 				return fmt.Errorf("error deleting custom resource definition %s, existing instances found", types.ObjectKeyToString(key))
 			}
 			if ok := controllerutil.RemoveFinalizer(crd, t.reconcilerName); ok {
-				// note: 409 error is very likely here (because of concurrent updates happening through the API server); this is why we retry once
+				// note: 409 error is very likely here (because of concurrent updates happening through the api server); this is why we retry once
 				if err := t.client.Update(ctx, crd, client.FieldOwner(t.reconcilerName)); err != nil {
 					if i == 1 && apierrors.IsConflict(err) {
 						log.V(1).Info("error while updating CustomResourcedefinition (409 conflict); doing one retry", "name", t.reconcilerName, "error", err.Error())
@@ -1048,7 +1057,7 @@ func (t *reconcileTarget[T]) deleteObject(ctx context.Context, key types.ObjectK
 				return fmt.Errorf("error deleting api service %s, existing instances found", types.ObjectKeyToString(key))
 			}
 			if ok := controllerutil.RemoveFinalizer(apiService, t.reconcilerName); ok {
-				// note: 409 error is very likely here (because of concurrent updates happening through the API server); this is why we retry once
+				// note: 409 error is very likely here (because of concurrent updates happening through the api server); this is why we retry once
 				if err := t.client.Update(ctx, apiService, client.FieldOwner(t.reconcilerName)); err != nil {
 					if i == 1 && apierrors.IsConflict(err) {
 						log.V(1).Info("error while updating APIService (409 conflict); doing one retry", "name", t.reconcilerName, "error", err.Error())

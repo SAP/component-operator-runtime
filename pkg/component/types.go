@@ -295,8 +295,6 @@ type InventoryItem struct {
 	DeletePolicy DeletePolicy `json:"deletePolicy"`
 	// Apply order.
 	ApplyOrder int `json:"applyOrder"`
-	// Purge order.
-	PurgeOrder int `json:"purgeOrder"`
 	// Delete order.
 	DeleteOrder int `json:"deleteOrder"`
 	// Managed types.
