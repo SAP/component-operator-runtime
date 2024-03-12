@@ -32,6 +32,7 @@ import (
 
 	"github.com/sap/component-operator-runtime/internal/backoff"
 	"github.com/sap/component-operator-runtime/internal/cluster"
+	"github.com/sap/component-operator-runtime/internal/kstatus"
 	"github.com/sap/component-operator-runtime/pkg/manifests"
 	"github.com/sap/component-operator-runtime/pkg/types"
 )
@@ -92,6 +93,7 @@ type Reconciler[T Component] struct {
 	id                 string
 	client             cluster.Client
 	resourceGenerator  manifests.Generator
+	statusAnalyzer     kstatus.StatusAnalyzer
 	options            ReconcilerOptions
 	clients            *cluster.ClientFactory
 	backoff            *backoff.Backoff
@@ -122,6 +124,7 @@ func NewReconciler[T Component](name string, resourceGenerator manifests.Generat
 	return &Reconciler[T]{
 		name:              name,
 		resourceGenerator: resourceGenerator,
+		statusAnalyzer:    kstatus.NewStatusAnalyzer(name),
 		options:           options,
 		backoff:           backoff.NewBackoff(10 * time.Second),
 		postReadHooks:     []HookFunc[T]{resolveReferences[T]},
@@ -245,7 +248,7 @@ func (r *Reconciler[T]) Reconcile(ctx context.Context, req ctrl.Request) (result
 	if err != nil {
 		return ctrl.Result{}, errors.Wrap(err, "error getting client for component")
 	}
-	target := newReconcileTarget[T](r.name, r.id, targetClient, r.resourceGenerator, *r.options.CreateMissingNamespaces, *r.options.AdoptionPolicy, *r.options.UpdatePolicy)
+	target := newReconcileTarget[T](r.name, r.id, targetClient, r.resourceGenerator, r.statusAnalyzer, *r.options.CreateMissingNamespaces, *r.options.AdoptionPolicy, *r.options.UpdatePolicy)
 	hookCtx := newContext(ctx).WithClient(targetClient)
 
 	// do the reconciliation

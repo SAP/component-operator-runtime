@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/iancoleman/strcase"
 	"github.com/pkg/errors"
 	"github.com/sap/go-generics/slices"
 
@@ -27,13 +28,13 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	apitypes "k8s.io/apimachinery/pkg/types"
 	apiregistrationv1 "k8s.io/kube-aggregator/pkg/apis/apiregistration/v1"
-	kstatus "sigs.k8s.io/cli-utils/pkg/kstatus/status"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	"github.com/sap/component-operator-runtime/internal/cluster"
+	"github.com/sap/component-operator-runtime/internal/kstatus"
 	"github.com/sap/component-operator-runtime/pkg/manifests"
 	"github.com/sap/component-operator-runtime/pkg/types"
 )
@@ -86,6 +87,7 @@ type reconcileTarget[T Component] struct {
 	reconcilerId                 string
 	client                       cluster.Client
 	resourceGenerator            manifests.Generator
+	statusAnalyzer               kstatus.StatusAnalyzer
 	createMissingNamespaces      bool
 	adoptionPolicy               AdoptionPolicy
 	reconcilePolicy              ReconcilePolicy
@@ -103,12 +105,13 @@ type reconcileTarget[T Component] struct {
 	annotationKeyDeleteOrder     string
 }
 
-func newReconcileTarget[T Component](reconcilerName string, reconcilerId string, clnt cluster.Client, resourceGenerator manifests.Generator, createMissingNamespaces bool, adoptionPolicy AdoptionPolicy, updatePolicy UpdatePolicy) *reconcileTarget[T] {
+func newReconcileTarget[T Component](reconcilerName string, reconcilerId string, clnt cluster.Client, resourceGenerator manifests.Generator, statusAnalyzer kstatus.StatusAnalyzer, createMissingNamespaces bool, adoptionPolicy AdoptionPolicy, updatePolicy UpdatePolicy) *reconcileTarget[T] {
 	return &reconcileTarget[T]{
 		reconcilerName:               reconcilerName,
 		reconcilerId:                 reconcilerId,
 		client:                       clnt,
 		resourceGenerator:            resourceGenerator,
+		statusAnalyzer:               statusAnalyzer,
 		createMissingNamespaces:      createMissingNamespaces,
 		adoptionPolicy:               adoptionPolicy,
 		reconcilePolicy:              ReconcilePolicyOnObjectChange,
@@ -308,6 +311,7 @@ func (t *reconcileTarget[T]) Reconcile(ctx context.Context, component T) (bool, 
 		if _, err := t.getDeleteOrder(object); err != nil {
 			return false, errors.Wrapf(err, "error validating object %s", types.ObjectKeyToString(object))
 		}
+		// TODO: should status-hint be validated here as well?
 	}
 
 	// define getter functions for later usage
@@ -697,16 +701,16 @@ func (t *reconcileTarget[T]) Reconcile(ctx context.Context, component T) (bool, 
 					item.Status = kstatus.InProgressStatus.String()
 					numUnready++
 				} else {
-					res, err := computeStatus(existingObject)
+					status, err := t.statusAnalyzer.ComputeStatus(existingObject)
 					if err != nil {
 						return false, errors.Wrapf(err, "error checking status of object %s", item)
 					}
-					if existingObject.GetDeletionTimestamp().IsZero() && res.Status == kstatus.CurrentStatus {
+					if existingObject.GetDeletionTimestamp().IsZero() && status == kstatus.CurrentStatus {
 						item.Phase = PhaseReady
 					} else {
 						numUnready++
 					}
-					item.Status = res.Status.String()
+					item.Status = status.String()
 				}
 			} else {
 				numUnready++
@@ -1073,7 +1077,7 @@ func (t *reconcileTarget[T]) deleteObject(ctx context.Context, key types.ObjectK
 }
 
 func (t *reconcileTarget[T]) getAdoptionPolicy(object client.Object) (AdoptionPolicy, error) {
-	adoptionPolicy := object.GetAnnotations()[t.annotationKeyAdoptionPolicy]
+	adoptionPolicy := strcase.ToKebab(object.GetAnnotations()[t.annotationKeyAdoptionPolicy])
 	switch adoptionPolicy {
 	case "":
 		return t.adoptionPolicy, nil
@@ -1085,7 +1089,7 @@ func (t *reconcileTarget[T]) getAdoptionPolicy(object client.Object) (AdoptionPo
 }
 
 func (t *reconcileTarget[T]) getReconcilePolicy(object client.Object) (ReconcilePolicy, error) {
-	reconcilePolicy := object.GetAnnotations()[t.annotationKeyReconcilePolicy]
+	reconcilePolicy := strcase.ToKebab(object.GetAnnotations()[t.annotationKeyReconcilePolicy])
 	switch reconcilePolicy {
 	case "":
 		return t.reconcilePolicy, nil
@@ -1097,7 +1101,7 @@ func (t *reconcileTarget[T]) getReconcilePolicy(object client.Object) (Reconcile
 }
 
 func (t *reconcileTarget[T]) getUpdatePolicy(object client.Object) (UpdatePolicy, error) {
-	updatePolicy := object.GetAnnotations()[t.annotationKeyUpdatePolicy]
+	updatePolicy := strcase.ToKebab(object.GetAnnotations()[t.annotationKeyUpdatePolicy])
 	switch updatePolicy {
 	case "", types.UpdatePolicyDefault:
 		return t.updatePolicy, nil
@@ -1109,7 +1113,7 @@ func (t *reconcileTarget[T]) getUpdatePolicy(object client.Object) (UpdatePolicy
 }
 
 func (t *reconcileTarget[T]) getDeletePolicy(object client.Object) (DeletePolicy, error) {
-	deletePolicy := object.GetAnnotations()[t.annotationKeyDeletePolicy]
+	deletePolicy := strcase.ToKebab(object.GetAnnotations()[t.annotationKeyDeletePolicy])
 	switch deletePolicy {
 	case "", types.DeletePolicyDefault:
 		return t.deletePolicy, nil

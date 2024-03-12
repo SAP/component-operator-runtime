@@ -16,6 +16,7 @@ const (
 	AnnotationKeySuffixApplyOrder      = "apply-order"
 	AnnotationKeySuffixPurgeOrder      = "purge-order"
 	AnnotationKeySuffixDeleteOrder     = "delete-order"
+	AnnotationKeySuffixStatusHint      = "status-hint"
 )
 
 const (
@@ -42,4 +43,9 @@ const (
 	DeletePolicyDefault = "default"
 	DeletePolicyDelete  = "delete"
 	DeletePolicyOrphan  = "orphan"
+)
+
+const (
+	StatusHintHasObservedGeneration = "has-observed-generation"
+	StatusHintHasReadyCondition     = "has-ready-condition"
 )
