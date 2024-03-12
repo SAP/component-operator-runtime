@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"golang.org/x/time/rate"
 	"k8s.io/client-go/util/workqueue"
 )
 
@@ -21,7 +22,14 @@ type Backoff struct {
 func NewBackoff(maxDelay time.Duration) *Backoff {
 	return &Backoff{
 		activities: make(map[any]any),
-		limiter:    workqueue.NewItemExponentialFailureRateLimiter(20*time.Millisecond, maxDelay),
+		// resulting per-item backoff is the maximum of a 300-times-20ms-then-maxDelay per-item limiter,
+		// and an overall 10-per-second-burst-20 bucket limiter;
+		// as a consequence, we have up to 20 almost immediate retries, then a phase of 10 retries per seconnd
+		// for approximately 30s, and then slow retries at the rate given by maxDelay
+		limiter: workqueue.NewMaxOfRateLimiter(
+			workqueue.NewItemFastSlowRateLimiter(20*time.Millisecond, maxDelay, 300),
+			&workqueue.BucketRateLimiter{Limiter: rate.NewLimiter(rate.Limit(10), 20)},
+		),
 	}
 }
 

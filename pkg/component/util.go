@@ -18,7 +18,6 @@ import (
 
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
-	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	apiregistrationv1 "k8s.io/kube-aggregator/pkg/apis/apiregistration/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -245,7 +244,7 @@ func sortObjectsForApply[T client.Object](s []T, orderFunc func(client.Object) i
 	return slices.SortBy(s, f)
 }
 
-func sortObjectsForDelete[T types.ObjectKey](s []T) []T {
+func sortObjectsForDelete(inventory []*InventoryItem) []*InventoryItem {
 	priority := map[string]int{
 		"CustomResourceDefinition.apiextensions.k8s.io":               -1,
 		"APIService.apiregistration.k8s.io":                           -1,
@@ -260,12 +259,14 @@ func sortObjectsForDelete[T types.ObjectKey](s []T) []T {
 		"PriorityClass.scheduling.k8s.io": 4,
 		"StorageClass.storage.k8s.io":     4,
 	}
-	f := func(x T, y T) bool {
-		gvx := x.GetObjectKind().GroupVersionKind().GroupKind().String()
-		gvy := y.GetObjectKind().GroupVersionKind().GroupKind().String()
-		return priority[gvx] > priority[gvy]
+	f := func(x *InventoryItem, y *InventoryItem) bool {
+		orderx := x.DeleteOrder
+		ordery := y.DeleteOrder
+		gvx := x.GroupVersionKind().GroupKind().String()
+		gvy := y.GroupVersionKind().GroupKind().String()
+		return orderx > ordery || orderx == ordery && priority[gvx] > priority[gvy]
 	}
-	return slices.SortBy(s, f)
+	return slices.SortBy(inventory, f)
 }
 
 func getItem(inventory []*InventoryItem, key types.ObjectKey) *InventoryItem {
@@ -291,22 +292,32 @@ func mustGetItem(inventory []*InventoryItem, key types.ObjectKey) *InventoryItem
 	return item
 }
 
-func isManaged(inventory []*InventoryItem, key types.TypeKey) bool {
-	gvk := key.GetObjectKind().GroupVersionKind()
+func isNamespaceUsed(inventory []*InventoryItem, namespace string) bool {
+	// TODO: do not consider inventory items with certain Phases (e.g. Completed)?
 	for _, item := range inventory {
-		for _, t := range item.ManagedTypes {
-			if (t.Group == "*" || t.Group == gvk.Group) && (t.Version == "*" || t.Version == gvk.Version) && (t.Kind == "*" || t.Kind == gvk.Kind) {
-				return true
-			}
+		if item.Namespace == namespace {
+			return true
 		}
 	}
 	return false
 }
 
-func mustParseLabelSelector(s string) labels.Selector {
-	selector, err := labels.Parse(s)
-	if err != nil {
-		panic("this cannot happen")
+func isInstanceOfManagedType(inventory []*InventoryItem, key types.TypeKey) bool {
+	// TODO: do not consider inventory items with certain Phases (e.g. Completed)?
+	for _, item := range inventory {
+		if isManaged := isManagedBy(item, key); isManaged {
+			return true
+		}
 	}
-	return selector
+	return false
+}
+
+func isManagedBy(item *InventoryItem, key types.TypeKey) bool {
+	gvk := key.GetObjectKind().GroupVersionKind()
+	for _, t := range item.ManagedTypes {
+		if (t.Group == "*" || t.Group == gvk.Group) && (t.Version == "*" || t.Version == gvk.Version) && (t.Kind == "*" || t.Kind == gvk.Kind) {
+			return true
+		}
+	}
+	return false
 }

@@ -230,7 +230,7 @@ func (g *HelmGenerator) Generate(ctx context.Context, namespace string, name str
 
 	annotationKeyReconcilePolicy := reconcilerName + "/" + types.AnnotationKeySuffixReconcilePolicy
 	annotationKeyUpdatePolicy := reconcilerName + "/" + types.AnnotationKeySuffixUpdatePolicy
-	annotationKeyOrder := reconcilerName + "/" + types.AnnotationKeySuffixOrder
+	annotationKeyApplyOrder := reconcilerName + "/" + types.AnnotationKeySuffixApplyOrder
 	annotationKeyPurgeOrder := reconcilerName + "/" + types.AnnotationKeySuffixPurgeOrder
 
 	data := make(map[string]any)
@@ -346,31 +346,31 @@ func (g *HelmGenerator) Generate(ctx context.Context, namespace string, name str
 				switch {
 				case slices.Equal(slices.Sort(hookMetadata.Types), slices.Sort([]string{helm.HookTypePreInstall})):
 					annotations[annotationKeyReconcilePolicy] = types.ReconcilePolicyOnce
-					annotations[annotationKeyOrder] = strconv.Itoa(hookMetadata.Weight - helm.HookMaxWeight - 1)
+					annotations[annotationKeyApplyOrder] = strconv.Itoa(hookMetadata.Weight - helm.HookMaxWeight - 1)
 					if slices.Contains(hookMetadata.DeletePolicies, helm.HookDeletePolicyHookSucceeded) {
 						annotations[annotationKeyPurgeOrder] = strconv.Itoa(-1)
 					}
 				case slices.Equal(slices.Sort(hookMetadata.Types), slices.Sort([]string{helm.HookTypePostInstall})):
 					annotations[annotationKeyReconcilePolicy] = types.ReconcilePolicyOnce
-					annotations[annotationKeyOrder] = strconv.Itoa(hookMetadata.Weight - helm.HookMinWeight + 1)
+					annotations[annotationKeyApplyOrder] = strconv.Itoa(hookMetadata.Weight - helm.HookMinWeight + 1)
 					if slices.Contains(hookMetadata.DeletePolicies, helm.HookDeletePolicyHookSucceeded) {
 						annotations[annotationKeyPurgeOrder] = strconv.Itoa(helm.HookMaxWeight - helm.HookMinWeight + 1)
 					}
 				case slices.Equal(slices.Sort(hookMetadata.Types), slices.Sort([]string{helm.HookTypePreInstall, helm.HookTypePreUpgrade})):
 					annotations[annotationKeyReconcilePolicy] = types.ReconcilePolicyOnObjectOrComponentChange
-					annotations[annotationKeyOrder] = strconv.Itoa(hookMetadata.Weight - helm.HookMaxWeight - 1)
+					annotations[annotationKeyApplyOrder] = strconv.Itoa(hookMetadata.Weight - helm.HookMaxWeight - 1)
 					if slices.Contains(hookMetadata.DeletePolicies, helm.HookDeletePolicyHookSucceeded) {
 						annotations[annotationKeyPurgeOrder] = strconv.Itoa(-1)
 					}
 				case slices.Equal(slices.Sort(hookMetadata.Types), slices.Sort([]string{helm.HookTypePostInstall, helm.HookTypePostUpgrade})):
 					annotations[annotationKeyReconcilePolicy] = types.ReconcilePolicyOnObjectOrComponentChange
-					annotations[annotationKeyOrder] = strconv.Itoa(hookMetadata.Weight - helm.HookMinWeight + 1)
+					annotations[annotationKeyApplyOrder] = strconv.Itoa(hookMetadata.Weight - helm.HookMinWeight + 1)
 					if slices.Contains(hookMetadata.DeletePolicies, helm.HookDeletePolicyHookSucceeded) {
 						annotations[annotationKeyPurgeOrder] = strconv.Itoa(helm.HookMaxWeight - helm.HookMinWeight + 1)
 					}
 				case slices.Equal(slices.Sort(hookMetadata.Types), slices.Sort([]string{helm.HookTypePreInstall, helm.HookTypePreUpgrade, helm.HookTypePostInstall, helm.HookTypePostUpgrade})):
 					annotations[annotationKeyReconcilePolicy] = types.ReconcilePolicyOnObjectOrComponentChange
-					annotations[annotationKeyOrder] = strconv.Itoa(hookMetadata.Weight - helm.HookMaxWeight - 1)
+					annotations[annotationKeyApplyOrder] = strconv.Itoa(hookMetadata.Weight - helm.HookMaxWeight - 1)
 					if slices.Contains(hookMetadata.DeletePolicies, helm.HookDeletePolicyHookSucceeded) {
 						annotations[annotationKeyPurgeOrder] = strconv.Itoa(helm.HookMaxWeight - helm.HookMinWeight + 1)
 					}

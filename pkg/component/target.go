@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/iancoleman/strcase"
 	"github.com/pkg/errors"
 	"github.com/sap/go-generics/slices"
 
@@ -27,13 +28,13 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	apitypes "k8s.io/apimachinery/pkg/types"
 	apiregistrationv1 "k8s.io/kube-aggregator/pkg/apis/apiregistration/v1"
-	kstatus "sigs.k8s.io/cli-utils/pkg/kstatus/status"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	"github.com/sap/component-operator-runtime/internal/cluster"
+	"github.com/sap/component-operator-runtime/internal/kstatus"
 	"github.com/sap/component-operator-runtime/pkg/manifests"
 	"github.com/sap/component-operator-runtime/pkg/types"
 )
@@ -52,51 +53,85 @@ const (
 	scopeCluster
 )
 
+const (
+	minOrder = math.MinInt16
+	maxOrder = math.MaxInt16
+)
+
+var adoptionPolicyByAnnotation = map[string]AdoptionPolicy{
+	types.AdoptionPolicyNever:     AdoptionPolicyNever,
+	types.AdoptionPolicyIfUnowned: AdoptionPolicyIfUnowned,
+	types.AdoptionPolicyAlways:    AdoptionPolicyAlways,
+}
+
+var reconcilePolicyByAnnotation = map[string]ReconcilePolicy{
+	types.ReconcilePolicyOnObjectChange:            ReconcilePolicyOnObjectChange,
+	types.ReconcilePolicyOnObjectOrComponentChange: ReconcilePolicyOnObjectOrComponentChange,
+	types.ReconcilePolicyOnce:                      ReconcilePolicyOnce,
+}
+
+var updatePolicyByAnnotation = map[string]UpdatePolicy{
+	types.UpdatePolicyRecreate:    UpdatePolicyRecreate,
+	types.UpdatePolicyReplace:     UpdatePolicyReplace,
+	types.UpdatePolicySsaMerge:    UpdatePolicySsaMerge,
+	types.UpdatePolicySsaOverride: UpdatePolicySsaOverride,
+}
+
+var deletePolicyByAnnotation = map[string]DeletePolicy{
+	types.DeletePolicyDelete: DeletePolicyDelete,
+	types.DeletePolicyOrphan: DeletePolicyOrphan,
+}
+
 type reconcileTarget[T Component] struct {
 	reconcilerName               string
 	reconcilerId                 string
 	client                       cluster.Client
 	resourceGenerator            manifests.Generator
+	statusAnalyzer               kstatus.StatusAnalyzer
 	createMissingNamespaces      bool
 	adoptionPolicy               AdoptionPolicy
 	reconcilePolicy              ReconcilePolicy
 	updatePolicy                 UpdatePolicy
 	deletePolicy                 DeletePolicy
 	labelKeyOwnerId              string
+	annotationKeyOwnerId         string
 	annotationKeyDigest          string
 	annotationKeyAdoptionPolicy  string
 	annotationKeyReconcilePolicy string
 	annotationKeyUpdatePolicy    string
 	annotationKeyDeletePolicy    string
-	annotationKeyOrder           string
+	annotationKeyApplyOrder      string
 	annotationKeyPurgeOrder      string
-	annotationKeyOwnerId         string
+	annotationKeyDeleteOrder     string
 }
 
-func newReconcileTarget[T Component](reconcilerName string, reconcilerId string, clnt cluster.Client, resourceGenerator manifests.Generator, createMissingNamespaces bool, adoptionPolicy AdoptionPolicy, updatePolicy UpdatePolicy) *reconcileTarget[T] {
+func newReconcileTarget[T Component](reconcilerName string, reconcilerId string, clnt cluster.Client, resourceGenerator manifests.Generator, statusAnalyzer kstatus.StatusAnalyzer, createMissingNamespaces bool, adoptionPolicy AdoptionPolicy, updatePolicy UpdatePolicy) *reconcileTarget[T] {
 	return &reconcileTarget[T]{
 		reconcilerName:               reconcilerName,
 		reconcilerId:                 reconcilerId,
 		client:                       clnt,
 		resourceGenerator:            resourceGenerator,
+		statusAnalyzer:               statusAnalyzer,
 		createMissingNamespaces:      createMissingNamespaces,
 		adoptionPolicy:               adoptionPolicy,
 		reconcilePolicy:              ReconcilePolicyOnObjectChange,
 		updatePolicy:                 updatePolicy,
 		deletePolicy:                 DeletePolicyDelete,
 		labelKeyOwnerId:              reconcilerName + "/" + types.LabelKeySuffixOwnerId,
+		annotationKeyOwnerId:         reconcilerName + "/" + types.AnnotationKeySuffixOwnerId,
 		annotationKeyDigest:          reconcilerName + "/" + types.AnnotationKeySuffixDigest,
 		annotationKeyAdoptionPolicy:  reconcilerName + "/" + types.AnnotationKeySuffixAdoptionPolicy,
 		annotationKeyReconcilePolicy: reconcilerName + "/" + types.AnnotationKeySuffixReconcilePolicy,
 		annotationKeyUpdatePolicy:    reconcilerName + "/" + types.AnnotationKeySuffixUpdatePolicy,
 		annotationKeyDeletePolicy:    reconcilerName + "/" + types.AnnotationKeySuffixDeletePolicy,
-		annotationKeyOrder:           reconcilerName + "/" + types.AnnotationKeySuffixOrder,
+		annotationKeyApplyOrder:      reconcilerName + "/" + types.AnnotationKeySuffixApplyOrder,
 		annotationKeyPurgeOrder:      reconcilerName + "/" + types.AnnotationKeySuffixPurgeOrder,
-		annotationKeyOwnerId:         reconcilerName + "/" + types.AnnotationKeySuffixOwnerId,
+		annotationKeyDeleteOrder:     reconcilerName + "/" + types.AnnotationKeySuffixDeleteOrder,
 	}
 }
 
 func (t *reconcileTarget[T]) Reconcile(ctx context.Context, component T) (bool, error) {
+	log := log.FromContext(ctx)
 	namespace := ""
 	name := ""
 	if placementConfiguration, ok := assertPlacementConfiguration(component); ok {
@@ -220,6 +255,7 @@ func (t *reconcileTarget[T]) Reconcile(ctx context.Context, component T) (bool, 
 		}
 		for _, crd := range getCrds(objects) {
 			if crd.Spec.Group == gvk.Group && crd.Spec.Names.Kind == gvk.Kind {
+				// TODO: validate that scope obtained from crd matches scope from rest mapping (if one was found there)
 				scope = scopeFromCrd(crd)
 				err = nil
 				break
@@ -238,7 +274,19 @@ func (t *reconcileTarget[T]) Reconcile(ctx context.Context, component T) (bool, 
 		if object.GetNamespace() == "" && scope == scopeNamespaced {
 			object.SetNamespace(namespace)
 		}
+		if object.GetNamespace() != "" && scope == scopeCluster {
+			object.SetNamespace("")
+		}
 	}
+	// note: after this point there still can be objects in the list which
+	// - have a namespace set although they are not namespaced
+	// - do not have a namespace set although they are namespaced
+	// which exactly happens if
+	// 1. the generator provided wrong information and
+	// 2. calling RESTMapping() above returned a NoMatchError (i.e. the type is currently not known to the api server) and
+	// 3. the type belongs to a (new) api service which is part of this component
+	// such entries can cause trouble, e.g. because InventoryItem.Match() might not work reliably ...
+	// TODO: should we allow at all that api services and according instances are part of the same component?
 
 	// validate annotations
 	for _, object := range objects {
@@ -254,37 +302,80 @@ func (t *reconcileTarget[T]) Reconcile(ctx context.Context, component T) (bool, 
 		if _, err := t.getDeletePolicy(object); err != nil {
 			return false, errors.Wrapf(err, "error validating object %s", types.ObjectKeyToString(object))
 		}
-		if _, err := t.getOrder(object); err != nil {
+		if _, err := t.getApplyOrder(object); err != nil {
 			return false, errors.Wrapf(err, "error validating object %s", types.ObjectKeyToString(object))
 		}
 		if _, err := t.getPurgeOrder(object); err != nil {
 			return false, errors.Wrapf(err, "error validating object %s", types.ObjectKeyToString(object))
 		}
+		if _, err := t.getDeleteOrder(object); err != nil {
+			return false, errors.Wrapf(err, "error validating object %s", types.ObjectKeyToString(object))
+		}
+		// TODO: should status-hint be validated here as well?
 	}
 
 	// define getter functions for later usage
-	getOrder := func(object client.Object) int {
+	getAdoptionPolicy := func(object client.Object) AdoptionPolicy {
 		// note: this must() is ok because we checked the generated objects above, and this function will be called for these objects only
-		return must(t.getOrder(object))
+		return must(t.getAdoptionPolicy(object))
+	}
+	getReconcilePolicy := func(object client.Object) ReconcilePolicy {
+		// note: this must() is ok because we checked the generated objects above, and this function will be called for these objects only
+		return must(t.getReconcilePolicy(object))
+	}
+	getUpdatePolicy := func(object client.Object) UpdatePolicy {
+		// note: this must() is ok because we checked the generated objects above, and this function will be called for these objects only
+		return must(t.getUpdatePolicy(object))
+	}
+	getDeletePolicy := func(object client.Object) DeletePolicy {
+		// note: this must() is ok because we checked the generated objects above, and this function will be called for these objects only
+		return must(t.getDeletePolicy(object))
+	}
+	getApplyOrder := func(object client.Object) int {
+		// note: this must() is ok because we checked the generated objects above, and this function will be called for these objects only
+		return must(t.getApplyOrder(object))
 	}
 	getPurgeOrder := func(object client.Object) int {
 		// note: this must() is ok because we checked the generated objects above, and this function will be called for these objects only
 		return must(t.getPurgeOrder(object))
 	}
+	getDeleteOrder := func(object client.Object) int {
+		// note: this must() is ok because we checked the generated objects above, and this function will be called for these objects only
+		return must(t.getDeleteOrder(object))
+	}
+
+	// perform further validations of object set
+	for _, object := range objects {
+		switch {
+		case isNamespace(object):
+			if getPurgeOrder(object) <= maxOrder {
+				return false, errors.Wrapf(fmt.Errorf("namespaces must not define a purge order"), "error validating object %s", types.ObjectKeyToString(object))
+			}
+		case isCrd(object):
+			if getPurgeOrder(object) <= maxOrder {
+				return false, errors.Wrapf(fmt.Errorf("custom resource definitions must not define a purge order"), "error validating object %s", types.ObjectKeyToString(object))
+			}
+		case isApiService(object):
+			if getPurgeOrder(object) <= maxOrder {
+				return false, errors.Wrapf(fmt.Errorf("api services must not define a purge order"), "error validating object %s", types.ObjectKeyToString(object))
+			}
+		}
+	}
 
 	// add/update inventory with target objects
+	// TODO: review this; it would be cleaner to use a DeepCopy method for a []*InventoryItem type (if there would be such a type)
+	inventory := slices.Collect(status.Inventory, func(item *InventoryItem) *InventoryItem { return item.DeepCopy() })
 	numAdded := 0
 	for _, object := range objects {
 		// retrieve inventory item belonging to this object (if existing)
-		item := getItem(status.Inventory, object)
+		item := getItem(inventory, object)
 
 		// calculate object digest
 		digest, err := calculateObjectDigest(object)
 		if err != nil {
 			return false, errors.Wrapf(err, "error calculating digest for object %s", types.ObjectKeyToString(object))
 		}
-		// note: this must() is ok because we checked the generated objects above
-		switch must(t.getReconcilePolicy(object)) {
+		switch getReconcilePolicy(object) {
 		case ReconcilePolicyOnObjectOrComponentChange:
 			digest = fmt.Sprintf("%s@%d", digest, component.GetGeneration())
 		case ReconcilePolicyOnce:
@@ -300,9 +391,9 @@ func (t *reconcileTarget[T]) Reconcile(ctx context.Context, component T) (bool, 
 				return false, errors.Wrapf(err, "error reading object %s", types.ObjectKeyToString(object))
 			}
 			// check ownership
+			// note: failing already here in case of a conflict prevents problems during apply and, in particular, during deletion
 			if existingObject != nil {
-				// note: this must() is ok because we checked the generated objects above
-				adoptionPolicy := must(t.getAdoptionPolicy(object))
+				adoptionPolicy := getAdoptionPolicy(object)
 				existingOwnerId := existingObject.GetLabels()[t.labelKeyOwnerId]
 				if existingOwnerId == "" {
 					if adoptionPolicy != AdoptionPolicyIfUnowned && adoptionPolicy != AdoptionPolicyAlways {
@@ -314,20 +405,26 @@ func (t *reconcileTarget[T]) Reconcile(ctx context.Context, component T) (bool, 
 					}
 				}
 			}
-			status.Inventory = append(status.Inventory, &InventoryItem{})
-			item = status.Inventory[len(status.Inventory)-1]
+			inventory = append(inventory, &InventoryItem{})
+			item = inventory[len(inventory)-1]
 			numAdded++
 		}
 
 		// update item
+		gvk := object.GetObjectKind().GroupVersionKind()
+		item.Group = gvk.Group
+		item.Version = gvk.Version
+		item.Kind = gvk.Kind
+		item.Namespace = object.GetNamespace()
+		item.Name = object.GetName()
+		item.AdoptionPolicy = getAdoptionPolicy(object)
+		item.ReconcilePolicy = getReconcilePolicy(object)
+		item.UpdatePolicy = getUpdatePolicy(object)
+		item.DeletePolicy = getDeletePolicy(object)
+		item.ApplyOrder = getApplyOrder(object)
+		item.DeleteOrder = getDeleteOrder(object)
+		item.ManagedTypes = getManagedTypes(object)
 		if digest != item.Digest {
-			gvk := object.GetObjectKind().GroupVersionKind()
-			item.Group = gvk.Group
-			item.Version = gvk.Version
-			item.Kind = gvk.Kind
-			item.Namespace = object.GetNamespace()
-			item.Name = object.GetName()
-			item.ManagedTypes = getManagedTypes(object)
 			item.Digest = digest
 			item.Phase = PhaseScheduledForApplication
 			item.Status = kstatus.InProgressStatus.String()
@@ -335,7 +432,7 @@ func (t *reconcileTarget[T]) Reconcile(ctx context.Context, component T) (bool, 
 	}
 
 	// mark obsolete inventory items (clear digest)
-	for _, item := range status.Inventory {
+	for _, item := range inventory {
 		found := false
 		for _, object := range objects {
 			if item.Matches(object) {
@@ -350,31 +447,81 @@ func (t *reconcileTarget[T]) Reconcile(ctx context.Context, component T) (bool, 
 		}
 	}
 
-	// trigger another reconcile
-	if numAdded > 0 {
-		// put inventory into right order for future deletion
-		status.Inventory = sortObjectsForDelete(status.Inventory)
-		return false, nil
-	}
-
-	// note: after this point it is guaranteed that the persisted inventory reflects the target state
-	// now it is about to synchronize the cluster state with the inventory
-
-	// TODO: delete-order
-	// count instances of managed types which are about to be deleted
-	numManagedToBeDeleted := 0
-	for _, item := range status.Inventory {
-		if item.Phase == PhaseScheduledForDeletion || item.Phase == PhaseScheduledForCompletion || item.Phase == PhaseDeleting || item.Phase == PhaseCompleting {
-			if isManaged(status.Inventory, item) {
-				numManagedToBeDeleted++
+	// validate object set:
+	// - check that all managed instances have apply-order greater than or equal to the according managed type
+	// - check that all managed instances have delete-order less than or equal to the according managed type
+	// - check that no managed types are about to be deleted (empty digest) unless all related managed instances are as well
+	// - check that all contained objects have apply-order greater than or equal to the according namespace
+	// - check that all contained objects have delete-order less than or equal to the according namespace
+	// - check that no namespaces are about to be deleted (empty digest) unless all contained objects are as well
+	for _, item := range inventory {
+		if isCrd(item) || isApiService(item) {
+			for _, _item := range inventory {
+				if isManagedBy(item, _item) {
+					if _item.ApplyOrder < item.ApplyOrder {
+						return false, fmt.Errorf("error valdidating object set (%s): managed instance must not have an apply order lesser than the one of its type", _item)
+					}
+					if _item.DeleteOrder > item.DeleteOrder {
+						return false, fmt.Errorf("error valdidating object set (%s): managed instance must not have a delete order greater than the one of its type", _item)
+					}
+					if _item.Digest != "" && item.Digest == "" {
+						return false, fmt.Errorf("error valdidating object set (%s): managed instance is not being deleted, but the managing type is", _item)
+					}
+				}
+			}
+		}
+		if isNamespace(item) {
+			for _, _item := range inventory {
+				if _item.Namespace == item.Name {
+					if _item.ApplyOrder < item.ApplyOrder {
+						return false, fmt.Errorf("error valdidating object set (%s): namespaced object must not have an apply order lesser than the one of its namespace", _item)
+					}
+					if _item.DeleteOrder > item.DeleteOrder {
+						return false, fmt.Errorf("error valdidating object set (%s): namespaced object must not have a delete order greater than the one of its namespace", _item)
+					}
+					if _item.Digest != "" && item.Digest == "" {
+						return false, fmt.Errorf("error valdidating object set (%s): namespaced object is not being deleted, but the namespace is", _item)
+					}
+				}
 			}
 		}
 	}
 
-	// delete redundant objects and maintain inventory
+	// accept inventory for further processing, put into right order for future deletion
+	status.Inventory = sortObjectsForDelete(inventory)
+
+	// trigger another reconcile if something was added (to be sure that it is persisted)
+	if numAdded > 0 {
+		return false, nil
+	}
+
+	// note: after this point it is guaranteed that
+	// - the in-memory inventory reflects the target state
+	// - the persisted inventory at least has the same object keys as the in-memory inventory
+	// now it is about to synchronize the cluster state with the inventory
+
+	// delete redundant objects and maintain inventory;
+	// objects are deleted in waves according to their delete order;
+	// that means, only if all redundant objects of a wave are gone or comppleted, the next
+	// wave will be processed; within each wave, objects which are instances of managed
+	// types are deleted before all other objects, and namespaces will only be deleted
+	// if they are not used by any object in the inventory (note that this may cause deadlocks)
+	numManagedToBeDeleted := 0
 	numToBeDeleted := 0
-	var inventory []*InventoryItem
-	for _, item := range status.Inventory {
+	for k, item := range status.Inventory {
+		// if this is the first object of an order, then
+		// count instances of managed types in this wave which are about to be deleted
+		if k == 0 || status.Inventory[k-1].DeleteOrder < item.DeleteOrder {
+			log.V(2).Info("begin of deletion wave", "order", item.DeleteOrder)
+			numManagedToBeDeleted = 0
+			for j := k; j < len(status.Inventory) && status.Inventory[j].DeleteOrder == item.DeleteOrder; j++ {
+				_item := status.Inventory[j]
+				if (_item.Phase == PhaseScheduledForDeletion || _item.Phase == PhaseScheduledForCompletion || _item.Phase == PhaseDeleting || _item.Phase == PhaseCompleting) && isInstanceOfManagedType(status.Inventory, _item) {
+					numManagedToBeDeleted++
+				}
+			}
+		}
+
 		if item.Phase == PhaseScheduledForDeletion || item.Phase == PhaseScheduledForCompletion || item.Phase == PhaseDeleting || item.Phase == PhaseCompleting {
 			// fetch object (if existing)
 			existingObject, err := t.readObject(ctx, item)
@@ -382,49 +529,55 @@ func (t *reconcileTarget[T]) Reconcile(ctx context.Context, component T) (bool, 
 				return false, errors.Wrapf(err, "error reading object %s", item)
 			}
 
-			orphan := false
-			if existingObject != nil {
-				deletePolicy, err := t.getDeletePolicy(existingObject)
-				if err != nil {
-					// note: this should not happen under normal circumstances, because we checked the annotation when persisting it
-					return false, errors.Wrapf(err, "error validating existing object %s", types.ObjectKeyToString(existingObject))
-				}
-				orphan = deletePolicy == DeletePolicyOrphan
-			}
+			orphan := item.DeletePolicy == DeletePolicyOrphan
 
 			switch item.Phase {
 			case PhaseScheduledForDeletion:
-				if numManagedToBeDeleted == 0 || isManaged(status.Inventory, item) {
+				// delete namespaces after all contained inventory items
+				// delete all instances of managed types before remaining objects; this ensures that no objects are prematurely
+				// deleted which are needed for the deletion of the managed instances, such as webhook servers, api servers, ...
+				if (!isNamespace(item) || !isNamespaceUsed(status.Inventory, item.Name)) && (numManagedToBeDeleted == 0 || isInstanceOfManagedType(status.Inventory, item)) {
 					if orphan {
-						continue
+						item.Phase = ""
+					} else {
+						// note: here is a theoretical risk that we delete an existing foreign object, because informers are not yet synced
+						// however not sending the delete request is also not an option, because this might lead to orphaned own dependents
+						// TODO: perform an additional owner id check
+						if err := t.deleteObject(ctx, item, existingObject); err != nil {
+							return false, errors.Wrapf(err, "error deleting object %s", item)
+						}
+						item.Phase = PhaseDeleting
+						item.Status = kstatus.TerminatingStatus.String()
+						numToBeDeleted++
 					}
-					// note: here is a theoretical risk that we delete an existing foreign object, because informers are not yet synced
-					// however not sending the delete request is also not an option, because this might lead to orphaned own dependents
-					if err := t.deleteObject(ctx, item, existingObject); err != nil {
-						return false, errors.Wrapf(err, "error deleting object %s", item)
-					}
-					item.Phase = PhaseDeleting
-					item.Status = kstatus.TerminatingStatus.String()
+				} else {
+					numToBeDeleted++
 				}
-				numToBeDeleted++
 			case PhaseScheduledForCompletion:
-				if numManagedToBeDeleted == 0 || isManaged(status.Inventory, item) {
+				// delete namespaces after all contained inventory items
+				// delete all instances of managed types before remaining objects; this ensures that no objects are prematurely
+				// deleted which are needed for the deletion of the managed instances, such as webhook servers, api servers, ...
+				if (!isNamespace(item) || !isNamespaceUsed(status.Inventory, item.Name)) && (numManagedToBeDeleted == 0 || isInstanceOfManagedType(status.Inventory, item)) {
 					if orphan {
-						return false, fmt.Errorf("invalid usage of deletion policy: object %s is scheduled for completion (due to purge order) and therefore cannot be orphaned", item)
+						return false, fmt.Errorf("invalid usage of deletion policy: object %s is scheduled for completion and therefore cannot be orphaned", item)
+					} else {
+						// note: here is a theoretical risk that we delete an existing foreign object, because informers are not yet synced
+						// however not sending the delete request is also not an option, because this might lead to orphaned own dependents
+						// TODO: perform an additional owner id check
+						if err := t.deleteObject(ctx, item, existingObject); err != nil {
+							return false, errors.Wrapf(err, "error deleting object %s", item)
+						}
+						item.Phase = PhaseCompleting
+						item.Status = kstatus.TerminatingStatus.String()
+						numToBeDeleted++
 					}
-					// note: here is a theoretical risk that we delete an existing foreign object, because informers are not yet synced
-					// however not sending the delete request is also not an option, because this might lead to orphaned own dependents
-					if err := t.deleteObject(ctx, item, existingObject); err != nil {
-						return false, errors.Wrapf(err, "error deleting object %s", item)
-					}
-					item.Phase = PhaseCompleting
-					item.Status = kstatus.TerminatingStatus.String()
+				} else {
+					numToBeDeleted++
 				}
-				numToBeDeleted++
 			case PhaseDeleting:
 				// if object is gone, we can remove it from inventory
 				if existingObject == nil {
-					continue
+					item.Phase = ""
 				} else {
 					numToBeDeleted++
 				}
@@ -441,10 +594,17 @@ func (t *reconcileTarget[T]) Reconcile(ctx context.Context, component T) (bool, 
 				panic("this cannot happen")
 			}
 		}
-		inventory = append(inventory, item)
+
+		// trigger another reconcile if this is the last object of the wave, and some deletions are not yet completed
+		if k == len(status.Inventory)-1 || status.Inventory[k+1].DeleteOrder > item.DeleteOrder {
+			log.V(2).Info("end of deletion wave", "order", item.DeleteOrder)
+			if numToBeDeleted > 0 {
+				break
+			}
+		}
 	}
 
-	status.Inventory = inventory
+	status.Inventory = slices.Select(status.Inventory, func(item *InventoryItem) bool { return item.Phase != "" })
 
 	// trigger another reconcile
 	if numToBeDeleted > 0 {
@@ -469,26 +629,31 @@ func (t *reconcileTarget[T]) Reconcile(ctx context.Context, component T) (bool, 
 	}
 
 	// put objects into right order for applying
-	objects = sortObjectsForApply(objects, getOrder)
+	objects = sortObjectsForApply(objects, getApplyOrder)
 
-	// apply objects and maintain inventory
-	numUnready := 0
+	// apply objects and maintain inventory;
+	// objects are applied (i.e. created/updated) in waves according to their apply order;
+	// that means, only if all objects of a wave are ready or completed, the next wave
+	// will be procesed; within each wave, objects which are instances of managed types
+	// will be applied after all other objects
 	numNotManagedToBeApplied := 0
+	numUnready := 0
 	for k, object := range objects {
-		// retrieve object order
-		order := getOrder(object)
-
 		// retrieve inventory item corresponding to this object
 		item := mustGetItem(status.Inventory, object)
 
+		// retrieve object order
+		applyOrder := getApplyOrder(object)
+
 		// if this is the first object of an order, then
 		// count instances of managed types in this order which are about to be applied
-		if k == 0 || getOrder(objects[k-1]) < order {
+		if k == 0 || getApplyOrder(objects[k-1]) < applyOrder {
+			log.V(2).Info("begin of apply wave", "order", applyOrder)
 			numNotManagedToBeApplied = 0
-			for j := k; j < len(objects) && getOrder(objects[j]) == order; j++ {
+			for j := k; j < len(objects) && getApplyOrder(objects[j]) == applyOrder; j++ {
 				_object := objects[j]
 				_item := mustGetItem(status.Inventory, _object)
-				if _item.Phase != PhaseReady && _item.Phase != PhaseCompleted && !isManaged(status.Inventory, _object) {
+				if _item.Phase != PhaseReady && _item.Phase != PhaseCompleted && !isInstanceOfManagedType(status.Inventory, _object) {
 					// that means: _item.Phase is one of PhaseScheduledForApplication, PhaseCreating, PhaseUpdating
 					numNotManagedToBeApplied++
 				}
@@ -497,7 +662,10 @@ func (t *reconcileTarget[T]) Reconcile(ctx context.Context, component T) (bool, 
 
 		// for non-completed objects, compute and update status, and apply (create or update) the object if necessary
 		if item.Phase != PhaseCompleted {
-			if numNotManagedToBeApplied == 0 || !isManaged(status.Inventory, object) {
+			// reconcile all instances of managed types after remaining objects
+			// this ensures that everything is running what is needed for the reconciliation of the managed instances,
+			// such as webhook servers, api servers, ...
+			if numNotManagedToBeApplied == 0 || !isInstanceOfManagedType(status.Inventory, object) {
 				// fetch object (if existing)
 				existingObject, err := t.readObject(ctx, item)
 				if err != nil {
@@ -516,14 +684,15 @@ func (t *reconcileTarget[T]) Reconcile(ctx context.Context, component T) (bool, 
 					item.Status = kstatus.InProgressStatus.String()
 					numUnready++
 				} else if existingObject.GetDeletionTimestamp().IsZero() && existingObject.GetAnnotations()[t.annotationKeyDigest] != item.Digest {
-					// note: this must() is ok because we checked the generated objects above
-					updatePolicy := must(t.getUpdatePolicy(object))
+					updatePolicy := getUpdatePolicy(object)
 					switch updatePolicy {
 					case UpdatePolicyRecreate:
+						// TODO: perform an additional owner id check
 						if err := t.deleteObject(ctx, object, existingObject); err != nil {
 							return false, errors.Wrapf(err, "error deleting (while recreating) object %s", item)
 						}
 					default:
+						// TODO: perform an additional owner id check
 						if err := t.updateObject(ctx, object, existingObject, nil, updatePolicy); err != nil {
 							return false, errors.Wrapf(err, "error updating object %s", item)
 						}
@@ -532,16 +701,16 @@ func (t *reconcileTarget[T]) Reconcile(ctx context.Context, component T) (bool, 
 					item.Status = kstatus.InProgressStatus.String()
 					numUnready++
 				} else {
-					res, err := computeStatus(existingObject)
+					status, err := t.statusAnalyzer.ComputeStatus(existingObject)
 					if err != nil {
 						return false, errors.Wrapf(err, "error checking status of object %s", item)
 					}
-					if existingObject.GetDeletionTimestamp().IsZero() && res.Status == kstatus.CurrentStatus {
+					if existingObject.GetDeletionTimestamp().IsZero() && status == kstatus.CurrentStatus {
 						item.Phase = PhaseReady
 					} else {
 						numUnready++
 					}
-					item.Status = res.Status.String()
+					item.Status = status.String()
 				}
 			} else {
 				numUnready++
@@ -553,14 +722,15 @@ func (t *reconcileTarget[T]) Reconcile(ctx context.Context, component T) (bool, 
 		// if this is the last object of an order, then
 		// - if everything so far is ready, trigger due completions and trigger another reconcile if any completion was triggered
 		// - otherwise trigger another reconcile
-		if k == len(objects)-1 || getOrder(objects[k+1]) > order {
+		if k == len(objects)-1 || getApplyOrder(objects[k+1]) > applyOrder {
+			log.V(2).Info("end of apply wave", "order", applyOrder)
 			if numUnready == 0 {
 				numPurged := 0
 				for j := 0; j <= k; j++ {
 					_object := objects[j]
 					_item := mustGetItem(status.Inventory, _object)
 					_purgeOrder := getPurgeOrder(_object)
-					if (k == len(objects)-1 && _purgeOrder < math.MaxInt || _purgeOrder <= order) && _item.Phase != PhaseCompleted {
+					if (k == len(objects)-1 && _purgeOrder <= maxOrder || _purgeOrder <= applyOrder) && _item.Phase != PhaseCompleted {
 						_item.Phase = PhaseScheduledForCompletion
 						numPurged++
 					}
@@ -578,55 +748,81 @@ func (t *reconcileTarget[T]) Reconcile(ctx context.Context, component T) (bool, 
 }
 
 func (t *reconcileTarget[T]) Delete(ctx context.Context, component T) (bool, error) {
+	log := log.FromContext(ctx)
 	status := component.GetStatus()
 
-	// count instances of managed types
-	numManaged := 0
-	for _, item := range status.Inventory {
-		if isManaged(status.Inventory, item) {
-			numManaged++
+	// delete objects and maintain inventory;
+	// objects are deleted in waves according to their delete order;
+	// that means, only if all objects of a wave are gone, the next wave will be processed;
+	// within each wave, objects which are instances of managed types are deleted before all
+	// other objects, and namespaces will only be deleted if they are not used by any
+	// object in the inventory (note that this may cause deadlocks)
+	numManagedToBeDeleted := 0
+	numToBeDeleted := 0
+	for k, item := range status.Inventory {
+		// if this is the first object of an order, then
+		// count instances of managed types in this wave which are about to be deleted
+		if k == 0 || status.Inventory[k-1].DeleteOrder < item.DeleteOrder {
+			log.V(2).Info("begin of deletion wave", "order", item.DeleteOrder)
+			numManagedToBeDeleted = 0
+			for j := k; j < len(status.Inventory) && status.Inventory[j].DeleteOrder == item.DeleteOrder; j++ {
+				_item := status.Inventory[j]
+				if isInstanceOfManagedType(status.Inventory, _item) {
+					numManagedToBeDeleted++
+				}
+			}
 		}
-	}
 
-	// delete objects and maintain inventory
-	// TODO: delete-order
-	var inventory []*InventoryItem
-	for _, item := range status.Inventory {
 		// fetch object (if existing)
 		existingObject, err := t.readObject(ctx, item)
 		if err != nil {
 			return false, errors.Wrapf(err, "error reading object %s", item)
 		}
 
-		// if object is gone, we can remove it from inventory
-		if existingObject == nil && item.Phase == PhaseDeleting {
-			continue
+		orphan := item.DeletePolicy == DeletePolicyOrphan
+
+		switch item.Phase {
+		case PhaseDeleting:
+			// if object is gone, we can remove it from inventory
+			if existingObject == nil {
+				item.Phase = ""
+			} else {
+				numToBeDeleted++
+			}
+		default:
+			// delete namespaces after all contained inventory items
+			// delete all instances of managed types before remaining objects; this ensures that no objects are prematurely
+			// deleted which are needed for the deletion of the managed instances, such as webhook servers, api servers, ...
+			if (!isNamespace(item) || !isNamespaceUsed(status.Inventory, item.Name)) && (numManagedToBeDeleted == 0 || isInstanceOfManagedType(status.Inventory, item)) {
+				if orphan {
+					item.Phase = ""
+				} else {
+					// delete the object
+					// note: here is a theoretical risk that we delete an existing (foreign) object, because informers are not yet synced
+					// however not sending the delete request is also not an option, because this might lead to orphaned own dependents
+					// TODO: perform an additional owner id check
+					if err := t.deleteObject(ctx, item, existingObject); err != nil {
+						return false, errors.Wrapf(err, "error deleting object %s", item)
+					}
+					item.Phase = PhaseDeleting
+					item.Status = kstatus.TerminatingStatus.String()
+					numToBeDeleted++
+				}
+			} else {
+				numToBeDeleted++
+			}
 		}
 
-		if numManaged == 0 || isManaged(status.Inventory, item) {
-			// orphan the object, if according deletion policy is set
-			if existingObject != nil {
-				deletePolicy, err := t.getDeletePolicy(existingObject)
-				if err != nil {
-					// note: this should not happen under normal circumstances, because we checked the annotation when persisting it
-					return false, errors.Wrapf(err, "error validating existing object %s", types.ObjectKeyToString(existingObject))
-				}
-				if deletePolicy == DeletePolicyOrphan {
-					continue
-				}
+		// trigger another reconcile if this is the last object of the wave, and some deletions are not yet completed
+		if k == len(status.Inventory)-1 || status.Inventory[k+1].DeleteOrder > item.DeleteOrder {
+			log.V(2).Info("end of deletion wave", "order", item.DeleteOrder)
+			if numToBeDeleted > 0 {
+				break
 			}
-			// delete the object
-			// note: here is a theoretical risk that we delete an existing (foreign) object, because informers are not yet synced
-			// however not sending the delete request is also not an option, because this might lead to orphaned own dependents
-			if err := t.deleteObject(ctx, item, existingObject); err != nil {
-				return false, errors.Wrapf(err, "error deleting object %s", item)
-			}
-			item.Phase = PhaseDeleting
-			item.Status = kstatus.TerminatingStatus.String()
 		}
-		inventory = append(inventory, item)
 	}
-	status.Inventory = inventory
+
+	status.Inventory = slices.Select(status.Inventory, func(item *InventoryItem) bool { return item.Phase != "" })
 
 	return len(status.Inventory) == 0, nil
 }
@@ -752,7 +948,6 @@ func (t *reconcileTarget[T]) updateObject(ctx context.Context, object client.Obj
 	// because replace will only claim fields which are new or which have changed; the field owner of declared (but unmodified)
 	// fields will not be touched
 	object.SetManagedFields(nil)
-	// note: this must() is ok because we checked the generated objects before
 	switch updatePolicy {
 	case UpdatePolicySsaMerge:
 		return t.client.Patch(ctx, object, client.Apply, client.FieldOwner(t.reconcilerName), client.ForceOwnership)
@@ -841,7 +1036,7 @@ func (t *reconcileTarget[T]) deleteObject(ctx context.Context, key types.ObjectK
 				return fmt.Errorf("error deleting custom resource definition %s, existing instances found", types.ObjectKeyToString(key))
 			}
 			if ok := controllerutil.RemoveFinalizer(crd, t.reconcilerName); ok {
-				// note: 409 error is very likely here (because of concurrent updates happening through the API server); this is why we retry once
+				// note: 409 error is very likely here (because of concurrent updates happening through the api server); this is why we retry once
 				if err := t.client.Update(ctx, crd, client.FieldOwner(t.reconcilerName)); err != nil {
 					if i == 1 && apierrors.IsConflict(err) {
 						log.V(1).Info("error while updating CustomResourcedefinition (409 conflict); doing one retry", "name", t.reconcilerName, "error", err.Error())
@@ -866,7 +1061,7 @@ func (t *reconcileTarget[T]) deleteObject(ctx context.Context, key types.ObjectK
 				return fmt.Errorf("error deleting api service %s, existing instances found", types.ObjectKeyToString(key))
 			}
 			if ok := controllerutil.RemoveFinalizer(apiService, t.reconcilerName); ok {
-				// note: 409 error is very likely here (because of concurrent updates happening through the API server); this is why we retry once
+				// note: 409 error is very likely here (because of concurrent updates happening through the api server); this is why we retry once
 				if err := t.client.Update(ctx, apiService, client.FieldOwner(t.reconcilerName)); err != nil {
 					if i == 1 && apierrors.IsConflict(err) {
 						log.V(1).Info("error while updating APIService (409 conflict); doing one retry", "name", t.reconcilerName, "error", err.Error())
@@ -882,7 +1077,7 @@ func (t *reconcileTarget[T]) deleteObject(ctx context.Context, key types.ObjectK
 }
 
 func (t *reconcileTarget[T]) getAdoptionPolicy(object client.Object) (AdoptionPolicy, error) {
-	adoptionPolicy := object.GetAnnotations()[t.annotationKeyAdoptionPolicy]
+	adoptionPolicy := strcase.ToKebab(object.GetAnnotations()[t.annotationKeyAdoptionPolicy])
 	switch adoptionPolicy {
 	case "":
 		return t.adoptionPolicy, nil
@@ -894,7 +1089,7 @@ func (t *reconcileTarget[T]) getAdoptionPolicy(object client.Object) (AdoptionPo
 }
 
 func (t *reconcileTarget[T]) getReconcilePolicy(object client.Object) (ReconcilePolicy, error) {
-	reconcilePolicy := object.GetAnnotations()[t.annotationKeyReconcilePolicy]
+	reconcilePolicy := strcase.ToKebab(object.GetAnnotations()[t.annotationKeyReconcilePolicy])
 	switch reconcilePolicy {
 	case "":
 		return t.reconcilePolicy, nil
@@ -906,7 +1101,7 @@ func (t *reconcileTarget[T]) getReconcilePolicy(object client.Object) (Reconcile
 }
 
 func (t *reconcileTarget[T]) getUpdatePolicy(object client.Object) (UpdatePolicy, error) {
-	updatePolicy := object.GetAnnotations()[t.annotationKeyUpdatePolicy]
+	updatePolicy := strcase.ToKebab(object.GetAnnotations()[t.annotationKeyUpdatePolicy])
 	switch updatePolicy {
 	case "", types.UpdatePolicyDefault:
 		return t.updatePolicy, nil
@@ -918,7 +1113,7 @@ func (t *reconcileTarget[T]) getUpdatePolicy(object client.Object) (UpdatePolicy
 }
 
 func (t *reconcileTarget[T]) getDeletePolicy(object client.Object) (DeletePolicy, error) {
-	deletePolicy := object.GetAnnotations()[t.annotationKeyDeletePolicy]
+	deletePolicy := strcase.ToKebab(object.GetAnnotations()[t.annotationKeyDeletePolicy])
 	switch deletePolicy {
 	case "", types.DeletePolicyDefault:
 		return t.deletePolicy, nil
@@ -929,34 +1124,49 @@ func (t *reconcileTarget[T]) getDeletePolicy(object client.Object) (DeletePolicy
 	}
 }
 
-func (t *reconcileTarget[T]) getOrder(object client.Object) (int, error) {
-	value, ok := object.GetAnnotations()[t.annotationKeyOrder]
+func (t *reconcileTarget[T]) getApplyOrder(object client.Object) (int, error) {
+	value, ok := object.GetAnnotations()[t.annotationKeyApplyOrder]
 	if !ok {
 		return 0, nil
 	}
-	order, err := strconv.Atoi(value)
+	applyOrder, err := strconv.Atoi(value)
 	if err != nil {
-		return 0, errors.Wrapf(err, "invalid value for annotation %s: %s", t.annotationKeyOrder, value)
+		return 0, errors.Wrapf(err, "invalid value for annotation %s: %s", t.annotationKeyApplyOrder, value)
 	}
-	if err := checkRange(order, math.MinInt16, math.MaxInt16); err != nil {
-		return 0, errors.Wrapf(err, "invalid value for annotation %s: %s", t.annotationKeyOrder, value)
+	if err := checkRange(applyOrder, minOrder, maxOrder); err != nil {
+		return 0, errors.Wrapf(err, "invalid value for annotation %s: %s", t.annotationKeyApplyOrder, value)
 	}
-	return order, nil
+	return applyOrder, nil
 }
 
 func (t *reconcileTarget[T]) getPurgeOrder(object client.Object) (int, error) {
 	value, ok := object.GetAnnotations()[t.annotationKeyPurgeOrder]
 	if !ok {
-		return math.MaxInt, nil
+		return maxOrder + 1, nil
 	}
 	purgeOrder, err := strconv.Atoi(value)
 	if err != nil {
 		return 0, errors.Wrapf(err, "invalid value for annotation %s: %s", t.annotationKeyPurgeOrder, value)
 	}
-	if err := checkRange(purgeOrder, math.MinInt16, math.MaxInt16); err != nil {
+	if err := checkRange(purgeOrder, minOrder, maxOrder); err != nil {
 		return 0, errors.Wrapf(err, "invalid value for annotation %s: %s", t.annotationKeyPurgeOrder, value)
 	}
 	return purgeOrder, nil
+}
+
+func (t *reconcileTarget[T]) getDeleteOrder(object client.Object) (int, error) {
+	value, ok := object.GetAnnotations()[t.annotationKeyDeleteOrder]
+	if !ok {
+		return 0, nil
+	}
+	deleteOrder, err := strconv.Atoi(value)
+	if err != nil {
+		return 0, errors.Wrapf(err, "invalid value for annotation %s: %s", t.annotationKeyDeleteOrder, value)
+	}
+	if err := checkRange(deleteOrder, minOrder, maxOrder); err != nil {
+		return 0, errors.Wrapf(err, "invalid value for annotation %s: %s", t.annotationKeyDeleteOrder, value)
+	}
+	return deleteOrder, nil
 }
 
 func (t *reconcileTarget[T]) isCrdUsed(ctx context.Context, crd *apiextensionsv1.CustomResourceDefinition, onlyForeign bool) (bool, error) {
@@ -980,7 +1190,8 @@ func (t *reconcileTarget[T]) isCrdUsed(ctx context.Context, crd *apiextensionsv1
 			hashedOwnerId = crd.Labels[t.labelKeyOwnerId]
 			legacyOwnerId = strings.Join(slices.Last(strings.Split(crd.Annotations[t.annotationKeyOwnerId], "/"), 2), "_")
 		}
-		labelSelector = mustParseLabelSelector(t.labelKeyOwnerId + " notin (" + hashedOwnerId + "," + legacyOwnerId + ")")
+		// note: this must() is ok because the label selector string is static, and correct
+		labelSelector = must(labels.Parse(t.labelKeyOwnerId + " notin (" + hashedOwnerId + "," + legacyOwnerId + ")"))
 		// labelSelector = mustParseLabelSelector(t.labelKeyOwnerId + "!=" + crd.Labels[t.labelKeyOwnerId])
 	}
 	if err := t.client.List(ctx, list, &client.ListOptions{LabelSelector: labelSelector, Limit: 1}); err != nil {
@@ -1013,7 +1224,8 @@ func (t *reconcileTarget[T]) isApiServiceUsed(ctx context.Context, apiService *a
 			hashedOwnerId = apiService.Labels[t.labelKeyOwnerId]
 			legacyOwnerId = strings.Join(slices.Last(strings.Split(apiService.Annotations[t.annotationKeyOwnerId], "/"), 2), "_")
 		}
-		labelSelector = mustParseLabelSelector(t.labelKeyOwnerId + " notin (" + hashedOwnerId + "," + legacyOwnerId + ")")
+		// note: this must() is ok because the label selector string is static, and correct
+		labelSelector = must(labels.Parse(t.labelKeyOwnerId + " notin (" + hashedOwnerId + "," + legacyOwnerId + ")"))
 		// labelSelector = mustParseLabelSelector(t.labelKeyOwnerId + "!=" + crd.Labels[t.labelKeyOwnerId])
 	}
 	for _, kind := range kinds {
