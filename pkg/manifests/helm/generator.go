@@ -161,7 +161,7 @@ func NewHelmGenerator(fsys fs.FS, chartPath string, clnt client.Client) (*HelmGe
 			t.Option("missingkey=zero").
 				Funcs(sprig.TxtFuncMap()).
 				Funcs(templatex.FuncMap()).
-				Funcs(templatex.FuncMapForTemplate(t)).
+				Funcs(templatex.FuncMapForTemplate(nil)).
 				Funcs(templatex.FuncMapForLocalClient(clnt)).
 				Funcs(templatex.FuncMapForClient(nil))
 		} else {
@@ -280,6 +280,7 @@ func (g *HelmGenerator) Generate(ctx context.Context, namespace string, name str
 			return nil, err
 		}
 		t0.Option("missingkey=zero").
+			Funcs(templatex.FuncMapForTemplate(t0)).
 			Funcs(templatex.FuncMapForClient(clnt))
 	}
 	for _, t := range g.templates {

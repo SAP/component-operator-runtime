@@ -104,7 +104,7 @@ func NewKustomizeGenerator(fsys fs.FS, kustomizationPath string, templateSuffix 
 				t.Option("missingkey=zero").
 					Funcs(sprig.TxtFuncMap()).
 					Funcs(templatex.FuncMap()).
-					Funcs(templatex.FuncMapForTemplate(t)).
+					Funcs(templatex.FuncMapForTemplate(nil)).
 					Funcs(templatex.FuncMapForLocalClient(clnt)).
 					Funcs(templatex.FuncMapForClient(nil)).
 					Funcs(funcMapForGenerateContext(nil, nil, "", ""))
@@ -187,6 +187,7 @@ func (g *KustomizeGenerator) Generate(ctx context.Context, namespace string, nam
 				return nil, err
 			}
 			t0.Option("missingkey=zero").
+				Funcs(templatex.FuncMapForTemplate(t0)).
 				Funcs(templatex.FuncMapForClient(clnt)).
 				Funcs(funcMapForGenerateContext(serverInfo, component, namespace, name))
 		}
