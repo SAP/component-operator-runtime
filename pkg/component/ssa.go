@@ -35,7 +35,11 @@ func replaceFieldManager(managedFields []metav1.ManagedFieldsEntry, managerPrefi
 		if entry == managerEntry {
 			continue
 		}
-		if !slices.Any(managerPrefixes, func(s string) bool { return strings.HasPrefix(entry.Manager, s) }) || entry.Subresource != "" {
+		if entry.Subresource != "" {
+			entries = append(entries, entry)
+			continue
+		}
+		if entry.Manager != manager && !slices.Any(managerPrefixes, func(s string) bool { return strings.HasPrefix(entry.Manager, s) }) {
 			entries = append(entries, entry)
 			continue
 		}
