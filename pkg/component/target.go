@@ -385,6 +385,7 @@ func (t *reconcileTarget[T]) Reconcile(ctx context.Context, component T) (bool, 
 
 		// if item was not found, append an empty item
 		if item == nil {
+			// TODO: should the owner id check happen always (not only if the object is unknown to the inventory)?
 			// fetch object (if existing)
 			existingObject, err := t.readObject(ctx, object)
 			if err != nil {
@@ -676,15 +677,15 @@ func (t *reconcileTarget[T]) Reconcile(ctx context.Context, component T) (bool, 
 				setAnnotation(object, t.annotationKeyOwnerId, ownerId)
 				setAnnotation(object, t.annotationKeyDigest, item.Digest)
 
+				updatePolicy := getUpdatePolicy(object)
 				if existingObject == nil {
-					if err := t.createObject(ctx, object, nil); err != nil {
+					if err := t.createObject(ctx, object, nil, updatePolicy); err != nil {
 						return false, errors.Wrapf(err, "error creating object %s", item)
 					}
 					item.Phase = PhaseCreating
 					item.Status = kstatus.InProgressStatus.String()
 					numUnready++
 				} else if existingObject.GetDeletionTimestamp().IsZero() && existingObject.GetAnnotations()[t.annotationKeyDigest] != item.Digest {
-					updatePolicy := getUpdatePolicy(object)
 					switch updatePolicy {
 					case UpdatePolicyRecreate:
 						// TODO: perform an additional owner id check
@@ -888,7 +889,7 @@ func (t *reconcileTarget[T]) readObject(ctx context.Context, key types.ObjectKey
 // create object; object may be a concrete type or unstructured; in any case, type meta must be populated;
 // createdObject is optional; if non-nil, it will be populated with the created object; the same variable can be supplied as object and createObject;
 // if object is a crd or an api services, the reconciler's name will be added as finalizer
-func (t *reconcileTarget[T]) createObject(ctx context.Context, object client.Object, createdObject any) (err error) {
+func (t *reconcileTarget[T]) createObject(ctx context.Context, object client.Object, createdObject any, updatePolicy UpdatePolicy) (err error) {
 	defer func() {
 		if err == nil && createdObject != nil {
 			err = runtime.DefaultUnstructuredConverter.FromUnstructured(object.(*unstructured.Unstructured).Object, createdObject)
@@ -897,6 +898,9 @@ func (t *reconcileTarget[T]) createObject(ctx context.Context, object client.Obj
 			t.client.EventRecorder().Event(object, corev1.EventTypeNormal, objectReasonCreated, "Object successfully created")
 		}
 	}()
+
+	// log := log.FromContext(ctx).WithValues("object", types.ObjectKeyToString(object))
+
 	data, err := runtime.DefaultUnstructuredConverter.ToUnstructured(object)
 	if err != nil {
 		return err
@@ -905,7 +909,18 @@ func (t *reconcileTarget[T]) createObject(ctx context.Context, object client.Obj
 	if isCrd(object) || isApiService(object) {
 		controllerutil.AddFinalizer(object, t.reconcilerName)
 	}
-	return t.client.Create(ctx, object, client.FieldOwner(t.reconcilerName))
+	// note: clearing managedFields is anyway required for ssa; but also in the create (post) case it does not harm
+	object.SetManagedFields(nil)
+	// create the object right from the start with the right managed fields operation (Apply or Update), in order to avoid
+	// having to patch the managed fields during future update calls
+	switch updatePolicy {
+	case UpdatePolicySsaMerge, UpdatePolicySsaOverride:
+		// set the target resource version to an impossible value; this will produce a 409 conflict in case the object already exists
+		object.SetResourceVersion("1")
+		return t.client.Patch(ctx, object, client.Apply, client.FieldOwner(t.reconcilerName))
+	default:
+		return t.client.Create(ctx, object, client.FieldOwner(t.reconcilerName))
+	}
 }
 
 // update object; object may be a concrete type or unstructured; in any case, type meta must be populated;
@@ -928,11 +943,15 @@ func (t *reconcileTarget[T]) updateObject(ctx context.Context, object client.Obj
 			t.client.EventRecorder().Eventf(existingObject, corev1.EventTypeWarning, objectReasonUpdateError, "Error updating object: %s", err)
 		}
 	}()
-	// TODO: validate (by panic) that existingObject fits to object
+
+	log := log.FromContext(ctx).WithValues("object", types.ObjectKeyToString(object))
+
+	// TODO: validate (by panic) that existingObject fits to object (i.e. have same object key)
 	if !existingObject.GetDeletionTimestamp().IsZero() {
 		// note: we must not update objects which are in deletion (e.g. to avoid unintentionally clearing finalizers), so we want to see the panic in that case
 		panic("this cannot happen")
 	}
+
 	data, err := runtime.DefaultUnstructuredConverter.ToUnstructured(object)
 	if err != nil {
 		return err
@@ -941,6 +960,10 @@ func (t *reconcileTarget[T]) updateObject(ctx context.Context, object client.Obj
 	if isCrd(object) || isApiService(object) {
 		controllerutil.AddFinalizer(object, t.reconcilerName)
 	}
+	// it is allowed that target object contains a resource version (e.g. because the producing generator read it from the cluster);
+	// otherwise, we set the resource version to the one of the existing object, in order to ensure that we do not unintentionally overwrite
+	// a state different from the one we have read
+	// note that the api server performs a resource version conflict check not only in case of update (put), but also for ssa (patch)
 	if object.GetResourceVersion() == "" {
 		object.SetResourceVersion((existingObject.GetResourceVersion()))
 	}
@@ -949,13 +972,18 @@ func (t *reconcileTarget[T]) updateObject(ctx context.Context, object client.Obj
 	// fields will not be touched
 	object.SetManagedFields(nil)
 	switch updatePolicy {
-	case UpdatePolicySsaMerge:
-		return t.client.Patch(ctx, object, client.Apply, client.FieldOwner(t.reconcilerName), client.ForceOwnership)
-	case UpdatePolicySsaOverride:
-		// TODO: add ways (per reconciler, per component, per object) to configure the list of field manager (prefixes) which are reclaimed
-		if managedFields, changed, err := replaceFieldManager(existingObject.GetManagedFields(), []string{"kubectl", "helm"}, t.reconcilerName); err != nil {
+	case UpdatePolicySsaMerge, UpdatePolicySsaOverride:
+		var replacedFieldManagerPrefixes []string
+		if updatePolicy == UpdatePolicySsaOverride {
+			// TODO: add ways (per reconciler, per component, per object) to configure the list of field manager (prefixes) which are reclaimed
+			replacedFieldManagerPrefixes = []string{"kubectl", "helm"}
+		}
+		// note: even if replacedFieldManagerPrefixes is empty, replaceFieldManager() will reclaim fields created by us through an Update operation,
+		// that is through a create or update call; this may be necessary, if the update policy for the object changed (globally or per-object)
+		if managedFields, changed, err := replaceFieldManager(existingObject.GetManagedFields(), replacedFieldManagerPrefixes, t.reconcilerName); err != nil {
 			return err
 		} else if changed {
+			log.V(1).Info("adjusting field managers as preparation of ssa")
 			gvk := object.GetObjectKind().GroupVersionKind()
 			obj := &metav1.PartialObjectMetadata{
 				TypeMeta: metav1.TypeMeta{
@@ -1002,8 +1030,10 @@ func (t *reconcileTarget[T]) deleteObject(ctx context.Context, key types.ObjectK
 			t.client.EventRecorder().Eventf(existingObject, corev1.EventTypeWarning, objectReasonDeleteError, "Error deleting object: %s", err)
 		}
 	}()
+
+	log := log.FromContext(ctx).WithValues("object", types.ObjectKeyToString(key))
+
 	// TODO: validate (by panic) that existingObject (if present) fits to key
-	log := log.FromContext(ctx)
 
 	object := &unstructured.Unstructured{}
 	object.SetGroupVersionKind(key.GetObjectKind().GroupVersionKind())
@@ -1039,7 +1069,7 @@ func (t *reconcileTarget[T]) deleteObject(ctx context.Context, key types.ObjectK
 				// note: 409 error is very likely here (because of concurrent updates happening through the api server); this is why we retry once
 				if err := t.client.Update(ctx, crd, client.FieldOwner(t.reconcilerName)); err != nil {
 					if i == 1 && apierrors.IsConflict(err) {
-						log.V(1).Info("error while updating CustomResourcedefinition (409 conflict); doing one retry", "name", t.reconcilerName, "error", err.Error())
+						log.V(1).Info("error while updating CustomResourcedefinition (409 conflict); doing one retry", "error", err.Error())
 						continue
 					}
 					return err
@@ -1064,7 +1094,7 @@ func (t *reconcileTarget[T]) deleteObject(ctx context.Context, key types.ObjectK
 				// note: 409 error is very likely here (because of concurrent updates happening through the api server); this is why we retry once
 				if err := t.client.Update(ctx, apiService, client.FieldOwner(t.reconcilerName)); err != nil {
 					if i == 1 && apierrors.IsConflict(err) {
-						log.V(1).Info("error while updating APIService (409 conflict); doing one retry", "name", t.reconcilerName, "error", err.Error())
+						log.V(1).Info("error while updating APIService (409 conflict); doing one retry", "error", err.Error())
 						continue
 					}
 					return err
