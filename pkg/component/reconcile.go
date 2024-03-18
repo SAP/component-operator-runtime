@@ -229,18 +229,18 @@ func (r *Reconciler[T]) Reconcile(ctx context.Context, req ctrl.Request) (result
 		}
 	}()
 
+	// set a first status (and requeue, because the status update itself will not trigger another reconciliation because of the event filter set)
+	if status.ObservedGeneration <= 0 {
+		status.SetState(StateProcessing, readyConditionReasonNew, "First seen")
+		return ctrl.Result{Requeue: true}, nil
+	}
+
 	// run post-read hooks
 	// note: it's important that this happens after deferring the status handler
 	for hookOrder, hook := range r.postReadHooks {
 		if err := hook(ctx, r.client, component); err != nil {
 			return ctrl.Result{}, errors.Wrapf(err, "error running post-read hook (%d)", hookOrder)
 		}
-	}
-
-	// set a first status (and requeue, because the status update itself will not trigger another reconciliation because of the event filter set)
-	if status.ObservedGeneration <= 0 {
-		status.SetState(StateProcessing, readyConditionReasonNew, "First seen")
-		return ctrl.Result{Requeue: true}, nil
 	}
 
 	// setup target
