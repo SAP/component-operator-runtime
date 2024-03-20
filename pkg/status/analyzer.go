@@ -3,7 +3,7 @@ SPDX-FileCopyrightText: 2023 SAP SE or an SAP affiliate company and component-op
 SPDX-License-Identifier: Apache-2.0
 */
 
-package kstatus
+package status
 
 import (
 	"strings"
@@ -25,12 +25,20 @@ type statusAnalyzer struct {
 	reconcilerName string
 }
 
+// Create a default StatusAnalyzer implementation.
+// This implementation uses kstatus internally, with the following modifications:
+//   - certain hints about the object's status type can be passed by setting the annotation '<reconcilerName>/status-hint' on the object, as a comma-separated list;
+//     if this list contains the value 'has-observed-generation', the object's status (where appropriate) will be enhanced with an observed generation of -1 before passing it to kstatus;
+//     if this list contains the value 'has-ready-condition', the object's status (where appropriate) will be enhanced by a ready condition with 'Unknown' state
+//   - jobs will be treated differently as with kstatus; other than kstatus, which considers jobs as ready if they are successfully started, this implementation waits for
+//     the JobComplete or JobFailed condidtion to be present on the job's status.
 func NewStatusAnalyzer(reconcilerName string) StatusAnalyzer {
 	return &statusAnalyzer{
 		reconcilerName: reconcilerName,
 	}
 }
 
+// Implement the StatusAnalyzer interface.
 func (s *statusAnalyzer) ComputeStatus(object *unstructured.Unstructured) (Status, error) {
 	if hint, ok := object.GetAnnotations()[s.reconcilerName+"/"+types.AnnotationKeySuffixStatusHint]; ok {
 		object = object.DeepCopy()
