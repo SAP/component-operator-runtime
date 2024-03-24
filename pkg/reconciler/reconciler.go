@@ -186,7 +186,8 @@ func NewReconciler(name string, clnt cluster.Client, options ReconcilerOptions) 
 //
 // Objects will be applied and deleted in waves, according to their apply/delete order. Objects which specify a purge order will be deleted from the cluster at the
 // end of the wave specified as purge order; other than redundant objects, a purged object will remain as Completed in the inventory;
-// and it might be re-applied/re-purged in case it runs out of sync.
+// and it might be re-applied/re-purged in case it runs out of sync. Within a wave, objects are processed following a certain internal order;
+// in particular, instances of types which are part of the wave are processed only if all other objects in that wave have a ready state.
 //
 // This method will change the passed inventory (add or remove elements, change elements). If Apply() returns true, then all objects are successfully reconciled;
 // otherwise, if it returns false, the caller should recall it timely, until it returns true. In any case, the passed inventory should match the state of the
@@ -293,11 +294,11 @@ func (r *Reconciler) Apply(ctx context.Context, inventory *[]*InventoryItem, obj
 	// - have a namespace set although they are not namespaced
 	// - do not have a namespace set although they are namespaced
 	// which exactly happens if
-	// 1. the object is incorrectly specified
+	// 1. the object is incorrectly specified and
 	// 2. calling RESTMapping() above returned a NoMatchError (i.e. the type is currently not known to the api server) and
-	// 3. the type belongs to a (new) api service which is part of this component
+	// 3. the type belongs to a (new) api service which is part of the inventory
 	// such entries can cause trouble, e.g. because InventoryItem.Match() might not work reliably ...
-	// TODO: should we allow at all that api services and according instances are part of the same component?
+	// TODO: should we allow at all that api services and according instances are deployed together?
 
 	// validate annotations
 	for _, object := range objects {
@@ -394,9 +395,10 @@ func (r *Reconciler) Apply(ctx context.Context, inventory *[]*InventoryItem, obj
 		case ReconcilePolicyOnObjectOrComponentChange:
 			digest = fmt.Sprintf("%s@%d", digest, componentRevision)
 		case ReconcilePolicyOnce:
-			// note: if the object already existed with a different reconcile policy, then it will get reconciled one (and only one) more time
 			digest = "__once__"
 		}
+		// note: if the effective reconcile policy of an object changes, it will always be reconciled at least one more time;
+		// this is in particular the case if the policy changes from or to ReconcilePolicyOnce.
 
 		// if item was not found, append an empty item
 		if item == nil {
@@ -763,6 +765,15 @@ func (r *Reconciler) Apply(ctx context.Context, inventory *[]*InventoryItem, obj
 	return numUnready == 0, nil
 }
 
+// Delete objects stored in the inventory from the target cluster and maintain inventory.
+// Objects will be deleted in waves, according to their delete order (as stored in the inventory); that means, the deletion of
+// objects having a certain delete order will only start if all objects with lower delete order are gone. Within a wave, objects are
+// deleted following a certain internal ordering; in particular, if there are instances of types which are part of the wave, then these
+// instances will be deleted first; only if all such instances are gone, the remaining objects of the wave will be deleted.
+//
+// This method will change the passed inventory (remove elements, change elements). If Delete() returns true, then all objects are gone; otherwise,
+// if it returns false, the caller should recall it timely, until it returns true. In any case, the passed inventory should match the state of the
+// inventory after the previous invocation of Delete(); usually, the caller saves the inventory after calling Delete(), and loads it before calling Delete().
 func (r *Reconciler) Delete(ctx context.Context, inventory *[]*InventoryItem) (bool, error) {
 	log := log.FromContext(ctx)
 
@@ -842,6 +853,9 @@ func (r *Reconciler) Delete(ctx context.Context, inventory *[]*InventoryItem) (b
 	return len(*inventory) == 0, nil
 }
 
+// Check if the object set defined by inventory is ready for deletion; that means: check if the inventory contains
+// types (as custom resource definition or from an api service), while there exist instances of these types in the cluster,
+// which are not contained in the inventory.
 func (r *Reconciler) IsDeletionAllowed(ctx context.Context, inventory *[]*InventoryItem) (bool, string, error) {
 	for _, item := range *inventory {
 		switch {

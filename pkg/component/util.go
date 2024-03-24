@@ -11,7 +11,7 @@ import (
 	"strings"
 )
 
-// TODO: consolidate all the util files into an own internal reuse packages
+// TODO: consolidate all the util files into an internal reuse package
 
 func ref[T any](x T) *T {
 	return &x

@@ -178,7 +178,7 @@ func NewHelmGenerator(fsys fs.FS, chartPath string, clnt client.Client) (*HelmGe
 			return nil, err
 		}
 		// Note: we use absolute paths (instead of relative ones) as template names
-		// because the 'Template' builtin needs that to work properly
+		// because the 'Template' builtin variable needs that to work properly
 		t = t.New(include)
 		if _, err := t.Parse(string(raw)); err != nil {
 			return nil, err

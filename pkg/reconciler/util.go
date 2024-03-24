@@ -25,6 +25,8 @@ import (
 	"github.com/sap/component-operator-runtime/pkg/types"
 )
 
+// TODO: consolidate all the util files into an internal reuse package
+
 func ref[T any](x T) *T {
 	return &x
 }

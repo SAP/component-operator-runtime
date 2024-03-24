@@ -9,6 +9,8 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 )
 
+// TODO: consolidate all the util files into an internal reuse package
+
 // Deep-merge two maps with the usual logic and return the result.
 // The first map (x) must be deeply JSON (i.e. consist deeply of JSON values only).
 // The maps given as input will not be changed.
