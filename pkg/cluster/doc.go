@@ -3,8 +3,7 @@ SPDX-FileCopyrightText: 2023 SAP SE or an SAP affiliate company and component-op
 SPDX-License-Identifier: Apache-2.0
 */
 
-package kstatus
-
-func (s Status) String() string {
-	return string(s)
-}
+/*
+Package cluster contains client logic to interact with Kubernetes clusters.
+*/
+package cluster

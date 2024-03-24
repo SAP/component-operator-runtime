@@ -11,7 +11,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-// TODO: the Client interface should be public, because it is returned by component.GetClientFromContext()
 // TODO: should we add a Config() method, i.e. expose the rest.Config used by the client?
 
 // The Client interface extends the controller-runtime client by discovery and event recording capabilities.
