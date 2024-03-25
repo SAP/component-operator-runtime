@@ -382,10 +382,6 @@ func (r *Reconciler) Apply(ctx context.Context, inventory *[]*InventoryItem, obj
 		// retrieve inventory item belonging to this object (if existing)
 		item := getItem(newInventory, object)
 
-		if object.GetName() == "prepare" {
-			fmt.Println("DEBUG")
-		}
-
 		// calculate object digest
 		digest, err := calculateObjectDigest(object)
 		if err != nil {
