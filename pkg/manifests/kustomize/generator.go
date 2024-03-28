@@ -35,6 +35,8 @@ import (
 	"github.com/sap/component-operator-runtime/pkg/types"
 )
 
+// TODO: carve out logic into an internal Kustomization type (similar to the helm Chart case)
+
 // KustomizeGenerator is a Generator implementation that basically renders a given Kustomization.
 type KustomizeGenerator struct {
 	kustomizer *krusty.Kustomizer

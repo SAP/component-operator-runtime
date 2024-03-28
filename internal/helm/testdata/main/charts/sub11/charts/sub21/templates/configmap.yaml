@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Chart.Name }}-{{ .Release.Name }}
+data:
+  capabilities.kubeVersion.Major: {{ .Capabilities.KubeVersion.Major }}
+  template.Name: {{ .Template.Name }}
+  template.BasePath: {{ .Template.BasePath }}
+  sub21.t1: {{ include "sub21.t1" . }}
+  data: {{ .Values.data }}
+  globalData: {{ .Values.global.data }}

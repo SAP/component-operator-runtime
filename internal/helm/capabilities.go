@@ -11,7 +11,7 @@ import (
 	"k8s.io/client-go/discovery"
 )
 
-func GetCapabilities(discoveryClient discovery.DiscoveryInterface) (*CapabilitiesData, error) {
+func GetCapabilities(discoveryClient discovery.DiscoveryInterface) (*Capabilities, error) {
 	kubeVersion, err := discoveryClient.ServerVersion()
 	if err != nil {
 		return nil, err
@@ -27,8 +27,8 @@ func GetCapabilities(discoveryClient discovery.DiscoveryInterface) (*Capabilitie
 			apiVersions = append(apiVersions, apiResourceList.GroupVersion+"/"+apiResource.Kind)
 		}
 	}
-	capabilities := &CapabilitiesData{
-		KubeVersion: KubeVersionData{
+	capabilities := &Capabilities{
+		KubeVersion: KubeVersion{
 			Version:    kubeVersion.GitVersion,
 			Major:      kubeVersion.Major,
 			Minor:      kubeVersion.Minor,

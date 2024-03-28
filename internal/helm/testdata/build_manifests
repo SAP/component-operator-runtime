@@ -1,0 +1,14 @@
+#!/bin/bash
+
+set -eo pipefail
+
+cd $(dirname $0)
+
+rm -rf manifests
+mkdir manifests
+
+for i in values/*; do
+  j=$(basename $i)
+  echo $j
+  helm template my-name main -f values/$j > manifests/$j
+done
