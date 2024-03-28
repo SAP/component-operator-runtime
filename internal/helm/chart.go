@@ -159,6 +159,9 @@ func ParseChart(fsys fs.FS, chartPath string, parent *Chart) (*Chart, error) {
 			return nil, fmt.Errorf("dependent chart %s not found", dep.Name)
 		}
 
+		// TODO: validate dependency version against actual version in subchart's Chart.yaml
+		// TODO: also consider Chart.lock?
+
 		for _, val := range dep.ImportValues {
 			if v, _, ok := digMap(subChart.values, val.Child); ok {
 				for k, v := range v {
