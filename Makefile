@@ -16,6 +16,10 @@ fmt: ## Run go fmt against code.
 vet: ## Run go vet against code.
 	go vet ./...
 
+.PHONY: test
+test:
+	go test ./internal/... ./pkg/...
+
 ##@ Build Dependencies
 
 ## Location to install dependencies to
