@@ -1,0 +1,5 @@
+exports:
+  data:
+    sub11a: 1
+customExports:
+  sub11b: 2

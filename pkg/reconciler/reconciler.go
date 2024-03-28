@@ -198,6 +198,8 @@ func (r *Reconciler) Apply(ctx context.Context, inventory *[]*InventoryItem, obj
 
 	hashedOwnerId := sha256base32([]byte(ownerId))
 
+	// TODO: de-duplicate objects (or throw an error if there are duplicates)
+
 	// normalize objects; that means:
 	// - check that unstructured objects have valid type information set, and convert them to their concrete type if known to the scheme
 	// - check that non-unstructured types are known to the scheme, and validate/set their type information
