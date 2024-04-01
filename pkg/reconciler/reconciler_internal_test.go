@@ -3,7 +3,7 @@ SPDX-FileCopyrightText: 2023 SAP SE or an SAP affiliate company and component-op
 SPDX-License-Identifier: Apache-2.0
 */
 
-package component
+package reconciler
 
 import (
 	"context"
@@ -13,40 +13,40 @@ import (
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/uuid"
 	apiregistrationv1 "k8s.io/kube-aggregator/pkg/apis/apiregistration/v1"
 	fieldvalue "sigs.k8s.io/structured-merge-diff/v4/value"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/sap/component-operator-runtime/internal/cluster"
 	. "github.com/sap/component-operator-runtime/internal/testing"
+
+	"github.com/sap/component-operator-runtime/internal/cluster"
 	barv1alpha1 "github.com/sap/component-operator-runtime/internal/testing/bar/api/v1alpha1"
 	foov1alpha1 "github.com/sap/component-operator-runtime/internal/testing/foo/api/v1alpha1"
 	"github.com/sap/component-operator-runtime/pkg/types"
 )
 
-var _ = Describe("testing: target.go", func() {
+var _ = Describe("testing: reconciler.go", func() {
 	var reconcilerName string
-	var reconcilerId string
 	var ctx context.Context
 	var cli cluster.Client
 
 	BeforeEach(func() {
 		reconcilerName = "reconciler.testing.local"
-		reconcilerId = "1"
 		ctx = Ctx()
 		cli = Client()
 	})
 
-	Context("testing: ReadObject()", func() {
-		var target *reconcileTarget[Component]
+	Context("testing: readObject()", func() {
+		var reconciler *Reconciler
 		var namespace string
 		var foo *foov1alpha1.Foo
 		var bar *barv1alpha1.Bar
 
 		BeforeEach(func() {
-			target = newReconcileTarget[Component](reconcilerName, reconcilerId, cli, nil, false, "", "")
+			reconciler = NewReconciler(reconcilerName, cli, ReconcilerOptions{})
 			namespace = CreateNamespace()
 
 			foo = &foov1alpha1.Foo{
@@ -65,25 +65,34 @@ var _ = Describe("testing: target.go", func() {
 		})
 
 		It("should successfully read an object whose type is known to the scheme", func() {
-			_foo, err := target.readObject(ctx, foo)
+			_foo, err := reconciler.readObject(ctx, foo)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(_foo.GetUID()).To(Equal(foo.UID))
 		})
 
 		It("should successfully read an object whose type is not known to the scheme", func() {
-			_bar, err := target.readObject(ctx, bar)
+			_bar, err := reconciler.readObject(ctx, bar)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(_bar.GetUID()).To(Equal(bar.UID))
 		})
 	})
 
-	Context("testing: CreateObject()", func() {
-		var target *reconcileTarget[Component]
+	Context("testing: createObject()", func() {
+		var reconciler *Reconciler
 		var namespace string
+		var existingBar *barv1alpha1.Bar
 
 		BeforeEach(func() {
-			target = newReconcileTarget[Component](reconcilerName, reconcilerId, cli, nil, false, "", "")
+			reconciler = NewReconciler(reconcilerName, cli, ReconcilerOptions{})
 			namespace = CreateNamespace()
+
+			existingBar = &barv1alpha1.Bar{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace:    namespace,
+					GenerateName: "test-",
+				},
+			}
+			CreateObject(existingBar, "")
 		})
 
 		AfterEach(func() {
@@ -95,7 +104,7 @@ var _ = Describe("testing: target.go", func() {
 				TypeMeta:   metav1.TypeMeta{APIVersion: foov1alpha1.GroupVersion.String(), Kind: "Foo"},
 				ObjectMeta: metav1.ObjectMeta{Namespace: namespace, GenerateName: "test-"},
 			}
-			err := target.createObject(ctx, foo, foo)
+			err := reconciler.createObject(ctx, foo, foo, UpdatePolicyReplace)
 			Expect(err).NotTo(HaveOccurred())
 			_foo := ReadObject(foo)
 			Expect(_foo.GetUID()).To(Equal(foo.UID))
@@ -106,7 +115,7 @@ var _ = Describe("testing: target.go", func() {
 				TypeMeta:   metav1.TypeMeta{APIVersion: barv1alpha1.GroupVersion.String(), Kind: "Bar"},
 				ObjectMeta: metav1.ObjectMeta{Namespace: namespace, GenerateName: "test-"},
 			}
-			err := target.createObject(ctx, bar, bar)
+			err := reconciler.createObject(ctx, bar, bar, UpdatePolicyReplace)
 			Expect(err).NotTo(HaveOccurred())
 			_bar := ReadObject(bar)
 			Expect(_bar.GetUID()).To(Equal(bar.UID))
@@ -117,24 +126,74 @@ var _ = Describe("testing: target.go", func() {
 				TypeMeta:   metav1.TypeMeta{APIVersion: barv1alpha1.GroupVersion.String(), Kind: "Bar"},
 				ObjectMeta: metav1.ObjectMeta{Namespace: namespace, GenerateName: "test-"},
 			})
-			err := target.createObject(ctx, bar, bar)
+			err := reconciler.createObject(ctx, bar, bar, UpdatePolicyReplace)
 			Expect(err).NotTo(HaveOccurred())
 			_bar := ReadObject(bar)
 			Expect(_bar.GetUID()).To(Equal(bar.GetUID()))
+		})
+
+		It("should successfully create an object (using ssa-merge)", func() {
+			bar := AsUnstructured(&barv1alpha1.Bar{
+				TypeMeta:   metav1.TypeMeta{APIVersion: barv1alpha1.GroupVersion.String(), Kind: "Bar"},
+				ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: fmt.Sprintf("test-%s", uuid.NewUUID())},
+			})
+			err := reconciler.createObject(ctx, bar, bar, UpdatePolicySsaMerge)
+			Expect(err).NotTo(HaveOccurred())
+			_bar := ReadObject(bar)
+			Expect(_bar.GetUID()).To(Equal(bar.GetUID()))
+		})
+
+		It("should successfully create an object (using ssa-override)", func() {
+			bar := AsUnstructured(&barv1alpha1.Bar{
+				TypeMeta:   metav1.TypeMeta{APIVersion: barv1alpha1.GroupVersion.String(), Kind: "Bar"},
+				ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: fmt.Sprintf("test-%s", uuid.NewUUID())},
+			})
+			err := reconciler.createObject(ctx, bar, bar, UpdatePolicySsaOverride)
+			Expect(err).NotTo(HaveOccurred())
+			_bar := ReadObject(bar)
+			Expect(_bar.GetUID()).To(Equal(bar.GetUID()))
+		})
+
+		It("should reject the creation of an existing object", func() {
+			bar := AsUnstructured(&barv1alpha1.Bar{
+				TypeMeta:   metav1.TypeMeta{APIVersion: barv1alpha1.GroupVersion.String(), Kind: "Bar"},
+				ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: existingBar.Name},
+			})
+			err := reconciler.createObject(ctx, bar, bar, UpdatePolicyReplace)
+			if err == nil {
+				Expect(err).To(HaveOccurred())
+			}
+			if !apierrors.IsAlreadyExists(err) {
+				Expect(err).NotTo(HaveOccurred())
+			}
+			err = reconciler.createObject(ctx, bar, bar, UpdatePolicySsaMerge)
+			if err == nil {
+				Expect(err).To(HaveOccurred())
+			}
+			if !apierrors.IsConflict(err) {
+				Expect(err).NotTo(HaveOccurred())
+			}
+			err = reconciler.createObject(ctx, bar, bar, UpdatePolicySsaOverride)
+			if err == nil {
+				Expect(err).To(HaveOccurred())
+			}
+			if !apierrors.IsConflict(err) {
+				Expect(err).NotTo(HaveOccurred())
+			}
 		})
 
 		// TODO: add a case validating that the finalizer is added for crds and api services
 	})
 
 	Context("testing: updateObject()", func() {
-		var target *reconcileTarget[Component]
+		var reconciler *Reconciler
 		var namespace string
 		var foo *foov1alpha1.Foo
 		var bar *barv1alpha1.Bar
 		var fooComplex *foov1alpha1.Foo
 
 		BeforeEach(func() {
-			target = newReconcileTarget[Component](reconcilerName, reconcilerId, cli, nil, false, "", "")
+			reconciler = NewReconciler(reconcilerName, cli, ReconcilerOptions{})
 			namespace = CreateNamespace()
 
 			foo = &foov1alpha1.Foo{
@@ -188,7 +247,7 @@ var _ = Describe("testing: target.go", func() {
 					Annotations: map[string]string{"testing.cs.sap.com/key": "b"},
 				},
 			}
-			err := target.updateObject(ctx, newFoo, AsUnstructured(foo), foo, UpdatePolicyReplace)
+			err := reconciler.updateObject(ctx, newFoo, AsUnstructured(foo), foo, UpdatePolicyReplace)
 			Expect(err).NotTo(HaveOccurred())
 			_foo := ReadObject(foo)
 			Expect(_foo.GetUID()).To(Equal(foo.UID))
@@ -204,7 +263,7 @@ var _ = Describe("testing: target.go", func() {
 					Annotations: map[string]string{"testing.cs.sap.com/key": "b"},
 				},
 			}
-			err := target.updateObject(ctx, newBar, AsUnstructured(bar), bar, UpdatePolicyReplace)
+			err := reconciler.updateObject(ctx, newBar, AsUnstructured(bar), bar, UpdatePolicyReplace)
 			Expect(err).NotTo(HaveOccurred())
 			_bar := ReadObject(bar)
 			Expect(_bar.GetUID()).To(Equal(bar.UID))
@@ -220,7 +279,7 @@ var _ = Describe("testing: target.go", func() {
 					Annotations: map[string]string{"testing.cs.sap.com/key": "b"},
 				},
 			})
-			err := target.updateObject(ctx, newBar, AsUnstructured(bar), bar, UpdatePolicyReplace)
+			err := reconciler.updateObject(ctx, newBar, AsUnstructured(bar), bar, UpdatePolicyReplace)
 			Expect(err).NotTo(HaveOccurred())
 			_bar := ReadObject(bar)
 			Expect(_bar.GetUID()).To(Equal(bar.UID))
@@ -237,21 +296,21 @@ var _ = Describe("testing: target.go", func() {
 					ResourceVersion: "1",
 				},
 			})
-			err := target.updateObject(ctx, newBar, AsUnstructured(bar), bar, UpdatePolicyReplace)
+			err := reconciler.updateObject(ctx, newBar, AsUnstructured(bar), bar, UpdatePolicyReplace)
 			if err == nil {
 				Expect(err).To(HaveOccurred())
 			}
 			if !apierrors.IsConflict(err) {
 				Expect(err).NotTo(HaveOccurred())
 			}
-			err = target.updateObject(ctx, newBar, AsUnstructured(bar), bar, UpdatePolicySsaMerge)
+			err = reconciler.updateObject(ctx, newBar, AsUnstructured(bar), bar, UpdatePolicySsaMerge)
 			if err == nil {
 				Expect(err).To(HaveOccurred())
 			}
 			if !apierrors.IsConflict(err) {
 				Expect(err).NotTo(HaveOccurred())
 			}
-			err = target.updateObject(ctx, newBar, AsUnstructured(bar), bar, UpdatePolicySsaOverride)
+			err = reconciler.updateObject(ctx, newBar, AsUnstructured(bar), bar, UpdatePolicySsaOverride)
 			if err == nil {
 				Expect(err).To(HaveOccurred())
 			}
@@ -270,7 +329,7 @@ var _ = Describe("testing: target.go", func() {
 					Finalizers:  []string{"testing.cs.sap.com/finalizer-from-reconciler"},
 				},
 			}
-			err := target.updateObject(ctx, newFooComplex, AsUnstructured(fooComplex), fooComplex, UpdatePolicyReplace)
+			err := reconciler.updateObject(ctx, newFooComplex, AsUnstructured(fooComplex), fooComplex, UpdatePolicyReplace)
 			Expect(err).NotTo(HaveOccurred())
 			_fooComplex := ReadObject(fooComplex)
 			Expect(_fooComplex.GetUID()).To(Equal(fooComplex.UID))
@@ -300,7 +359,7 @@ var _ = Describe("testing: target.go", func() {
 					},
 				},
 			}
-			err := target.updateObject(ctx, newFooComplex, AsUnstructured(fooComplex), fooComplex, UpdatePolicySsaMerge)
+			err := reconciler.updateObject(ctx, newFooComplex, AsUnstructured(fooComplex), fooComplex, UpdatePolicySsaMerge)
 			Expect(err).NotTo(HaveOccurred())
 			_fooComplex := ReadObject(fooComplex)
 			Expect(_fooComplex.GetUID()).To(Equal(fooComplex.UID))
@@ -340,7 +399,7 @@ var _ = Describe("testing: target.go", func() {
 					},
 				},
 			}
-			err := target.updateObject(ctx, newFooComplex, AsUnstructured(fooComplex), fooComplex, UpdatePolicySsaOverride)
+			err := reconciler.updateObject(ctx, newFooComplex, AsUnstructured(fooComplex), fooComplex, UpdatePolicySsaOverride)
 			Expect(err).NotTo(HaveOccurred())
 			_fooComplex := ReadObject(fooComplex)
 			Expect(_fooComplex.GetUID()).To(Equal(fooComplex.UID))
@@ -364,12 +423,12 @@ var _ = Describe("testing: target.go", func() {
 	})
 
 	Context("testing: deleteObject()", func() {
-		var target *reconcileTarget[Component]
+		var reconciler *Reconciler
 		var namespace string
 		var foo *foov1alpha1.Foo
 
 		BeforeEach(func() {
-			target = newReconcileTarget[Component](reconcilerName, reconcilerId, cli, nil, false, "", "")
+			reconciler = NewReconciler(reconcilerName, cli, ReconcilerOptions{})
 			namespace = CreateNamespace()
 
 			foo = &foov1alpha1.Foo{
@@ -386,20 +445,20 @@ var _ = Describe("testing: target.go", func() {
 		})
 
 		It("should delete the object (without providing the existing object)", func() {
-			err := target.deleteObject(ctx, foo, nil)
+			err := reconciler.deleteObject(ctx, foo, nil)
 			Expect(err).NotTo(HaveOccurred())
 			EnsureObjectDoesNotExist(foo)
 		})
 
 		It("should delete the object (with providing the existing object)", func() {
-			err := target.deleteObject(ctx, foo, AsUnstructured(foo))
+			err := reconciler.deleteObject(ctx, foo, AsUnstructured(foo))
 			Expect(err).NotTo(HaveOccurred())
 			EnsureObjectDoesNotExist(foo)
 		})
 
 		It("should reject a deletion with a wrong resourceVersion", func() {
 			foo.ResourceVersion = "1"
-			err := target.deleteObject(ctx, foo, AsUnstructured(foo))
+			err := reconciler.deleteObject(ctx, foo, AsUnstructured(foo))
 			if err == nil {
 				Expect(err).To(HaveOccurred())
 			}
@@ -414,12 +473,12 @@ var _ = Describe("testing: target.go", func() {
 	Context("testing: get*Policy()", func() {
 		DescribeTable("testing: getAdoptionPolicy()",
 			func(targetPolicy AdoptionPolicy, annotatedPolicy string, expectedPolicy AdoptionPolicy) {
-				target := newReconcileTarget[Component](reconcilerName, reconcilerId, nil, nil, false, targetPolicy, "")
+				reconciler := NewReconciler(reconcilerName, nil, ReconcilerOptions{AdoptionPolicy: &targetPolicy})
 				object := &metav1.PartialObjectMetadata{}
 				if annotatedPolicy != "" {
 					object.Annotations = map[string]string{reconcilerName + "/" + types.AnnotationKeySuffixAdoptionPolicy: annotatedPolicy}
 				}
-				resultingPolicy, err := target.getAdoptionPolicy(object)
+				resultingPolicy, err := reconciler.getAdoptionPolicy(object)
 				Expect(err).NotTo(HaveOccurred())
 				Expect(resultingPolicy).To(Equal(expectedPolicy))
 			},
@@ -441,13 +500,13 @@ var _ = Describe("testing: target.go", func() {
 
 		DescribeTable("testing: getReconcilePolicy()",
 			func(targetPolicy ReconcilePolicy, annotatedPolicy string, expectedPolicy ReconcilePolicy) {
-				target := newReconcileTarget[Component](reconcilerName, reconcilerId, nil, nil, false, "", "")
-				target.reconcilePolicy = targetPolicy
+				reconciler := NewReconciler(reconcilerName, nil, ReconcilerOptions{})
+				reconciler.reconcilePolicy = targetPolicy
 				object := &metav1.PartialObjectMetadata{}
 				if annotatedPolicy != "" {
 					object.Annotations = map[string]string{reconcilerName + "/" + types.AnnotationKeySuffixReconcilePolicy: annotatedPolicy}
 				}
-				resultingPolicy, err := target.getReconcilePolicy(object)
+				resultingPolicy, err := reconciler.getReconcilePolicy(object)
 				Expect(err).NotTo(HaveOccurred())
 				Expect(resultingPolicy).To(Equal(expectedPolicy))
 			},
@@ -469,12 +528,12 @@ var _ = Describe("testing: target.go", func() {
 
 		DescribeTable("testing: getUpdatePolicy()",
 			func(targetPolicy UpdatePolicy, annotatedPolicy string, expectedPolicy UpdatePolicy) {
-				target := newReconcileTarget[Component](reconcilerName, reconcilerId, nil, nil, false, "", targetPolicy)
+				reconciler := NewReconciler(reconcilerName, nil, ReconcilerOptions{UpdatePolicy: &targetPolicy})
 				object := &metav1.PartialObjectMetadata{}
 				if annotatedPolicy != "" {
 					object.Annotations = map[string]string{reconcilerName + "/" + types.AnnotationKeySuffixUpdatePolicy: annotatedPolicy}
 				}
-				resultingPolicy, err := target.getUpdatePolicy(object)
+				resultingPolicy, err := reconciler.getUpdatePolicy(object)
 				Expect(err).NotTo(HaveOccurred())
 				Expect(resultingPolicy).To(Equal(expectedPolicy))
 			},
@@ -509,13 +568,13 @@ var _ = Describe("testing: target.go", func() {
 
 		DescribeTable("testing: getDeletePolicy()",
 			func(targetPolicy DeletePolicy, annotatedPolicy string, expectedPolicy DeletePolicy) {
-				target := newReconcileTarget[Component](reconcilerName, reconcilerId, nil, nil, false, "", "")
-				target.deletePolicy = targetPolicy
+				reconciler := NewReconciler(reconcilerName, nil, ReconcilerOptions{})
+				reconciler.deletePolicy = targetPolicy
 				object := &metav1.PartialObjectMetadata{}
 				if annotatedPolicy != "" {
 					object.Annotations = map[string]string{reconcilerName + "/" + types.AnnotationKeySuffixDeletePolicy: annotatedPolicy}
 				}
-				resultingPolicy, err := target.getDeletePolicy(object)
+				resultingPolicy, err := reconciler.getDeletePolicy(object)
 				Expect(err).NotTo(HaveOccurred())
 				Expect(resultingPolicy).To(Equal(expectedPolicy))
 			},
@@ -532,19 +591,19 @@ var _ = Describe("testing: target.go", func() {
 	})
 
 	Context("testing: get*Order()", func() {
-		var target *reconcileTarget[Component]
+		var reconciler *Reconciler
 
 		BeforeEach(func() {
-			target = newReconcileTarget[Component](reconcilerName, reconcilerId, nil, nil, false, "", "")
+			reconciler = NewReconciler(reconcilerName, nil, ReconcilerOptions{})
 		})
 
-		DescribeTable("testing: getOrder()",
+		DescribeTable("testing: getApplyOrder()",
 			func(annotatedOrder string, expectError bool, expectedOrder int) {
 				object := &metav1.PartialObjectMetadata{}
 				if annotatedOrder != "" {
-					object.Annotations = map[string]string{reconcilerName + "/" + types.AnnotationKeySuffixOrder: annotatedOrder}
+					object.Annotations = map[string]string{reconcilerName + "/" + types.AnnotationKeySuffixApplyOrder: annotatedOrder}
 				}
-				order, err := target.getOrder(object)
+				order, err := reconciler.getApplyOrder(object)
 				if expectError {
 					Expect(err).To(HaveOccurred())
 				} else {
@@ -569,7 +628,7 @@ var _ = Describe("testing: target.go", func() {
 				if annotatedOrder != "" {
 					object.Annotations = map[string]string{reconcilerName + "/" + types.AnnotationKeySuffixPurgeOrder: annotatedOrder}
 				}
-				order, err := target.getPurgeOrder(object)
+				order, err := reconciler.getPurgeOrder(object)
 				if expectError {
 					Expect(err).To(HaveOccurred())
 				} else {
@@ -577,7 +636,7 @@ var _ = Describe("testing: target.go", func() {
 					Expect(order).To(Equal(expectedOrder))
 				}
 			},
-			Entry(nil, "", false, math.MaxInt),
+			Entry(nil, "", false, math.MaxInt16+1),
 			Entry(nil, "0", false, 0),
 			Entry(nil, "-1", false, -1),
 			Entry(nil, "1", false, 1),
@@ -590,12 +649,14 @@ var _ = Describe("testing: target.go", func() {
 	})
 
 	Context("testing: is*Used()", func() {
-		var target *reconcileTarget[Component]
+		var reconciler *Reconciler
 		var namespace string
+		var ownerId string
 
 		BeforeEach(func() {
-			target = newReconcileTarget[Component](reconcilerName, reconcilerId, cli, nil, false, "", "")
+			reconciler = NewReconciler(reconcilerName, cli, ReconcilerOptions{})
 			namespace = CreateNamespace()
+			ownerId = "test-owner"
 		})
 
 		AfterEach(func() {
@@ -603,8 +664,7 @@ var _ = Describe("testing: target.go", func() {
 		})
 
 		DescribeTable("testing: isCrdUsed()",
-			// TODO: remove the below workaround logic (needed until we are sure that all owner id labels have the new format)
-			func(createUnmanagedInstance bool, createManagedInstance bool, onlyForeign bool, crdHasLegacyOwnerId bool, managedInstanceHasLegacyOwnerId bool) {
+			func(createUnmanagedInstance bool, createManagedInstance bool, onlyForeign bool) {
 				crd := &apiextensionsv1.CustomResourceDefinition{
 					Spec: apiextensionsv1.CustomResourceDefinitionSpec{
 						Group:    foov1alpha1.GroupVersion.Group,
@@ -612,13 +672,8 @@ var _ = Describe("testing: target.go", func() {
 						Names:    apiextensionsv1.CustomResourceDefinitionNames{Kind: "Foo"},
 					},
 				}
-				if crdHasLegacyOwnerId {
-					crd.Labels = map[string]string{reconcilerName + "/" + types.LabelKeySuffixOwnerId: "x_y"}
-					crd.Annotations = map[string]string{reconcilerName + "/" + types.AnnotationKeySuffixOwnerId: "x/y"}
-				} else {
-					crd.Labels = map[string]string{reconcilerName + "/" + types.LabelKeySuffixOwnerId: sha256base32([]byte(reconcilerId + "/x/y"))}
-					crd.Annotations = map[string]string{reconcilerName + "/" + types.AnnotationKeySuffixOwnerId: reconcilerId + "/x/y"}
-				}
+				crd.Labels = map[string]string{reconcilerName + "/" + types.LabelKeySuffixOwnerId: sha256base32([]byte(ownerId))}
+				crd.Annotations = map[string]string{reconcilerName + "/" + types.AnnotationKeySuffixOwnerId: ownerId}
 				if createUnmanagedInstance {
 					foo := &foov1alpha1.Foo{}
 					foo.Namespace = namespace
@@ -629,70 +684,33 @@ var _ = Describe("testing: target.go", func() {
 					foo := &foov1alpha1.Foo{}
 					foo.Namespace = namespace
 					foo.GenerateName = "test-"
-					if managedInstanceHasLegacyOwnerId {
-						foo.Labels = map[string]string{reconcilerName + "/" + types.LabelKeySuffixOwnerId: "x_y"}
-					} else {
-						foo.Labels = map[string]string{reconcilerName + "/" + types.LabelKeySuffixOwnerId: sha256base32([]byte(reconcilerId + "/x/y"))}
-					}
+					foo.Labels = map[string]string{reconcilerName + "/" + types.LabelKeySuffixOwnerId: sha256base32([]byte(ownerId))}
 					CreateObject(foo, "")
 				}
-				used, err := target.isCrdUsed(ctx, crd, onlyForeign)
+				used, err := reconciler.isCrdUsed(ctx, crd, onlyForeign)
 				Expect(err).NotTo(HaveOccurred())
 				Expect(used).To(Equal(createUnmanagedInstance || createManagedInstance && !onlyForeign))
 			},
-			Entry(nil, false, false, false, false, false),
-			Entry(nil, false, true, false, false, false),
-			Entry(nil, true, false, false, false, false),
-			Entry(nil, true, true, false, false, false),
-			Entry(nil, false, false, true, false, false),
-			Entry(nil, false, true, true, false, false),
-			Entry(nil, true, false, true, false, false),
-			Entry(nil, true, true, true, false, false),
-
-			Entry(nil, false, false, false, true, false),
-			Entry(nil, false, true, false, true, false),
-			Entry(nil, true, false, false, true, false),
-			Entry(nil, true, true, false, true, false),
-			Entry(nil, false, false, true, true, false),
-			Entry(nil, false, true, true, true, false),
-			Entry(nil, true, false, true, true, false),
-			Entry(nil, true, true, true, true, false),
-
-			Entry(nil, false, false, false, false, true),
-			Entry(nil, false, true, false, false, true),
-			Entry(nil, true, false, false, false, true),
-			Entry(nil, true, true, false, false, true),
-			Entry(nil, false, false, true, false, true),
-			Entry(nil, false, true, true, false, true),
-			Entry(nil, true, false, true, false, true),
-			Entry(nil, true, true, true, false, true),
-
-			Entry(nil, false, false, false, true, true),
-			Entry(nil, false, true, false, true, true),
-			Entry(nil, true, false, false, true, true),
-			Entry(nil, true, true, false, true, true),
-			Entry(nil, false, false, true, true, true),
-			Entry(nil, false, true, true, true, true),
-			Entry(nil, true, false, true, true, true),
-			Entry(nil, true, true, true, true, true),
+			Entry(nil, false, false, false),
+			Entry(nil, false, true, false),
+			Entry(nil, true, false, false),
+			Entry(nil, true, true, false),
+			Entry(nil, false, false, true),
+			Entry(nil, false, true, true),
+			Entry(nil, true, false, true),
+			Entry(nil, true, true, true),
 		)
 
 		DescribeTable("testing: isApiServiceUsed()",
-			// TODO: remove the below workaround logic (needed until we are sure that all owner id labels have the new format)
-			func(createUnmanagedInstance bool, createManagedInstance bool, onlyForeign bool, apiServiceHasLegacyOwnerId bool, managedInstanceHasLegacyOwnerId bool) {
+			func(createUnmanagedInstance bool, createManagedInstance bool, onlyForeign bool) {
 				apiService := &apiregistrationv1.APIService{
 					Spec: apiregistrationv1.APIServiceSpec{
 						Group:   foov1alpha1.GroupVersion.Group,
 						Version: foov1alpha1.GroupVersion.Version,
 					},
 				}
-				if apiServiceHasLegacyOwnerId {
-					apiService.Labels = map[string]string{reconcilerName + "/" + types.LabelKeySuffixOwnerId: "x_y"}
-					apiService.Annotations = map[string]string{reconcilerName + "/" + types.AnnotationKeySuffixOwnerId: "x/y"}
-				} else {
-					apiService.Labels = map[string]string{reconcilerName + "/" + types.LabelKeySuffixOwnerId: sha256base32([]byte(reconcilerId + "/x/y"))}
-					apiService.Annotations = map[string]string{reconcilerName + "/" + types.AnnotationKeySuffixOwnerId: reconcilerId + "/x/y"}
-				}
+				apiService.Labels = map[string]string{reconcilerName + "/" + types.LabelKeySuffixOwnerId: sha256base32([]byte(ownerId))}
+				apiService.Annotations = map[string]string{reconcilerName + "/" + types.AnnotationKeySuffixOwnerId: ownerId}
 				if createUnmanagedInstance {
 					foo := &foov1alpha1.Foo{}
 					foo.Namespace = namespace
@@ -703,52 +721,21 @@ var _ = Describe("testing: target.go", func() {
 					foo := &foov1alpha1.Foo{}
 					foo.Namespace = namespace
 					foo.GenerateName = "test-"
-					if managedInstanceHasLegacyOwnerId {
-						foo.Labels = map[string]string{reconcilerName + "/" + types.LabelKeySuffixOwnerId: "x_y"}
-					} else {
-						foo.Labels = map[string]string{reconcilerName + "/" + types.LabelKeySuffixOwnerId: sha256base32([]byte(reconcilerId + "/x/y"))}
-					}
+					foo.Labels = map[string]string{reconcilerName + "/" + types.LabelKeySuffixOwnerId: sha256base32([]byte(ownerId))}
 					CreateObject(foo, "")
 				}
-				used, err := target.isApiServiceUsed(ctx, apiService, onlyForeign)
+				used, err := reconciler.isApiServiceUsed(ctx, apiService, onlyForeign)
 				Expect(err).NotTo(HaveOccurred())
 				Expect(used).To(Equal(createUnmanagedInstance || createManagedInstance && !onlyForeign))
 			},
-			Entry(nil, false, false, false, false, false),
-			Entry(nil, false, true, false, false, false),
-			Entry(nil, true, false, false, false, false),
-			Entry(nil, true, true, false, false, false),
-			Entry(nil, false, false, true, false, false),
-			Entry(nil, false, true, true, false, false),
-			Entry(nil, true, false, true, false, false),
-			Entry(nil, true, true, true, false, false),
-
-			Entry(nil, false, false, false, true, false),
-			Entry(nil, false, true, false, true, false),
-			Entry(nil, true, false, false, true, false),
-			Entry(nil, true, true, false, true, false),
-			Entry(nil, false, false, true, true, false),
-			Entry(nil, false, true, true, true, false),
-			Entry(nil, true, false, true, true, false),
-			Entry(nil, true, true, true, true, false),
-
-			Entry(nil, false, false, false, false, true),
-			Entry(nil, false, true, false, false, true),
-			Entry(nil, true, false, false, false, true),
-			Entry(nil, true, true, false, false, true),
-			Entry(nil, false, false, true, false, true),
-			Entry(nil, false, true, true, false, true),
-			Entry(nil, true, false, true, false, true),
-			Entry(nil, true, true, true, false, true),
-
-			Entry(nil, false, false, false, true, true),
-			Entry(nil, false, true, false, true, true),
-			Entry(nil, true, false, false, true, true),
-			Entry(nil, true, true, false, true, true),
-			Entry(nil, false, false, true, true, true),
-			Entry(nil, false, true, true, true, true),
-			Entry(nil, true, false, true, true, true),
-			Entry(nil, true, true, true, true, true),
+			Entry(nil, false, false, false),
+			Entry(nil, false, true, false),
+			Entry(nil, true, false, false),
+			Entry(nil, true, true, false),
+			Entry(nil, false, false, true),
+			Entry(nil, false, true, true),
+			Entry(nil, true, false, true),
+			Entry(nil, true, true, true),
 		)
 	})
 })

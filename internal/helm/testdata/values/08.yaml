@@ -1,0 +1,15 @@
+# test chart condition/tags on first level
+data: root
+sub11:
+  enabled: true
+  data: sub11
+  sub21:
+    data: sub11.sub21
+foo12:
+  data: foo12
+bar12:
+  data: bar12
+global:
+  data: global
+tags:
+  sub11: true

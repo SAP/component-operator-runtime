@@ -5,11 +5,19 @@ SPDX-License-Identifier: Apache-2.0
 
 package helm
 
-type ChartData struct {
-	Name       string `json:"name,omitempty"`
-	Version    string `json:"version,omitempty"`
-	Type       string `json:"type,omitempty"`
-	AppVersion string `json:"appVersion,omitempty"`
+import (
+	"encoding/json"
+	"fmt"
+)
+
+// +kubebuilder:object:generate=true
+
+type ChartMetadata struct {
+	Name         string            `json:"name,omitempty"`
+	Version      string            `json:"version,omitempty"`
+	Type         string            `json:"type,omitempty"`
+	AppVersion   string            `json:"appVersion,omitempty"`
+	Dependencies []ChartDependency `json:"dependencies,omitempty"`
 }
 
 const (
@@ -17,12 +25,51 @@ const (
 	ChartTypeLibrary     = "library"
 )
 
-type TemplateData struct {
+// +kubebuilder:object:generate=true
+
+type ChartDependency struct {
+	Name         string             `json:"name,omitempty"`
+	Alias        string             `json:"alias,omitempty"`
+	Condition    string             `json:"condition,omitempty"`
+	Tags         []string           `json:"tags,omitempty"`
+	ImportValues []ChartImportValue `json:"import-values,omitempty"`
+}
+
+// +kubebuilder:object:generate=true
+
+type ChartImportValue struct {
+	Child  string `json:"child"`
+	Parent string `json:"parent"`
+}
+
+func (v *ChartImportValue) UnmarshalJSON(b []byte) error {
+	if len(b) > 0 && b[0] == '"' {
+		var s string
+		if err := json.Unmarshal(b, &s); err != nil {
+			return err
+		}
+		v.Child = fmt.Sprintf("exports.%s", s)
+	} else {
+		type chartImportValue ChartImportValue
+		w := chartImportValue(*v)
+		if err := json.Unmarshal(b, &w); err != nil {
+			return err
+		}
+		*v = ChartImportValue(w)
+	}
+	return nil
+}
+
+// +kubebuilder:object:generate=true
+
+type Template struct {
 	Name     string `json:"name,omitempty"`
 	BasePath string `json:"basePath,omitempty"`
 }
 
-type ReleaseData struct {
+// +kubebuilder:object:generate=true
+
+type Release struct {
 	Namespace string `json:"namespace,omitempty"`
 	Name      string `json:"name,omitempty"`
 	Service   string `json:"service,omitempty"`
@@ -30,23 +77,16 @@ type ReleaseData struct {
 	IsUpgrade bool   `json:"isUpgrade,omitempty"`
 }
 
-type CapabilitiesData struct {
-	KubeVersion KubeVersionData `json:"kubeVersion,omitempty"`
-	APIVersions ApiVersionsData `json:"apiVersions,omitempty"`
+// +kubebuilder:object:generate=true
+
+type Capabilities struct {
+	KubeVersion KubeVersion `json:"kubeVersion,omitempty"`
+	APIVersions ApiVersions `json:"apiVersions,omitempty"`
 }
 
-type ApiVersionsData []string
+// +kubebuilder:object:generate=true
 
-func (apiVersions ApiVersionsData) Has(version string) bool {
-	for _, v := range apiVersions {
-		if v == version {
-			return true
-		}
-	}
-	return false
-}
-
-type KubeVersionData struct {
+type KubeVersion struct {
 	Version string `json:"version,omitempty"`
 	Major   string `json:"major,omitempty"`
 	Minor   string `json:"minor,omitempty"`
@@ -54,8 +94,21 @@ type KubeVersionData struct {
 	GitVersion string `json:"gitVersion,omitempty"`
 }
 
-func (kubeVersion *KubeVersionData) String() string {
+func (kubeVersion *KubeVersion) String() string {
 	return kubeVersion.Version
+}
+
+// +kubebuilder:object:generate=true
+
+type ApiVersions []string
+
+func (apiVersions ApiVersions) Has(version string) bool {
+	for _, v := range apiVersions {
+		if v == version {
+			return true
+		}
+	}
+	return false
 }
 
 type HookMetadata struct {

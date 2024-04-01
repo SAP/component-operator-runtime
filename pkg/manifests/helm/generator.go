@@ -6,29 +6,17 @@ SPDX-License-Identifier: Apache-2.0
 package helm
 
 import (
-	"bytes"
 	"context"
-	"errors"
 	"fmt"
-	"io"
 	"io/fs"
-	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
-	"text/template"
 
-	"github.com/Masterminds/sprig/v3"
 	"github.com/sap/go-generics/slices"
 
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	utilyaml "k8s.io/apimachinery/pkg/util/yaml"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	kyaml "sigs.k8s.io/yaml"
 
-	"github.com/sap/component-operator-runtime/internal/fileutils"
 	"github.com/sap/component-operator-runtime/internal/helm"
-	"github.com/sap/component-operator-runtime/internal/templatex"
 	"github.com/sap/component-operator-runtime/pkg/component"
 	"github.com/sap/component-operator-runtime/pkg/manifests"
 	"github.com/sap/component-operator-runtime/pkg/types"
@@ -38,9 +26,8 @@ import (
 // A few restrictions apply to the provided Helm chart: it must not contain any subcharts, some template functions are not supported,
 // some bultin variables are not supported, and hooks are processed in a slightly different fashion.
 type HelmGenerator struct {
-	crds      [][]byte
-	templates []*template.Template
-	data      map[string]any
+	client client.Client
+	chart  *helm.Chart
 }
 
 var _ manifests.Generator = &HelmGenerator{}
@@ -54,138 +41,12 @@ var _ manifests.Generator = &HelmGenerator{}
 // relative to the current working directory). If fsys is non-nil, then chartPath should be a relative path; if an absolute path is supplied, it will be turned
 // An empty chartPath will be treated like ".".
 func NewHelmGenerator(fsys fs.FS, chartPath string, clnt client.Client) (*HelmGenerator, error) {
-	g := HelmGenerator{
-		data: make(map[string]any),
-	}
-
-	if fsys == nil {
-		fsys = os.DirFS("/")
-		absoluteChartPath, err := filepath.Abs(chartPath)
-		if err != nil {
-			return nil, err
-		}
-		chartPath = absoluteChartPath[1:]
-	} else if filepath.IsAbs(chartPath) {
-		chartPath = chartPath[1:]
-	}
-	chartPath = filepath.Clean(chartPath)
-
-	chartRaw, err := fs.ReadFile(fsys, filepath.Clean(chartPath+"/Chart.yaml"))
-	if err != nil {
-		return nil, err
-	}
-	chartData := &helm.ChartData{}
-	if err := kyaml.Unmarshal(chartRaw, chartData); err != nil {
-		return nil, err
-	}
-	if chartData.Type == "" {
-		chartData.Type = helm.ChartTypeApplication
-	}
-	if chartData.Type != helm.ChartTypeApplication {
-		return nil, fmt.Errorf("only application charts are supported")
-	}
-	g.data["Chart"] = chartData
-
-	valuesRaw, err := fs.ReadFile(fsys, filepath.Clean(chartPath+"/values.yaml"))
-	if err == nil {
-		g.data["Values"] = &map[string]any{}
-		if err := kyaml.Unmarshal(valuesRaw, g.data["Values"]); err != nil {
-			return nil, err
-		}
-	} else if errors.Is(err, fs.ErrNotExist) {
-		g.data["Values"] = &map[string]any{}
-	} else {
-		return nil, err
-	}
-
-	crds, err := fileutils.Find(fsys, filepath.Clean(chartPath+"/crds"), "*.yaml", fileutils.FileTypeRegular, 0)
-	if err != nil {
-		return nil, err
-	}
-	for _, crd := range crds {
-		raw, err := fs.ReadFile(fsys, crd)
-		if err != nil {
-			return nil, err
-		}
-		g.crds = append(g.crds, raw)
-	}
-
-	includes, err := fileutils.Find(fsys, filepath.Clean(chartPath+"/templates"), "_*", fileutils.FileTypeRegular, 0)
+	chart, err := helm.ParseChart(fsys, chartPath, nil)
 	if err != nil {
 		return nil, err
 	}
 
-	manifests, err := fileutils.Find(fsys, filepath.Clean(chartPath+"/templates"), "[^_]*.yaml", fileutils.FileTypeRegular, 0)
-	if err != nil {
-		return nil, err
-	}
-	if len(manifests) == 0 {
-		return &g, nil
-	}
-
-	// TODO: for now, one level of library subcharts is supported
-	// we should enhance the support of subcharts (nested charts, application charts)
-	subChartPaths, err := fileutils.Find(fsys, filepath.Clean(chartPath+"/charts"), "*", fileutils.FileTypeDir, 1)
-	if err != nil {
-		return nil, err
-	}
-	for _, subChartPath := range subChartPaths {
-		subChartRaw, err := fs.ReadFile(fsys, subChartPath+"/Chart.yaml")
-		if err != nil {
-			return nil, err
-		}
-		var subChartData helm.ChartData
-		if err := kyaml.Unmarshal(subChartRaw, &subChartData); err != nil {
-			return nil, err
-		}
-		if subChartData.Type != helm.ChartTypeLibrary {
-			return nil, fmt.Errorf("only library subcharts are supported (path: %s)", subChartPath)
-		}
-		subIncludes, err := fileutils.Find(fsys, filepath.Clean(subChartPath+"/templates"), "_*", fileutils.FileTypeRegular, 0)
-		if err != nil {
-			return nil, err
-		}
-		includes = append(includes, subIncludes...)
-	}
-
-	var t *template.Template
-	for _, manifest := range manifests {
-		raw, err := fs.ReadFile(fsys, manifest)
-		if err != nil {
-			return nil, err
-		}
-		// Note: we use absolute paths (instead of relative ones) as template names
-		// because the 'Template' builtin needs that to work properly
-		if t == nil {
-			t = template.New(manifest)
-			t.Option("missingkey=zero").
-				Funcs(sprig.TxtFuncMap()).
-				Funcs(templatex.FuncMap()).
-				Funcs(templatex.FuncMapForTemplate(t)).
-				Funcs(templatex.FuncMapForLocalClient(clnt)).
-				Funcs(templatex.FuncMapForClient(nil))
-		} else {
-			t = t.New(manifest)
-		}
-		if _, err := t.Parse(string(raw)); err != nil {
-			return nil, err
-		}
-		g.templates = append(g.templates, t)
-	}
-	for _, include := range includes {
-		raw, err := fs.ReadFile(fsys, include)
-		if err != nil {
-			return nil, err
-		}
-		// Note: we use absolute paths (instead of relative ones) as template names
-		// because the 'Template' builtin needs that to work properly
-		t = t.New(include)
-		if _, err := t.Parse(string(raw)); err != nil {
-			return nil, err
-		}
-	}
-
-	return &g, nil
+	return &HelmGenerator{client: clnt, chart: chart}, nil
 }
 
 // Create a new HelmGenerator as TransformableGenerator.
@@ -228,158 +89,98 @@ func (g *HelmGenerator) Generate(ctx context.Context, namespace string, name str
 		return nil, err
 	}
 
-	annotationKeyReconcilePolicy := reconcilerName + "/" + types.AnnotationKeySuffixReconcilePolicy
-	annotationKeyUpdatePolicy := reconcilerName + "/" + types.AnnotationKeySuffixUpdatePolicy
-	annotationKeyOrder := reconcilerName + "/" + types.AnnotationKeySuffixOrder
-	annotationKeyPurgeOrder := reconcilerName + "/" + types.AnnotationKeySuffixPurgeOrder
-
-	data := make(map[string]any)
-	for k, v := range g.data {
-		data[k] = v
-	}
-
-	capabilities, err := helm.GetCapabilities(clnt.DiscoveryClient())
+	renderedObjects, err := g.chart.Render(helm.RenderContext{
+		LocalClient:     g.client,
+		Client:          clnt,
+		DiscoveryClient: clnt.DiscoveryClient(),
+		Release: &helm.Release{
+			Namespace: namespace,
+			Name:      name,
+			Service:   reconcilerName,
+			// TODO: probably IsInstall and IsUpgrade should be set in a more differentiated way;
+			// but we don't know how, since this framework does not really distinguish between installation and upgrade ...
+			IsInstall: true,
+			IsUpgrade: false,
+		},
+		Values: parameters.ToUnstructured(),
+	})
 	if err != nil {
 		return nil, err
 	}
-	data["Capabilities"] = capabilities
 
-	data["Release"] = &helm.ReleaseData{
-		Namespace: namespace,
-		Name:      name,
-		Service:   reconcilerName,
-		// TODO: probably IsInstall and IsUpgrade should be set in a more differentiated way;
-		// but we don't know how, since this framework does not really distinguish between installation and upgrade ...
-		IsInstall: true,
-		IsUpgrade: false,
-	}
+	annotationKeyReconcilePolicy := reconcilerName + "/" + types.AnnotationKeySuffixReconcilePolicy
+	annotationKeyUpdatePolicy := reconcilerName + "/" + types.AnnotationKeySuffixUpdatePolicy
+	annotationKeyApplyOrder := reconcilerName + "/" + types.AnnotationKeySuffixApplyOrder
+	annotationKeyPurgeOrder := reconcilerName + "/" + types.AnnotationKeySuffixPurgeOrder
 
-	data["Values"] = manifests.MergeMaps(*data["Values"].(*map[string]any), parameters.ToUnstructured())
-
-	for _, f := range g.crds {
-		decoder := utilyaml.NewYAMLToJSONDecoder(bytes.NewBuffer(f))
-		for {
-			object := &unstructured.Unstructured{}
-			if err := decoder.Decode(&object.Object); err != nil {
-				if err == io.EOF {
-					break
-				}
-				return nil, err
+	for _, object := range renderedObjects {
+		annotations := object.GetAnnotations()
+		for key := range annotations {
+			if strings.HasPrefix(key, reconcilerName+"/") {
+				return nil, fmt.Errorf("annotation %s must not be set (object: %s)", key, types.ObjectKeyToString(object))
 			}
-			if object.Object == nil {
-				continue
-			}
-			objects = append(objects, object)
 		}
-	}
-
-	var t0 *template.Template
-	if len(g.templates) > 0 {
-		t0, err = g.templates[0].Clone()
+		hookMetadata, err := helm.ParseHookMetadata(object)
 		if err != nil {
 			return nil, err
 		}
-		t0.Option("missingkey=zero").
-			Funcs(templatex.FuncMapForClient(clnt))
-	}
-	for _, t := range g.templates {
-		data["Template"] = &helm.TemplateData{
-			Name: t.Name(),
-			BasePath: func(path string) string {
-				for path != "." && path != "/" {
-					path = filepath.Dir(path)
-					if filepath.Base(path) == "templates" {
-						return path
-					}
-				}
-				// note: this panic is ok because the way templates were selected ensures that they reside under the 'templates' directory
-				panic("this cannot happen")
-			}(t.Name()),
-		}
-		var buf bytes.Buffer
-		if err := t0.ExecuteTemplate(&buf, t.Name(), data); err != nil {
-			return nil, err
-		}
-		decoder := utilyaml.NewYAMLToJSONDecoder(&buf)
-		for {
-			object := &unstructured.Unstructured{}
-			if err := decoder.Decode(&object.Object); err != nil {
-				if err == io.EOF {
-					break
-				}
-				return nil, err
+		if hookMetadata != nil {
+			if slices.Contains(hookMetadata.Types, helm.HookTypePreDelete) {
+				return nil, fmt.Errorf("helm hook type %s not supported (object: %s)", helm.HookTypePreDelete, types.ObjectKeyToString(object))
 			}
-			if object.Object == nil {
+			if slices.Contains(hookMetadata.Types, helm.HookTypePostDelete) {
+				return nil, fmt.Errorf("helm hook type %s not supported (object: %s)", helm.HookTypePostDelete, types.ObjectKeyToString(object))
+			}
+			hookMetadata.Types = slices.Remove(hookMetadata.Types, helm.HookTypePreRollback)
+			hookMetadata.Types = slices.Remove(hookMetadata.Types, helm.HookTypePostRollback)
+			hookMetadata.Types = slices.Remove(hookMetadata.Types, helm.HookTypeTest)
+			hookMetadata.Types = slices.Remove(hookMetadata.Types, helm.HookTypeTestSuccess)
+			if len(hookMetadata.Types) == 0 {
 				continue
 			}
-			annotations := object.GetAnnotations()
-			for key := range annotations {
-				if strings.HasPrefix(key, reconcilerName+"/") {
-					return nil, fmt.Errorf("annotation %s must not be set (object: %s)", key, types.ObjectKeyToString(object))
-				}
+			if slices.Contains(hookMetadata.DeletePolicies, helm.HookDeletePolicyHookFailed) {
+				return nil, fmt.Errorf("helm delete policy %s is not supported (object: %s)", helm.HookDeletePolicyHookFailed, types.ObjectKeyToString(object))
 			}
-			hookMetadata, err := helm.ParseHookMetadata(object)
-			if err != nil {
-				return nil, err
+			if slices.Contains(hookMetadata.DeletePolicies, helm.HookDeletePolicyBeforeHookCreation) {
+				annotations[annotationKeyUpdatePolicy] = types.UpdatePolicyRecreate
 			}
-			if hookMetadata != nil {
-				if slices.Contains(hookMetadata.Types, helm.HookTypePreDelete) {
-					return nil, fmt.Errorf("helm hook type %s not supported (object: %s)", helm.HookTypePreDelete, types.ObjectKeyToString(object))
+			switch {
+			case slices.Equal(slices.Sort(hookMetadata.Types), slices.Sort([]string{helm.HookTypePreInstall})):
+				annotations[annotationKeyReconcilePolicy] = types.ReconcilePolicyOnce
+				annotations[annotationKeyApplyOrder] = strconv.Itoa(hookMetadata.Weight - helm.HookMaxWeight - 1)
+				if slices.Contains(hookMetadata.DeletePolicies, helm.HookDeletePolicyHookSucceeded) {
+					annotations[annotationKeyPurgeOrder] = strconv.Itoa(-1)
 				}
-				if slices.Contains(hookMetadata.Types, helm.HookTypePostDelete) {
-					return nil, fmt.Errorf("helm hook type %s not supported (object: %s)", helm.HookTypePostDelete, types.ObjectKeyToString(object))
+			case slices.Equal(slices.Sort(hookMetadata.Types), slices.Sort([]string{helm.HookTypePostInstall})):
+				annotations[annotationKeyReconcilePolicy] = types.ReconcilePolicyOnce
+				annotations[annotationKeyApplyOrder] = strconv.Itoa(hookMetadata.Weight - helm.HookMinWeight + 1)
+				if slices.Contains(hookMetadata.DeletePolicies, helm.HookDeletePolicyHookSucceeded) {
+					annotations[annotationKeyPurgeOrder] = strconv.Itoa(helm.HookMaxWeight - helm.HookMinWeight + 1)
 				}
-				hookMetadata.Types = slices.Remove(hookMetadata.Types, helm.HookTypePreRollback)
-				hookMetadata.Types = slices.Remove(hookMetadata.Types, helm.HookTypePostRollback)
-				hookMetadata.Types = slices.Remove(hookMetadata.Types, helm.HookTypeTest)
-				hookMetadata.Types = slices.Remove(hookMetadata.Types, helm.HookTypeTestSuccess)
-				if len(hookMetadata.Types) == 0 {
-					continue
+			case slices.Equal(slices.Sort(hookMetadata.Types), slices.Sort([]string{helm.HookTypePreInstall, helm.HookTypePreUpgrade})):
+				annotations[annotationKeyReconcilePolicy] = types.ReconcilePolicyOnObjectOrComponentChange
+				annotations[annotationKeyApplyOrder] = strconv.Itoa(hookMetadata.Weight - helm.HookMaxWeight - 1)
+				if slices.Contains(hookMetadata.DeletePolicies, helm.HookDeletePolicyHookSucceeded) {
+					annotations[annotationKeyPurgeOrder] = strconv.Itoa(-1)
 				}
-				if slices.Contains(hookMetadata.DeletePolicies, helm.HookDeletePolicyHookFailed) {
-					return nil, fmt.Errorf("helm delete policy %s is not supported (object: %s)", helm.HookDeletePolicyHookFailed, types.ObjectKeyToString(object))
+			case slices.Equal(slices.Sort(hookMetadata.Types), slices.Sort([]string{helm.HookTypePostInstall, helm.HookTypePostUpgrade})):
+				annotations[annotationKeyReconcilePolicy] = types.ReconcilePolicyOnObjectOrComponentChange
+				annotations[annotationKeyApplyOrder] = strconv.Itoa(hookMetadata.Weight - helm.HookMinWeight + 1)
+				if slices.Contains(hookMetadata.DeletePolicies, helm.HookDeletePolicyHookSucceeded) {
+					annotations[annotationKeyPurgeOrder] = strconv.Itoa(helm.HookMaxWeight - helm.HookMinWeight + 1)
 				}
-				if slices.Contains(hookMetadata.DeletePolicies, helm.HookDeletePolicyBeforeHookCreation) {
-					annotations[annotationKeyUpdatePolicy] = types.UpdatePolicyRecreate
+			case slices.Equal(slices.Sort(hookMetadata.Types), slices.Sort([]string{helm.HookTypePreInstall, helm.HookTypePreUpgrade, helm.HookTypePostInstall, helm.HookTypePostUpgrade})):
+				annotations[annotationKeyReconcilePolicy] = types.ReconcilePolicyOnObjectOrComponentChange
+				annotations[annotationKeyApplyOrder] = strconv.Itoa(hookMetadata.Weight - helm.HookMaxWeight - 1)
+				if slices.Contains(hookMetadata.DeletePolicies, helm.HookDeletePolicyHookSucceeded) {
+					annotations[annotationKeyPurgeOrder] = strconv.Itoa(helm.HookMaxWeight - helm.HookMinWeight + 1)
 				}
-				switch {
-				case slices.Equal(slices.Sort(hookMetadata.Types), slices.Sort([]string{helm.HookTypePreInstall})):
-					annotations[annotationKeyReconcilePolicy] = types.ReconcilePolicyOnce
-					annotations[annotationKeyOrder] = strconv.Itoa(hookMetadata.Weight - helm.HookMaxWeight - 1)
-					if slices.Contains(hookMetadata.DeletePolicies, helm.HookDeletePolicyHookSucceeded) {
-						annotations[annotationKeyPurgeOrder] = strconv.Itoa(-1)
-					}
-				case slices.Equal(slices.Sort(hookMetadata.Types), slices.Sort([]string{helm.HookTypePostInstall})):
-					annotations[annotationKeyReconcilePolicy] = types.ReconcilePolicyOnce
-					annotations[annotationKeyOrder] = strconv.Itoa(hookMetadata.Weight - helm.HookMinWeight + 1)
-					if slices.Contains(hookMetadata.DeletePolicies, helm.HookDeletePolicyHookSucceeded) {
-						annotations[annotationKeyPurgeOrder] = strconv.Itoa(helm.HookMaxWeight - helm.HookMinWeight + 1)
-					}
-				case slices.Equal(slices.Sort(hookMetadata.Types), slices.Sort([]string{helm.HookTypePreInstall, helm.HookTypePreUpgrade})):
-					annotations[annotationKeyReconcilePolicy] = types.ReconcilePolicyOnObjectOrComponentChange
-					annotations[annotationKeyOrder] = strconv.Itoa(hookMetadata.Weight - helm.HookMaxWeight - 1)
-					if slices.Contains(hookMetadata.DeletePolicies, helm.HookDeletePolicyHookSucceeded) {
-						annotations[annotationKeyPurgeOrder] = strconv.Itoa(-1)
-					}
-				case slices.Equal(slices.Sort(hookMetadata.Types), slices.Sort([]string{helm.HookTypePostInstall, helm.HookTypePostUpgrade})):
-					annotations[annotationKeyReconcilePolicy] = types.ReconcilePolicyOnObjectOrComponentChange
-					annotations[annotationKeyOrder] = strconv.Itoa(hookMetadata.Weight - helm.HookMinWeight + 1)
-					if slices.Contains(hookMetadata.DeletePolicies, helm.HookDeletePolicyHookSucceeded) {
-						annotations[annotationKeyPurgeOrder] = strconv.Itoa(helm.HookMaxWeight - helm.HookMinWeight + 1)
-					}
-				case slices.Equal(slices.Sort(hookMetadata.Types), slices.Sort([]string{helm.HookTypePreInstall, helm.HookTypePreUpgrade, helm.HookTypePostInstall, helm.HookTypePostUpgrade})):
-					annotations[annotationKeyReconcilePolicy] = types.ReconcilePolicyOnObjectOrComponentChange
-					annotations[annotationKeyOrder] = strconv.Itoa(hookMetadata.Weight - helm.HookMaxWeight - 1)
-					if slices.Contains(hookMetadata.DeletePolicies, helm.HookDeletePolicyHookSucceeded) {
-						annotations[annotationKeyPurgeOrder] = strconv.Itoa(helm.HookMaxWeight - helm.HookMinWeight + 1)
-					}
-				default:
-					return nil, fmt.Errorf("unsupported helm hook type combination: %s (object: %s)", strings.Join(hookMetadata.Types, ","), types.ObjectKeyToString(object))
-				}
-				object.SetAnnotations(annotations)
+			default:
+				return nil, fmt.Errorf("unsupported helm hook type combination: %s (object: %s)", strings.Join(hookMetadata.Types, ","), types.ObjectKeyToString(object))
 			}
-			objects = append(objects, object)
+			object.SetAnnotations(annotations)
 		}
+		objects = append(objects, object)
 	}
 
 	return objects, nil

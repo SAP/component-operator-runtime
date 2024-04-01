@@ -3,7 +3,7 @@ SPDX-FileCopyrightText: 2023 SAP SE or an SAP affiliate company and component-op
 SPDX-License-Identifier: Apache-2.0
 */
 
-package component_test
+package reconciler_test
 
 import (
 	"context"
@@ -26,6 +26,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	. "github.com/sap/component-operator-runtime/internal/testing"
+
 	barv1alpha1 "github.com/sap/component-operator-runtime/internal/testing/bar/api/v1alpha1"
 	foov1alpha1 "github.com/sap/component-operator-runtime/internal/testing/foo/api/v1alpha1"
 )

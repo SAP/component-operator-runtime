@@ -35,6 +35,8 @@ import (
 	"github.com/sap/component-operator-runtime/pkg/types"
 )
 
+// TODO: carve out logic into an internal Kustomization type (similar to the helm Chart case)
+
 // KustomizeGenerator is a Generator implementation that basically renders a given Kustomization.
 type KustomizeGenerator struct {
 	kustomizer *krusty.Kustomizer
@@ -104,7 +106,7 @@ func NewKustomizeGenerator(fsys fs.FS, kustomizationPath string, templateSuffix 
 				t.Option("missingkey=zero").
 					Funcs(sprig.TxtFuncMap()).
 					Funcs(templatex.FuncMap()).
-					Funcs(templatex.FuncMapForTemplate(t)).
+					Funcs(templatex.FuncMapForTemplate(nil)).
 					Funcs(templatex.FuncMapForLocalClient(clnt)).
 					Funcs(templatex.FuncMapForClient(nil)).
 					Funcs(funcMapForGenerateContext(nil, nil, "", ""))
@@ -187,10 +189,14 @@ func (g *KustomizeGenerator) Generate(ctx context.Context, namespace string, nam
 				return nil, err
 			}
 			t0.Option("missingkey=zero").
+				Funcs(templatex.FuncMapForTemplate(t0)).
 				Funcs(templatex.FuncMapForClient(clnt)).
 				Funcs(funcMapForGenerateContext(serverInfo, component, namespace, name))
 		}
 		var buf bytes.Buffer
+		// TODO: templates (accidentally or intentionally) could modify data, or even some of the objects supplied through builtin functions;
+		// such as serverInfo or component; this should be hardened, e.g. by deep-copying things upfront, or serializing them; see the comment in
+		// funcMapForGenerateContext()
 		if err := t0.ExecuteTemplate(&buf, t.Name(), data); err != nil {
 			return nil, err
 		}

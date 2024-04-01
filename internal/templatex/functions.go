@@ -72,8 +72,8 @@ func toYaml(data any) (string, error) {
 	return strings.TrimSuffix(string(raw), "\n"), nil
 }
 
-func fromYaml(data string) (map[string]any, error) {
-	var res map[string]any
+func fromYaml(data string) (any, error) {
+	var res any
 	if err := kyaml.Unmarshal([]byte(data), &res); err != nil {
 		return nil, err
 	}
@@ -107,8 +107,8 @@ func toRawJson(data any) (string, error) {
 	return strings.TrimSuffix(buf.String(), "\n"), nil
 }
 
-func fromJson(data string) (map[string]any, error) {
-	var res map[string]any
+func fromJson(data string) (any, error) {
+	var res any
 	if err := json.Unmarshal([]byte(data), &res); err != nil {
 		return nil, err
 	}

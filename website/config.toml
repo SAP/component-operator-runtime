@@ -89,6 +89,13 @@ section = ["HTML", "print", "RSS"]
     weight = 50
     url = "https://github.com/sap/component-operator-runtime/"
     pre = "<i class='fab fa-github'></i>"
+[[menu.main]]
+    name = "Packages"
+    weight = 60
+    url = "https://pkg.go.dev/github.com/sap/component-operator-runtime/"
+    pre = "<i class='fab fa-golang'></i>"
+
+
 
 [params]
 copyright = "SAP Cloud Solutions - DevOps"

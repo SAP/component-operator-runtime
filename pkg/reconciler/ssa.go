@@ -3,7 +3,7 @@ SPDX-FileCopyrightText: 2023 SAP SE or an SAP affiliate company and component-op
 SPDX-License-Identifier: Apache-2.0
 */
 
-package component
+package reconciler
 
 import (
 	"bytes"
@@ -12,6 +12,7 @@ import (
 
 	"github.com/pkg/errors"
 	"github.com/sap/go-generics/slices"
+
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/structured-merge-diff/v4/fieldpath"
 )
@@ -35,7 +36,11 @@ func replaceFieldManager(managedFields []metav1.ManagedFieldsEntry, managerPrefi
 		if entry == managerEntry {
 			continue
 		}
-		if !slices.Any(managerPrefixes, func(s string) bool { return strings.HasPrefix(entry.Manager, s) }) || entry.Subresource != "" {
+		if entry.Subresource != "" {
+			entries = append(entries, entry)
+			continue
+		}
+		if entry.Manager != manager && !slices.Any(managerPrefixes, func(s string) bool { return strings.HasPrefix(entry.Manager, s) }) {
 			entries = append(entries, entry)
 			continue
 		}

@@ -1,0 +1,5 @@
+exports:
+  data:
+    sub21a: 3
+customExports:
+  sub21b: 4

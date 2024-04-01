@@ -33,6 +33,8 @@ import (
 	"github.com/sap/component-operator-runtime/internal/backoff"
 	"github.com/sap/component-operator-runtime/internal/cluster"
 	"github.com/sap/component-operator-runtime/pkg/manifests"
+	"github.com/sap/component-operator-runtime/pkg/reconciler"
+	"github.com/sap/component-operator-runtime/pkg/status"
 	"github.com/sap/component-operator-runtime/pkg/types"
 )
 
@@ -76,88 +78,14 @@ type ReconcilerOptions struct {
 	// How to react if a dependent object exists but has no or a different owner.
 	// If unspecified, AdoptionPolicyIfUnowned is assumed.
 	// Can be overridden by annotation on object level.
-	AdoptionPolicy *AdoptionPolicy
+	AdoptionPolicy *reconciler.AdoptionPolicy
 	// How to perform updates to dependent objects.
 	// If unspecified, UpdatePolicyReplace is assumed.
 	// Can be overridden by annotation on object level.
-	UpdatePolicy *UpdatePolicy
+	UpdatePolicy *reconciler.UpdatePolicy
 	// Schemebuilder allows to define additional schemes to be made available in the
 	// target client.
 	SchemeBuilder types.SchemeBuilder
-}
-
-// AdoptionPolicy defines how the reconciler reacts if a dependent object exists but has no or a different owner.
-type AdoptionPolicy string
-
-const (
-	// Fail if the dependent object exists but has no or a different owner.
-	AdoptionPolicyNever AdoptionPolicy = "Never"
-	// Adopt existing dependent objects if they have no owner set.
-	AdoptionPolicyIfUnowned AdoptionPolicy = "IfUnowned"
-	// Adopt existing dependent objects, even if they have a conflicting owner.
-	AdoptionPolicyAlways AdoptionPolicy = "Always"
-)
-
-var adoptionPolicyByAnnotation = map[string]AdoptionPolicy{
-	types.AdoptionPolicyNever:     AdoptionPolicyNever,
-	types.AdoptionPolicyIfUnowned: AdoptionPolicyIfUnowned,
-	types.AdoptionPolicyAlways:    AdoptionPolicyAlways,
-}
-
-// ReconcilePolicy defines when the reconciler will reconcile the dependent object.
-type ReconcilePolicy string
-
-const (
-	// Reconcile the dependent object if its manifest, as produced by the generator, changes.
-	ReconcilePolicyOnObjectChange ReconcilePolicy = "OnObjectChange"
-	// Reconcile the dependent object if its manifest, as produced by the generator, changes, or if the owning
-	// component changes (identified by a change of its metadata.generation).
-	ReconcilePolicyOnObjectOrComponentChange ReconcilePolicy = "OnObjectOrComponentChange"
-	// Reconcile the dependent object only once; afterwards it will never be touched again by the reconciler.
-	ReconcilePolicyOnce ReconcilePolicy = "Once"
-)
-
-var reconcilePolicyByAnnotation = map[string]ReconcilePolicy{
-	types.ReconcilePolicyOnObjectChange:            ReconcilePolicyOnObjectChange,
-	types.ReconcilePolicyOnObjectOrComponentChange: ReconcilePolicyOnObjectOrComponentChange,
-	types.ReconcilePolicyOnce:                      ReconcilePolicyOnce,
-}
-
-// UpdatePolicy defines how the reconciler will update dependent objects.
-type UpdatePolicy string
-
-const (
-	// Recreate (that is: delete and create) existing dependent objects.
-	UpdatePolicyRecreate UpdatePolicy = "Recreate"
-	// Replace existing dependent objects.
-	UpdatePolicyReplace UpdatePolicy = "Replace"
-	// Use server side apply to update existing dependents.
-	UpdatePolicySsaMerge UpdatePolicy = "SsaMerge"
-	// Use server side apply to update existing dependents and, in addition, reclaim fields owned by certain
-	// field owners, such as kubectl or helm.
-	UpdatePolicySsaOverride UpdatePolicy = "SsaOverride"
-)
-
-var updatePolicyByAnnotation = map[string]UpdatePolicy{
-	types.UpdatePolicyRecreate:    UpdatePolicyRecreate,
-	types.UpdatePolicyReplace:     UpdatePolicyReplace,
-	types.UpdatePolicySsaMerge:    UpdatePolicySsaMerge,
-	types.UpdatePolicySsaOverride: UpdatePolicySsaOverride,
-}
-
-// DeletePolicy defines how the reconciler will delete dependent objects.
-type DeletePolicy string
-
-const (
-	// Delete dependent objects.
-	DeletePolicyDelete DeletePolicy = "Delete"
-	// Orphan dependent objects.
-	DeletePolicyOrphan DeletePolicy = "Orphan"
-)
-
-var deletePolicyByAnnotation = map[string]DeletePolicy{
-	types.DeletePolicyDelete: DeletePolicyDelete,
-	types.DeletePolicyOrphan: DeletePolicyOrphan,
 }
 
 // Reconciler provides the implementation of controller-runtime's Reconciler interface, for a given Component type T.
@@ -166,6 +94,7 @@ type Reconciler[T Component] struct {
 	id                 string
 	client             cluster.Client
 	resourceGenerator  manifests.Generator
+	statusAnalyzer     status.StatusAnalyzer
 	options            ReconcilerOptions
 	clients            *cluster.ClientFactory
 	backoff            *backoff.Backoff
@@ -187,18 +116,21 @@ func NewReconciler[T Component](name string, resourceGenerator manifests.Generat
 		options.CreateMissingNamespaces = ref(true)
 	}
 	if options.AdoptionPolicy == nil {
-		options.AdoptionPolicy = ref(AdoptionPolicyIfUnowned)
+		options.AdoptionPolicy = ref(reconciler.AdoptionPolicyIfUnowned)
 	}
 	if options.UpdatePolicy == nil {
-		options.UpdatePolicy = ref(UpdatePolicyReplace)
+		options.UpdatePolicy = ref(reconciler.UpdatePolicyReplace)
 	}
 
 	return &Reconciler[T]{
 		name:              name,
 		resourceGenerator: resourceGenerator,
-		options:           options,
-		backoff:           backoff.NewBackoff(10 * time.Second),
-		postReadHooks:     []HookFunc[T]{resolveReferences[T]},
+		// TODO: make statusAnalyzer specifiable via options?
+		statusAnalyzer: status.NewStatusAnalyzer(name),
+		options:        options,
+		// TODO: make backoff configurable via options?
+		backoff:       backoff.NewBackoff(10 * time.Second),
+		postReadHooks: []HookFunc[T]{resolveReferences[T]},
 	}
 }
 
@@ -249,6 +181,11 @@ func (r *Reconciler[T]) Reconcile(ctx context.Context, req ctrl.Request) (result
 	// always attempt to update the status
 	skipStatusUpdate := false
 	defer func() {
+		if r := recover(); r != nil {
+			log.Error(fmt.Errorf("panic occurred during reconcile"), "panic", r)
+			// re-panic in order skip the remaining steps
+			panic(r)
+		}
 		log.V(1).Info("reconcile done", "withError", err != nil, "requeue", result.Requeue || result.RequeueAfter > 0, "requeueAfter", result.RequeueAfter.String())
 		if status.State == StateReady || err != nil {
 			r.backoff.Forget(req)
@@ -295,6 +232,12 @@ func (r *Reconciler[T]) Reconcile(ctx context.Context, req ctrl.Request) (result
 		}
 	}()
 
+	// set a first status (and requeue, because the status update itself will not trigger another reconciliation because of the event filter set)
+	if status.ObservedGeneration <= 0 {
+		status.SetState(StateProcessing, readyConditionReasonNew, "First seen")
+		return ctrl.Result{Requeue: true}, nil
+	}
+
 	// run post-read hooks
 	// note: it's important that this happens after deferring the status handler
 	for hookOrder, hook := range r.postReadHooks {
@@ -303,18 +246,17 @@ func (r *Reconciler[T]) Reconcile(ctx context.Context, req ctrl.Request) (result
 		}
 	}
 
-	// set a first status (and requeue, because the status update itself will not trigger another reconciliation because of the event filter set)
-	if status.ObservedGeneration <= 0 {
-		status.SetState(StateProcessing, readyConditionReasonNew, "First seen")
-		return ctrl.Result{Requeue: true}, nil
-	}
-
 	// setup target
 	targetClient, err := r.getClientForComponent(component)
 	if err != nil {
 		return ctrl.Result{}, errors.Wrap(err, "error getting client for component")
 	}
-	target := newReconcileTarget[T](r.name, r.id, targetClient, r.resourceGenerator, *r.options.CreateMissingNamespaces, *r.options.AdoptionPolicy, *r.options.UpdatePolicy)
+	target := newReconcileTarget[T](r.name, r.id, targetClient, r.resourceGenerator, reconciler.ReconcilerOptions{
+		CreateMissingNamespaces: r.options.CreateMissingNamespaces,
+		AdoptionPolicy:          r.options.AdoptionPolicy,
+		UpdatePolicy:            r.options.UpdatePolicy,
+		StatusAnalyzer:          r.statusAnalyzer,
+	})
 	hookCtx := newContext(ctx).WithClient(targetClient)
 
 	// do the reconciliation
@@ -337,7 +279,7 @@ func (r *Reconciler[T]) Reconcile(ctx context.Context, req ctrl.Request) (result
 				return ctrl.Result{}, errors.Wrapf(err, "error running pre-reconcile hook (%d)", hookOrder)
 			}
 		}
-		ok, err := target.Reconcile(ctx, component)
+		ok, err := target.Apply(ctx, component)
 		if err != nil {
 			log.V(1).Info("error while reconciling dependent resources")
 			return ctrl.Result{}, errors.Wrap(err, "error reconciling dependent resources")

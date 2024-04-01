@@ -40,9 +40,28 @@ jobs:
           echo "Generated artifacts are up-to-date"
         fi
 
-  test-scaffold:
+  unit-and-integration-tests:
     runs-on: ubuntu-22.04
     needs: check-generate
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Setup go
+      uses: actions/setup-go@v5
+      with:
+        go-version-file: 'go.mod'
+
+    - name: Run tests
+      run: |
+        make test
+
+  test-scaffold:
+    runs-on: ubuntu-22.04
+    needs:
+    - check-generate
+    - unit-and-integration-tests
 
     steps:
     - name: Checkout

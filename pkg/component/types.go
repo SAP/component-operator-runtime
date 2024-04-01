@@ -11,6 +11,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	"github.com/sap/component-operator-runtime/pkg/reconciler"
 	"github.com/sap/component-operator-runtime/pkg/types"
 )
 
@@ -152,8 +153,8 @@ type Status struct {
 	LastAppliedAt      *metav1.Time `json:"lastAppliedAt,omitempty"`
 	Conditions         []Condition  `json:"conditions,omitempty"`
 	// +kubebuilder:validation:Enum=Ready;Pending;Processing;DeletionPending;Deleting;Error
-	State     State            `json:"state,omitempty"`
-	Inventory []*InventoryItem `json:"inventory,omitempty"`
+	State     State                       `json:"state,omitempty"`
+	Inventory []*reconciler.InventoryItem `json:"inventory,omitempty"`
 }
 
 // +kubebuilder:object:generate=true
@@ -207,52 +208,4 @@ const (
 	StateDeleting State = "Deleting"
 	// Component state 'Error'.
 	StateError State = "Error"
-)
-
-// TypeInfo represents a Kubernetes type.
-type TypeInfo struct {
-	// API group.
-	Group string `json:"group"`
-	// API group version.
-	Version string `json:"version"`
-	// API kind.
-	Kind string `json:"kind"`
-}
-
-// NameInfo represents an object's namespace and name.
-type NameInfo struct {
-	// Namespace of the referenced object; empty for non-namespaced objects
-	Namespace string `json:"namespace,omitempty"`
-	// Name of the referenced object.
-	Name string `json:"name"`
-}
-
-// +kubebuilder:object:generate=true
-
-// InventoryItem represents a dependent object managed by this operator.
-type InventoryItem struct {
-	// Type of the dependent object.
-	TypeInfo `json:",inline"`
-	// Namespace and name of the dependent object.
-	NameInfo `json:",inline"`
-	// Managed types
-	ManagedTypes []TypeInfo `json:"managedTypes,omitempty"`
-	// Digest of the descriptor of the dependent object.
-	Digest string `json:"digest"`
-	// Phase of the dependent object.
-	Phase string `json:"phase,omitempty"`
-	// Observed status of the dependent object, as observed by kstatus.
-	Status string `json:"status,omitempty"`
-}
-
-const (
-	PhaseScheduledForApplication = "ScheduledForApplication"
-	PhaseScheduledForDeletion    = "ScheduledForDeletion"
-	PhaseScheduledForCompletion  = "ScheduledForCompletion"
-	PhaseCreating                = "Creating"
-	PhaseUpdating                = "Updating"
-	PhaseDeleting                = "Deleting"
-	PhaseCompleting              = "Completing"
-	PhaseReady                   = "Ready"
-	PhaseCompleted               = "Completed"
 )
