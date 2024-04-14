@@ -6,6 +6,8 @@ SPDX-License-Identifier: Apache-2.0
 package status
 
 import (
+	"fmt"
+	"regexp"
 	"strings"
 
 	"github.com/iancoleman/strcase"
@@ -40,22 +42,38 @@ func NewStatusAnalyzer(reconcilerName string) StatusAnalyzer {
 
 // Implement the StatusAnalyzer interface.
 func (s *statusAnalyzer) ComputeStatus(object *unstructured.Unstructured) (Status, error) {
+	var extraConditions []string
+
 	if hint, ok := object.GetAnnotations()[s.reconcilerName+"/"+types.AnnotationKeySuffixStatusHint]; ok {
 		object = object.DeepCopy()
-
 		for _, hint := range strings.Split(hint, ",") {
-			switch strcase.ToKebab(hint) {
+			var key, value string
+			var hasValue bool
+			if match := regexp.MustCompile(`^([^=]+)=(.*)$`).FindStringSubmatch(hint); match != nil {
+				key = match[1]
+				value = match[2]
+				hasValue = true
+			} else {
+				key = hint
+			}
+			switch strcase.ToKebab(key) {
 			case types.StatusHintHasObservedGeneration:
+				if hasValue {
+					return UnknownStatus, fmt.Errorf("status hint %s does not take a value", types.StatusHintHasObservedGeneration)
+				}
 				_, found, err := unstructured.NestedInt64(object.Object, "status", "observedGeneration")
 				if err != nil {
 					return UnknownStatus, err
 				}
 				if !found {
-					if err := unstructured.SetNestedField(object.Object, -1, "status", "observedGeneration"); err != nil {
+					if err := unstructured.SetNestedField(object.Object, int64(-1), "status", "observedGeneration"); err != nil {
 						return UnknownStatus, err
 					}
 				}
 			case types.StatusHintHasReadyCondition:
+				if hasValue {
+					return UnknownStatus, fmt.Errorf("status hint %s does not take a value", types.StatusHintHasReadyCondition)
+				}
 				foundReadyCondition := false
 				conditions, found, err := unstructured.NestedSlice(object.Object, "status", "conditions")
 				if err != nil {
@@ -85,6 +103,13 @@ func (s *statusAnalyzer) ComputeStatus(object *unstructured.Unstructured) (Statu
 						return UnknownStatus, err
 					}
 				}
+			case types.StatusHintConditions:
+				if !hasValue {
+					return UnknownStatus, fmt.Errorf("status hint %s requires a value", types.StatusHintConditions)
+				}
+				extraConditions = append(extraConditions, strings.Split(value, ";")...)
+			default:
+				return UnknownStatus, fmt.Errorf("unknown status hint %s", key)
 			}
 		}
 	}
@@ -93,11 +118,33 @@ func (s *statusAnalyzer) ComputeStatus(object *unstructured.Unstructured) (Statu
 	if err != nil {
 		return UnknownStatus, err
 	}
+	status := Status(res.Status)
+
+	if status == CurrentStatus && len(extraConditions) > 0 {
+		objc, err := kstatus.GetObjectWithConditions(object.UnstructuredContent())
+		if err != nil {
+			return UnknownStatus, err
+		}
+		for _, condition := range extraConditions {
+			found := false
+			for _, cond := range objc.Status.Conditions {
+				if cond.Type == condition {
+					found = true
+					if cond.Status != corev1.ConditionTrue {
+						status = InProgressStatus
+					}
+				}
+			}
+			if !found {
+				status = InProgressStatus
+			}
+		}
+	}
 
 	switch object.GroupVersionKind() {
 	case schema.GroupVersionKind{Group: "batch", Version: "v1", Kind: "Job"}:
 		// other than kstatus we want to consider jobs as InProgress if its pods are still running, resp. did not (yet) finish successfully
-		if res.Status == kstatus.CurrentStatus {
+		if status == CurrentStatus {
 			done := false
 			objc, err := kstatus.GetObjectWithConditions(object.UnstructuredContent())
 			if err != nil {
@@ -114,10 +161,10 @@ func (s *statusAnalyzer) ComputeStatus(object *unstructured.Unstructured) (Statu
 				}
 			}
 			if !done {
-				res.Status = kstatus.InProgressStatus
+				status = InProgressStatus
 			}
 		}
 	}
 
-	return Status(res.Status), nil
+	return status, nil
 }

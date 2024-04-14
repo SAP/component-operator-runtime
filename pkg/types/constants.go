@@ -48,4 +48,5 @@ const (
 const (
 	StatusHintHasObservedGeneration = "has-observed-generation"
 	StatusHintHasReadyCondition     = "has-ready-condition"
+	StatusHintConditions            = "conditions"
 )
