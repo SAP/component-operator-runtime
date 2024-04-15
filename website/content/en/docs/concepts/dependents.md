@@ -42,7 +42,8 @@ To support such cases, the `Generator` implementation can set the following anno
 - `mycomponent-operator.mydomain.io/delete-order` (optional): the wave by which this object will be deleted; that is, if the dependent is no longer part of the component, or if the whole component is being deleted; dependents will be deleted wave by wave; that is, objects of the same wave will be deleted in a canonical order, and the reconciler will only proceed to the next wave if all objects of previous saves are gone; specified orders can be negative or positive numbers between -32768 and 32767, objects with no explicit order set are treated as if they would specify order 0; note that the delete order is completely independent of the apply order
 - `mycomponent-operator.mydomain.io/status-hint` (optional): a comma-separated list of hints that may help the framework to properly identify the state of the annotated dependent object; currently, the following hints are possible:
   - `has-observed-generation`: tells the framework that the dependent object has a `status.observedGeneration` field, even if it is not (yet) set by the responsible controller (some controllers are known to set the observed generation lazily, with the consequence that there is a period right after creation of the dependent object, where the field is missing in the dependent's status)
-  - `has-ready-condition`: tells the framework to count with a ready condition; if it is absent, the condition state will be considered as `Unknown`
+  - `has-ready-condition`: tells the framework to count with a ready condition; if it is absent, the condition status will be considered as `Unknown`
+  - `conditions`: semicolon-separated list of additional conditions that must be present and have a `True` status in order to make the overall status ready
 
 Note that, in the above paragraph, `mycomponent-operator.mydomain.io` has to be replaced with whatever was passed as `name` when calling `NewReconciler()`.
 
