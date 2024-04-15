@@ -241,8 +241,9 @@ func sortObjectsForApply[T client.Object](s []T, orderFunc func(client.Object) i
 
 func sortObjectsForDelete(inventory []*InventoryItem) []*InventoryItem {
 	priority := map[string]int{
-		"CustomResourceDefinition.apiextensions.k8s.io":               -1,
-		"APIService.apiregistration.k8s.io":                           -1,
+		"CustomResourceDefinition.apiextensions.k8s.io": -1,
+		"APIService.apiregistration.k8s.io":             -1,
+		// TODO: should webhook configurations be deleted before order-zero objects?
 		"ValidatingWebhookConfiguration.admissionregistration.k8s.io": 1,
 		"MutatingWebhookConfiguration.admissionregistration.k8s.io":   1,
 		"Service":                         2,

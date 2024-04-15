@@ -48,7 +48,7 @@ type {{ .kind }}Spec struct {
 	// component.RequeueSpec `json:",inline"`
 	// Uncomment the following if you want to implement the RetryConfiguration interface
 	// (that is, want to allow to override the default retry interval, which equals the effective requeue interval).
-	// component.RequeueSpec `json:",inline"`
+	// component.RetrySpec `json:",inline"`
 
 	// Add your own fields here, describing the deployment of the managed component.
 }
