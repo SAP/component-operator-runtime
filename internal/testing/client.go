@@ -8,6 +8,7 @@ package testing
 import (
 	"bytes"
 	"context"
+	"sync"
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -37,9 +38,11 @@ var (
 	_enhancedScheme *runtime.Scheme
 	_ctx            context.Context
 	_client         cluster.Client
+	_mu             sync.Mutex
 )
 
-func InitClient(cfg *rest.Config, schemeBuilder runtime.SchemeBuilder, extraSchemeBuilder runtime.SchemeBuilder, ctx context.Context) {
+func SetupClient(cfg *rest.Config, schemeBuilder runtime.SchemeBuilder, extraSchemeBuilder runtime.SchemeBuilder, ctx context.Context) {
+	_mu.Lock()
 	_cfg = cfg
 	_scheme = runtime.NewScheme()
 	_enhancedScheme = runtime.NewScheme()
@@ -55,6 +58,15 @@ func InitClient(cfg *rest.Config, schemeBuilder runtime.SchemeBuilder, extraSche
 	g.Expect(err).NotTo(g.HaveOccurred())
 	eventRecorder := &record.FakeRecorder{}
 	_client = cluster.NewClient(ctrlClient, discoveryClient, eventRecorder)
+}
+
+func TeardownClient() {
+	_cfg = nil
+	_scheme = nil
+	_enhancedScheme = nil
+	_ctx = nil
+	_client = nil
+	_mu.Unlock()
 }
 
 func Client() cluster.Client {

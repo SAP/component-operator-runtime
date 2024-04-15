@@ -72,7 +72,7 @@ var _ = BeforeSuite(func() {
 	// webhookInstallOptions := &testEnv.WebhookInstallOptions
 
 	By("initializing client")
-	InitClient(
+	SetupClient(
 		cfg,
 		runtime.NewSchemeBuilder(clientgoscheme.AddToScheme, apiextensionsv1.AddToScheme, apiregistrationv1.AddToScheme, foov1alpha1.AddToScheme),
 		runtime.NewSchemeBuilder(barv1alpha1.AddToScheme),
@@ -172,6 +172,7 @@ var _ = BeforeSuite(func() {
 
 var _ = AfterSuite(func() {
 	By("tearing down the test environment")
+	defer TeardownClient()
 	cancel()
 	threads.Wait()
 	err := testEnv.Stop()
