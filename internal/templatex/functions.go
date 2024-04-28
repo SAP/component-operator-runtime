@@ -157,6 +157,7 @@ func makeFuncLookup(c client.Client, ignoreNotFound bool) func(string, string, s
 		object.SetAPIVersion(apiVersion)
 		object.SetKind(kind)
 		if err := c.Get(context.Background(), apitypes.NamespacedName{Namespace: namespace, Name: name}, object); err != nil {
+			// TODO: should apimeta.IsNoMatchError be ignored as well?
 			if apierrors.IsNotFound(err) && ignoreNotFound {
 				err = nil
 			}
