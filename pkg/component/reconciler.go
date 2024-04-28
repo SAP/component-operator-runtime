@@ -46,6 +46,7 @@ import (
 // TODO: allow some timeout feature, such that component will go into error state if not ready within the given timeout
 // (e.g. through a TimeoutConfiguration interface that components could optionally implement)
 // TODO: from time to time, enforce dependent updates even if digest is matching
+// (this might require a lastAppliedAt timestamp per inventory item)
 // TODO: run admission webhooks (if present) in reconcile (e.g. as post-read hook)
 // TODO: improve overall log output
 
@@ -157,6 +158,7 @@ func (r *Reconciler[T]) Reconcile(ctx context.Context, req ctrl.Request) (result
 		}
 		return ctrl.Result{}, errors.Wrap(err, "unexpected get error")
 	}
+	// TODO: popuplate component's TypeMeta
 
 	// convenience accessors
 	status := component.GetStatus()
@@ -240,8 +242,11 @@ func (r *Reconciler[T]) Reconcile(ctx context.Context, req ctrl.Request) (result
 
 	// run post-read hooks
 	// note: it's important that this happens after deferring the status handler
+	// TODO: enhance ctx with tailored logger and event recorder
+	// TODO: enhance ctx  with the local client
+	hookCtx := newContext(ctx).WithReconcilerName(r.name)
 	for hookOrder, hook := range r.postReadHooks {
-		if err := hook(ctx, r.client, component); err != nil {
+		if err := hook(hookCtx, r.client, component); err != nil {
 			return ctrl.Result{}, errors.Wrapf(err, "error running post-read hook (%d)", hookOrder)
 		}
 	}
@@ -257,7 +262,9 @@ func (r *Reconciler[T]) Reconcile(ctx context.Context, req ctrl.Request) (result
 		UpdatePolicy:            r.options.UpdatePolicy,
 		StatusAnalyzer:          r.statusAnalyzer,
 	})
-	hookCtx := newContext(ctx).WithClient(targetClient)
+	// TODO: enhance ctx with tailored logger and event recorder
+	// TODO: enhance ctx  with the local client
+	hookCtx = newContext(ctx).WithReconcilerName(r.name).WithClient(targetClient)
 
 	// do the reconciliation
 	if component.GetDeletionTimestamp().IsZero() {
