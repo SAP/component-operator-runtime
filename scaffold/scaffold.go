@@ -21,7 +21,7 @@ import (
 
 	"github.com/Masterminds/sprig/v3"
 	"github.com/spf13/pflag"
-	"k8s.io/apimachinery/pkg/api/meta"
+	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	kyaml "sigs.k8s.io/yaml"
 )
@@ -204,7 +204,7 @@ func validateAndDefaultConfig(config *Config) error {
 	// TODO: validate Kind is valid (camel case, only lettters?)
 
 	if config.Resource == "" {
-		gvr, _ := meta.UnsafeGuessKindToResource(schema.GroupVersionKind{Group: config.GroupName, Version: config.GroupName, Kind: config.Kind})
+		gvr, _ := apimeta.UnsafeGuessKindToResource(schema.GroupVersionKind{Group: config.GroupName, Version: config.GroupName, Kind: config.Kind})
 		config.Resource = gvr.Resource
 	}
 	// TODO: validate Resource (lower case, only letters?)
