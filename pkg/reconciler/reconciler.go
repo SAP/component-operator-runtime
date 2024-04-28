@@ -14,12 +14,13 @@ import (
 
 	"github.com/iancoleman/strcase"
 	"github.com/pkg/errors"
+	"github.com/sap/go-generics/sets"
 	"github.com/sap/go-generics/slices"
 
 	corev1 "k8s.io/api/core/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/api/meta"
+	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/labels"
@@ -28,7 +29,6 @@ import (
 	apitypes "k8s.io/apimachinery/pkg/types"
 	apiregistrationv1 "k8s.io/kube-aggregator/pkg/apis/apiregistration/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
@@ -192,63 +192,31 @@ func NewReconciler(name string, clnt cluster.Client, options ReconcilerOptions) 
 // This method will change the passed inventory (add or remove elements, change elements). If Apply() returns true, then all objects are successfully reconciled;
 // otherwise, if it returns false, the caller should recall it timely, until it returns true. In any case, the passed inventory should match the state of the
 // inventory after the previous invocation of Apply(); usually, the caller saves the inventory after calling Apply(), and loads it before calling Apply().
-// The namespace and ownerId arguments should not be changed across subsequent invocations of Apply(); the componentRevision should only be incremented.
+// The namespace and ownerId arguments should not be changed across subsequent invocations of Apply(); the componentRevision should be incremented only.
 func (r *Reconciler) Apply(ctx context.Context, inventory *[]*InventoryItem, objects []client.Object, namespace string, ownerId string, componentRevision int64) (bool, error) {
+	var err error
 	log := log.FromContext(ctx)
 
 	hashedOwnerId := sha256base32([]byte(ownerId))
 
-	// TODO: de-duplicate objects (or throw an error if there are duplicates)
+	// perform some initial validation
+	for _, object := range objects {
+		if object.GetGenerateName() != "" {
+			// TODO: the object key string representation below will probably be incomplete because of missing metadata.name
+			return false, fmt.Errorf("object %s specifies metadata.generateName (but dependent objects are not allowed to do so)", types.ObjectKeyToString(object))
+		}
+	}
 
 	// normalize objects; that means:
 	// - check that unstructured objects have valid type information set, and convert them to their concrete type if known to the scheme
 	// - check that non-unstructured types are known to the scheme, and validate/set their type information
-	normalizedObjects := make([]client.Object, len(objects))
-	for i, object := range objects {
-		gvk := object.GetObjectKind().GroupVersionKind()
-		if unstructuredObject, ok := object.(*unstructured.Unstructured); ok {
-			if gvk.Version == "" || gvk.Kind == "" {
-				return false, fmt.Errorf("unstructured object %s is missing type information", types.ObjectKeyToString(object))
-			}
-			if r.client.Scheme().Recognizes(gvk) {
-				typedObject, err := r.client.Scheme().New(gvk)
-				if err != nil {
-					return false, errors.Wrapf(err, "error instantiating type for object %s", types.ObjectKeyToString(object))
-				}
-				if typedObject, ok := typedObject.(client.Object); ok {
-					if err := runtime.DefaultUnstructuredConverter.FromUnstructured(unstructuredObject.Object, typedObject); err != nil {
-						return false, errors.Wrapf(err, "error converting object %s", types.ObjectKeyToString(object))
-					}
-					normalizedObjects[i] = typedObject
-				} else {
-					return false, errors.Wrapf(err, "error instantiating type for object %s", types.ObjectKeyToString(object))
-				}
-			} else if isCrd(object) || isApiService(object) {
-				return false, fmt.Errorf("scheme does not recognize type of object %s", types.ObjectKeyToString(object))
-			} else {
-				normalizedObjects[i] = unstructuredObject.DeepCopy()
-			}
-		} else {
-			_gvk, err := apiutil.GVKForObject(object, r.client.Scheme())
-			if err != nil {
-				return false, errors.Wrapf(err, "error retrieving scheme type information for object %s", types.ObjectKeyToString(object))
-			}
-			object = object.DeepCopyObject().(client.Object)
-			if gvk.Version == "" || gvk.Kind == "" {
-				object.GetObjectKind().SetGroupVersionKind(_gvk)
-			} else if gvk != _gvk {
-				return false, fmt.Errorf("object %s specifies inconsistent type information (expected: %s)", types.ObjectKeyToString(object), _gvk)
-			}
-			normalizedObjects[i] = object
-		}
+	objects, err = normalizeObjects(objects, r.client.Scheme())
+	if err != nil {
+		return false, errors.Wrap(err, "error normalizing objects")
 	}
-	objects = normalizedObjects
 
-	// perform some validation and cleanup on object manifests
+	// perform cleanup on object manifests
 	for _, object := range objects {
-		if object.GetGenerateName() != "" {
-			return false, fmt.Errorf("object %s specifies metadata.generateName (but dependent objects are not allowed to do so)", types.ObjectKeyToString(object))
-		}
 		removeLabel(object, r.labelKeyOwnerId)
 		removeAnnotation(object, r.annotationKeyOwnerId)
 		removeAnnotation(object, r.annotationKeyDigest)
@@ -264,7 +232,7 @@ func (r *Reconciler) Apply(ctx context.Context, inventory *[]*InventoryItem, obj
 		restMapping, err := r.client.RESTMapper().RESTMapping(gvk.GroupKind(), gvk.Version)
 		if err == nil {
 			scope = scopeFromRestMapping(restMapping)
-		} else if !meta.IsNoMatchError(err) {
+		} else if !apimeta.IsNoMatchError(err) {
 			return false, errors.Wrapf(err, "error getting rest mapping for object %s", types.ObjectKeyToString(object))
 		}
 		for _, crd := range getCrds(objects) {
@@ -299,8 +267,18 @@ func (r *Reconciler) Apply(ctx context.Context, inventory *[]*InventoryItem, obj
 	// 1. the object is incorrectly specified and
 	// 2. calling RESTMapping() above returned a NoMatchError (i.e. the type is currently not known to the api server) and
 	// 3. the type belongs to a (new) api service which is part of the inventory
-	// such entries can cause trouble, e.g. because InventoryItem.Match() might not work reliably ...
+	// such entries can cause trouble, e.g. because the duplicate check, or InventoryItem.Match() might not work reliably ...
 	// TODO: should we allow at all that api services and according instances are deployed together?
+
+	// check that there are no duplicate objects
+	objectKeys := sets.New[string]()
+	for _, object := range objects {
+		objectKey := types.ObjectKeyToString(object)
+		if sets.Contains(objectKeys, objectKey) {
+			return false, fmt.Errorf("duplicate object %s", objectKey)
+		}
+		sets.Add(objectKeys, objectKey)
+	}
 
 	// validate annotations
 	for _, object := range objects {
@@ -901,7 +879,7 @@ func (r *Reconciler) readObject(ctx context.Context, key types.ObjectKey) (*unst
 	object := &unstructured.Unstructured{}
 	object.SetGroupVersionKind(key.GetObjectKind().GroupVersionKind())
 	if err := r.client.Get(ctx, apitypes.NamespacedName{Namespace: key.GetNamespace(), Name: key.GetName()}, object); err != nil {
-		if meta.IsNoMatchError(err) || apierrors.IsNotFound(err) {
+		if apimeta.IsNoMatchError(err) || apierrors.IsNotFound(err) {
 			object = nil
 		} else {
 			return nil, err
@@ -1069,7 +1047,7 @@ func (r *Reconciler) deleteObject(ctx context.Context, key types.ObjectKey, exis
 		}
 	}
 	if err := r.client.Delete(ctx, object, deleteOptions); err != nil {
-		if meta.IsNoMatchError(err) || apierrors.IsNotFound(err) {
+		if apimeta.IsNoMatchError(err) || apierrors.IsNotFound(err) {
 			return nil
 		}
 		return err
