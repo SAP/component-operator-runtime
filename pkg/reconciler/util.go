@@ -17,10 +17,13 @@ import (
 	"github.com/sap/go-generics/slices"
 
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
-	"k8s.io/apimachinery/pkg/api/meta"
+	apimeta "k8s.io/apimachinery/pkg/api/meta"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	apiregistrationv1 "k8s.io/kube-aggregator/pkg/apis/apiregistration/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 
 	"github.com/sap/component-operator-runtime/pkg/types"
 )
@@ -189,11 +192,11 @@ func findMissingNamespaces(objects []client.Object) []string {
 	return namespaces
 }
 
-func scopeFromRestMapping(mapping *meta.RESTMapping) int {
+func scopeFromRestMapping(mapping *apimeta.RESTMapping) int {
 	switch mapping.Scope.Name() {
-	case meta.RESTScopeNameNamespace:
+	case apimeta.RESTScopeNameNamespace:
 		return scopeNamespaced
-	case meta.RESTScopeNameRoot:
+	case apimeta.RESTScopeNameRoot:
 		return scopeCluster
 	default:
 		panic("this cannot happen")
@@ -209,6 +212,49 @@ func scopeFromCrd(crd *apiextensionsv1.CustomResourceDefinition) int {
 	default:
 		panic("this cannot happen")
 	}
+}
+
+func normalizeObjects(objects []client.Object, scheme *runtime.Scheme) ([]client.Object, error) {
+	normalizedObjects := make([]client.Object, len(objects))
+	for i, object := range objects {
+		gvk := object.GetObjectKind().GroupVersionKind()
+		if unstructuredObject, ok := object.(*unstructured.Unstructured); ok {
+			if gvk.Version == "" || gvk.Kind == "" {
+				return nil, fmt.Errorf("unstructured object %s is missing type information", types.ObjectKeyToString(object))
+			}
+			if scheme.Recognizes(gvk) {
+				typedObject, err := scheme.New(gvk)
+				if err != nil {
+					return nil, errors.Wrapf(err, "error instantiating type for object %s", types.ObjectKeyToString(object))
+				}
+				if typedObject, ok := typedObject.(client.Object); ok {
+					if err := runtime.DefaultUnstructuredConverter.FromUnstructured(unstructuredObject.Object, typedObject); err != nil {
+						return nil, errors.Wrapf(err, "error converting object %s", types.ObjectKeyToString(object))
+					}
+					normalizedObjects[i] = typedObject
+				} else {
+					return nil, errors.Wrapf(err, "error instantiating type for object %s", types.ObjectKeyToString(object))
+				}
+			} else if isCrd(object) || isApiService(object) {
+				return nil, fmt.Errorf("scheme does not recognize type of object %s", types.ObjectKeyToString(object))
+			} else {
+				normalizedObjects[i] = unstructuredObject.DeepCopy()
+			}
+		} else {
+			_gvk, err := apiutil.GVKForObject(object, scheme)
+			if err != nil {
+				return nil, errors.Wrapf(err, "error retrieving scheme type information for object %s", types.ObjectKeyToString(object))
+			}
+			object = object.DeepCopyObject().(client.Object)
+			if gvk.Version == "" || gvk.Kind == "" {
+				object.GetObjectKind().SetGroupVersionKind(_gvk)
+			} else if gvk != _gvk {
+				return nil, fmt.Errorf("object %s specifies inconsistent type information (expected: %s)", types.ObjectKeyToString(object), _gvk)
+			}
+			normalizedObjects[i] = object
+		}
+	}
+	return normalizedObjects, nil
 }
 
 func sortObjectsForApply[T client.Object](s []T, orderFunc func(client.Object) int) []T {
