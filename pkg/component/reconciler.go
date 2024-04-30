@@ -25,6 +25,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
@@ -46,7 +47,7 @@ import (
 // TODO: allow some timeout feature, such that component will go into error state if not ready within the given timeout
 // (e.g. through a TimeoutConfiguration interface that components could optionally implement)
 // TODO: from time to time, enforce dependent updates even if digest is matching
-// (this might require a lastAppliedAt timestamp per inventory item)
+// (this might be done by coding some timestamp into the digest, if it is not __once__)
 // TODO: run admission webhooks (if present) in reconcile (e.g. as post-read hook)
 // TODO: improve overall log output
 
@@ -151,6 +152,10 @@ func (r *Reconciler[T]) Reconcile(ctx context.Context, req ctrl.Request) (result
 
 	// fetch reconciled object
 	component := newComponent[T]()
+	gvk, err := apiutil.GVKForObject(component, r.client.Scheme())
+	if err != nil {
+		return ctrl.Result{}, errors.Wrap(err, "error getting type metadata for component")
+	}
 	if err := r.client.Get(ctx, req.NamespacedName, component); err != nil {
 		if apierrors.IsNotFound(err) {
 			log.V(1).Info("not found; ignoring")
@@ -158,7 +163,7 @@ func (r *Reconciler[T]) Reconcile(ctx context.Context, req ctrl.Request) (result
 		}
 		return ctrl.Result{}, errors.Wrap(err, "unexpected get error")
 	}
-	// TODO: popuplate component's TypeMeta
+	component.GetObjectKind().SetGroupVersionKind(gvk)
 
 	// convenience accessors
 	status := component.GetStatus()
@@ -188,7 +193,6 @@ func (r *Reconciler[T]) Reconcile(ctx context.Context, req ctrl.Request) (result
 			// re-panic in order skip the remaining steps
 			panic(r)
 		}
-		log.V(1).Info("reconcile done", "withError", err != nil, "requeue", result.Requeue || result.RequeueAfter > 0, "requeueAfter", result.RequeueAfter.String())
 		if status.State == StateReady || err != nil {
 			r.backoff.Forget(req)
 		}
@@ -212,6 +216,11 @@ func (r *Reconciler[T]) Reconcile(ctx context.Context, req ctrl.Request) (result
 				status.SetState(StateError, readyConditionReasonError, err.Error())
 			}
 		}
+		if result.RequeueAfter > 0 {
+			// add jitter of 1-5 percent to RequeueAfter
+			addJitter(&result.RequeueAfter, 1, 5)
+		}
+		log.V(1).Info("reconcile done", "withError", err != nil, "requeue", result.Requeue || result.RequeueAfter > 0, "requeueAfter", result.RequeueAfter.String())
 		// TODO: should we move this behind the DeepEqual check below?
 		// note: it seems that no events will be written if the component's namespace is in deletion
 		state, reason, message := status.GetState()

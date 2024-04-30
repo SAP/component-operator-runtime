@@ -8,7 +8,9 @@ package component
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"math/rand"
 	"strings"
+	"time"
 )
 
 // TODO: consolidate all the util files into an internal reuse package
@@ -34,4 +36,13 @@ func capitalize(s string) string {
 		return s
 	}
 	return strings.ToUpper(s[0:1]) + s[1:]
+}
+
+func addJitter(d *time.Duration, minPercent int, maxPercent int) {
+	if minPercent > maxPercent {
+		return
+	}
+	min := int64(minPercent)
+	max := int64(maxPercent)
+	*d = *d + time.Duration((rand.Int63n(max-min+1)+min)*int64(*d)/100)
 }
