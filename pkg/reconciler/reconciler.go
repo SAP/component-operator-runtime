@@ -363,18 +363,12 @@ func (r *Reconciler) Apply(ctx context.Context, inventory *[]*InventoryItem, obj
 		item := getItem(newInventory, object)
 
 		// calculate object digest
-		digest, err := calculateObjectDigest(object)
+		// note: if the effective reconcile policy of an object changes, it will always be reconciled at least one more time;
+		// this is in particular the case if the policy changes from or to ReconcilePolicyOnce.
+		digest, err := calculateObjectDigest(object, item, componentRevision, getReconcilePolicy(object))
 		if err != nil {
 			return false, errors.Wrapf(err, "error calculating digest for object %s", types.ObjectKeyToString(object))
 		}
-		switch getReconcilePolicy(object) {
-		case ReconcilePolicyOnObjectOrComponentChange:
-			digest = fmt.Sprintf("%s@%d", digest, componentRevision)
-		case ReconcilePolicyOnce:
-			digest = "__once__"
-		}
-		// note: if the effective reconcile policy of an object changes, it will always be reconciled at least one more time;
-		// this is in particular the case if the policy changes from or to ReconcilePolicyOnce.
 
 		// if item was not found, append an empty item
 		if item == nil {
