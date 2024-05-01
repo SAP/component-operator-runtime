@@ -86,7 +86,7 @@ type ReconcilerOptions struct {
 	// If unspecified, UpdatePolicyReplace is assumed.
 	// Can be overridden by annotation on object level.
 	UpdatePolicy *reconciler.UpdatePolicy
-	// Schemebuilder allows to define additional schemes to be made available in the
+	// SchemeBuilder allows to define additional schemes to be made available in the
 	// target client.
 	SchemeBuilder types.SchemeBuilder
 }
@@ -501,7 +501,7 @@ func (r *Reconciler[T]) SetupWithManager(mgr ctrl.Manager) error {
 	return r.SetupWithManagerAndBuilder(
 		mgr,
 		ctrl.NewControllerManagedBy(mgr).
-			WithOptions(controller.Options{MaxConcurrentReconciles: 3}),
+			WithOptions(controller.Options{MaxConcurrentReconciles: 5}),
 	)
 }
 
@@ -519,8 +519,7 @@ func (r *Reconciler[T]) getClientForComponent(component T) (cluster.Client, erro
 	if haveImpersonationConfiguration {
 		impersonationUser = impersonationConfiguration.GetImpersonationUser()
 		impersonationGroups = impersonationConfiguration.GetImpersonationGroups()
-		r := regexp.MustCompile(`^(system:serviceaccount):(.*):(.+)$`)
-		if m := r.FindStringSubmatch(impersonationUser); m != nil {
+		if m := regexp.MustCompile(`^(system:serviceaccount):(.*):(.+)$`).FindStringSubmatch(impersonationUser); m != nil {
 			if m[2] == "" {
 				namespace := ""
 				if havePlacementConfiguration {
