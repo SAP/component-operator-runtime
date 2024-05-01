@@ -10,6 +10,8 @@ import (
 	"fmt"
 	"reflect"
 	"regexp"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -34,6 +36,8 @@ import (
 
 	"github.com/sap/component-operator-runtime/internal/backoff"
 	"github.com/sap/component-operator-runtime/internal/cluster"
+	"github.com/sap/component-operator-runtime/internal/contexts"
+	"github.com/sap/component-operator-runtime/internal/metrics"
 	"github.com/sap/component-operator-runtime/pkg/manifests"
 	"github.com/sap/component-operator-runtime/pkg/reconciler"
 	"github.com/sap/component-operator-runtime/pkg/status"
@@ -96,6 +100,7 @@ type Reconciler[T Component] struct {
 	name               string
 	id                 string
 	groupVersionKind   schema.GroupVersionKind
+	controllerName     string
 	client             cluster.Client
 	resourceGenerator  manifests.Generator
 	statusAnalyzer     status.StatusAnalyzer
@@ -147,8 +152,11 @@ func (r *Reconciler[T]) Reconcile(ctx context.Context, req ctrl.Request) (result
 	}
 	r.setupMutex.Unlock()
 
+	ctx = context.WithValue(ctx, contexts.ControllerNameKey, r.controllerName)
 	log := log.FromContext(ctx)
 	log.V(1).Info("running reconcile")
+
+	metrics.Reconciles.WithLabelValues(r.controllerName).Inc()
 
 	now := metav1.Now()
 
@@ -219,6 +227,13 @@ func (r *Reconciler[T]) Reconcile(ctx context.Context, req ctrl.Request) (result
 			addJitter(&result.RequeueAfter, 1, 5)
 		}
 		log.V(1).Info("reconcile done", "withError", err != nil, "requeue", result.Requeue || result.RequeueAfter > 0, "requeueAfter", result.RequeueAfter.String())
+		if err != nil {
+			if status, ok := err.(apierrors.APIStatus); ok || errors.As(err, &status) {
+				metrics.ReconcileErrors.WithLabelValues(r.controllerName, strconv.Itoa(int(status.Status().Code))).Inc()
+			} else {
+				metrics.ReconcileErrors.WithLabelValues(r.controllerName, "other").Inc()
+			}
+		}
 		// TODO: should we move this behind the DeepEqual check below?
 		// note: it seems that no events will be written if the component's namespace is in deletion
 		state, reason, message := status.GetState()
@@ -267,6 +282,7 @@ func (r *Reconciler[T]) Reconcile(ctx context.Context, req ctrl.Request) (result
 		CreateMissingNamespaces: r.options.CreateMissingNamespaces,
 		AdoptionPolicy:          r.options.AdoptionPolicy,
 		UpdatePolicy:            r.options.UpdatePolicy,
+		ControllerName:          r.controllerName,
 		StatusAnalyzer:          r.statusAnalyzer,
 	})
 	// TODO: enhance ctx with tailored logger and event recorder
@@ -485,9 +501,13 @@ func (r *Reconciler[T]) SetupWithManagerAndBuilder(mgr ctrl.Manager, blder *ctrl
 	if err != nil {
 		return errors.Wrap(err, "error getting type metadata for component")
 	}
+	// TODO: should this be more fully qualified, or configurable?
+	// for we reproduce the controller-runtime default (the lowercase kind of the reconciled type)
+	r.controllerName = strings.ToLower(r.groupVersionKind.Kind)
 
 	if err := blder.
 		For(component, builder.WithPredicates(predicate.Or(predicate.GenerationChangedPredicate{}, predicate.AnnotationChangedPredicate{}))).
+		Named(r.controllerName).
 		Complete(r); err != nil {
 		return errors.Wrap(err, "error creating controller")
 	}

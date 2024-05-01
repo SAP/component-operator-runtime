@@ -32,6 +32,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
+	"github.com/sap/component-operator-runtime/internal/metrics"
 	"github.com/sap/component-operator-runtime/pkg/cluster"
 	"github.com/sap/component-operator-runtime/pkg/status"
 	"github.com/sap/component-operator-runtime/pkg/types"
@@ -93,6 +94,9 @@ type ReconcilerOptions struct {
 	// If unspecified, UpdatePolicyReplace is assumed.
 	// Can be overridden by annotation on object level.
 	UpdatePolicy *UpdatePolicy
+	// Controller name; this is what shows up in prometheus labels.
+	// If unspecified, no metrics are written.
+	ControllerName string
 	// How to analyze the state of the dependent objects.
 	// If unspecified, an optimized kstatus based implementation is used.
 	StatusAnalyzer status.StatusAnalyzer
@@ -101,6 +105,7 @@ type ReconcilerOptions struct {
 // Reconciler manages specified objects in the given target cluster.
 type Reconciler struct {
 	name                         string
+	controllerName               string
 	client                       cluster.Client
 	statusAnalyzer               status.StatusAnalyzer
 	createMissingNamespaces      bool
@@ -138,6 +143,7 @@ func NewReconciler(name string, clnt cluster.Client, options ReconcilerOptions) 
 
 	return &Reconciler{
 		name:                         name,
+		controllerName:               options.ControllerName,
 		client:                       clnt,
 		statusAnalyzer:               options.StatusAnalyzer,
 		createMissingNamespaces:      *options.CreateMissingNamespaces,
@@ -870,6 +876,10 @@ func (r *Reconciler) IsDeletionAllowed(ctx context.Context, inventory *[]*Invent
 
 // reaad object and return as unstructured
 func (r *Reconciler) readObject(ctx context.Context, key types.ObjectKey) (*unstructured.Unstructured, error) {
+	if r.controllerName != "" {
+		metrics.Operations.WithLabelValues(r.controllerName, "read").Inc()
+	}
+
 	object := &unstructured.Unstructured{}
 	object.SetGroupVersionKind(key.GetObjectKind().GroupVersionKind())
 	if err := r.client.Get(ctx, apitypes.NamespacedName{Namespace: key.GetNamespace(), Name: key.GetName()}, object); err != nil {
@@ -886,6 +896,10 @@ func (r *Reconciler) readObject(ctx context.Context, key types.ObjectKey) (*unst
 // createdObject is optional; if non-nil, it will be populated with the created object; the same variable can be supplied as object and createObject;
 // if object is a crd or an api services, the reconciler's name will be added as finalizer
 func (r *Reconciler) createObject(ctx context.Context, object client.Object, createdObject any, updatePolicy UpdatePolicy) (err error) {
+	if r.controllerName != "" {
+		metrics.Operations.WithLabelValues(r.controllerName, "create").Inc()
+	}
+
 	defer func() {
 		if err == nil && createdObject != nil {
 			err = runtime.DefaultUnstructuredConverter.FromUnstructured(object.(*unstructured.Unstructured).Object, createdObject)
@@ -929,6 +943,10 @@ func (r *Reconciler) createObject(ctx context.Context, object client.Object, cre
 // if updatePolicy equals UpdatePolicySsaOverride, then in addition, a preparation patch request will be performed before doing the conflict-forcing
 // server-side-apply patch; this preparation patch will adjust managedFields, reclaiming fields/values previously owned by kubectl or helm
 func (r *Reconciler) updateObject(ctx context.Context, object client.Object, existingObject *unstructured.Unstructured, updatedObject any, updatePolicy UpdatePolicy) (err error) {
+	if r.controllerName != "" {
+		metrics.Operations.WithLabelValues(r.controllerName, "update").Inc()
+	}
+
 	defer func() {
 		if err == nil && updatedObject != nil {
 			err = runtime.DefaultUnstructuredConverter.FromUnstructured(object.(*unstructured.Unstructured).Object, updatedObject)
@@ -1015,6 +1033,10 @@ func (r *Reconciler) updateObject(ctx context.Context, object client.Object, exi
 // finalizer (i.e. the finalizer equal to the reconciler name) will be cleared, such that the object can be physically
 // removed (unless other finalizers prevent this)
 func (r *Reconciler) deleteObject(ctx context.Context, key types.ObjectKey, existingObject *unstructured.Unstructured) (err error) {
+	if r.controllerName != "" {
+		metrics.Operations.WithLabelValues(r.controllerName, "delete").Inc()
+	}
+
 	defer func() {
 		if existingObject == nil {
 			return

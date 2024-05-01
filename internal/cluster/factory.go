@@ -9,6 +9,7 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"reflect"
 	"sync"
 	"time"
@@ -25,6 +26,8 @@ import (
 	apiregistrationv1 "k8s.io/kube-aggregator/pkg/apis/apiregistration/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	"github.com/sap/component-operator-runtime/internal/contexts"
+	"github.com/sap/component-operator-runtime/internal/metrics"
 	"github.com/sap/component-operator-runtime/pkg/types"
 )
 
@@ -122,6 +125,7 @@ func (f *ClientFactory) Get(kubeConfig []byte, impersonationUser string, imperso
 		return clnt, nil
 	}
 
+	config.Wrap(func(rt http.RoundTripper) http.RoundTripper { return &roundTripper{roundTripper: rt} })
 	httpClient, err := rest.HTTPClientFor(config)
 	if err != nil {
 		return nil, err
@@ -159,4 +163,16 @@ func sha256sum(data any) string {
 	}
 	sha256sum := sha256.Sum256(dataAsJson)
 	return string(sha256sum[:])
+}
+
+type roundTripper struct {
+	roundTripper http.RoundTripper
+}
+
+func (rt *roundTripper) RoundTrip(r *http.Request) (*http.Response, error) {
+	ctx := r.Context()
+	if controllerName, ok := ctx.Value(contexts.ControllerNameKey).(string); ok {
+		metrics.Requests.WithLabelValues(controllerName, r.Method).Inc()
+	}
+	return rt.roundTripper.RoundTrip(r)
 }
