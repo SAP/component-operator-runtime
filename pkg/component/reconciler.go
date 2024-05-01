@@ -19,6 +19,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	apitypes "k8s.io/apimachinery/pkg/types"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/client-go/discovery"
@@ -94,6 +95,7 @@ type ReconcilerOptions struct {
 type Reconciler[T Component] struct {
 	name               string
 	id                 string
+	groupVersionKind   schema.GroupVersionKind
 	client             cluster.Client
 	resourceGenerator  manifests.Generator
 	statusAnalyzer     status.StatusAnalyzer
@@ -152,10 +154,6 @@ func (r *Reconciler[T]) Reconcile(ctx context.Context, req ctrl.Request) (result
 
 	// fetch reconciled object
 	component := newComponent[T]()
-	gvk, err := apiutil.GVKForObject(component, r.client.Scheme())
-	if err != nil {
-		return ctrl.Result{}, errors.Wrap(err, "error getting type metadata for component")
-	}
 	if err := r.client.Get(ctx, req.NamespacedName, component); err != nil {
 		if apierrors.IsNotFound(err) {
 			log.V(1).Info("not found; ignoring")
@@ -163,7 +161,7 @@ func (r *Reconciler[T]) Reconcile(ctx context.Context, req ctrl.Request) (result
 		}
 		return ctrl.Result{}, errors.Wrap(err, "unexpected get error")
 	}
-	component.GetObjectKind().SetGroupVersionKind(gvk)
+	component.GetObjectKind().SetGroupVersionKind(r.groupVersionKind)
 
 	// convenience accessors
 	status := component.GetStatus()
@@ -482,6 +480,12 @@ func (r *Reconciler[T]) SetupWithManagerAndBuilder(mgr ctrl.Manager, blder *ctrl
 	}
 
 	component := newComponent[T]()
+
+	r.groupVersionKind, err = apiutil.GVKForObject(component, r.client.Scheme())
+	if err != nil {
+		return errors.Wrap(err, "error getting type metadata for component")
+	}
+
 	if err := blder.
 		For(component, builder.WithPredicates(predicate.Or(predicate.GenerationChangedPredicate{}, predicate.AnnotationChangedPredicate{}))).
 		Complete(r); err != nil {
