@@ -509,13 +509,7 @@ func (r *Reconciler[T]) getClientForComponent(component T) (cluster.Client, erro
 	placementConfiguration, havePlacementConfiguration := assertPlacementConfiguration(component)
 	clientConfiguration, haveClientConfiguration := assertClientConfiguration(component)
 	impersonationConfiguration, haveImpersonationConfiguration := assertImpersonationConfiguration(component)
-	haveCustomScheme := func() bool { _, ok := r.resourceGenerator.(types.SchemeBuilder); return ok }() || r.options.SchemeBuilder != nil
-	// TODO: we should always return a factory client, even in the default case;
-	// however this would be an incompatible change; people who previously supplied a custom scheme via the manager's client
-	// would now have to do the same by adding AddToScheme() to the used generator.
-	if !haveClientConfiguration && !haveImpersonationConfiguration && !haveCustomScheme {
-		return r.client, nil
-	}
+
 	var kubeconfig []byte
 	var impersonationUser string
 	var impersonationGroups []string
