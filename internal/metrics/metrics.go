@@ -44,29 +44,20 @@ var (
 		},
 		[]string{"controller", "action"},
 	)
-	/*
-		ProjectTTLSecondsInitial = prometheus.NewGaugeVec(
-			prometheus.GaugeOpts{
-				Name: "project_ttl_seconds_initial",
-				Help: "Initial TTL per project. Zero means that the project has no TTL, i.e. does not expire",
-			},
-			[]string{"project"},
-		)
-		ProjectTTLSecondsRemaining = prometheus.NewGaugeVec(
-			prometheus.GaugeOpts{
-				Name: "project_ttl_seconds_remaining",
-				Help: "Remaining TTL per project. Zero, and therefore not meaningful, if the project has no TTL set",
-			},
-			[]string{"project"},
-		)
-		ProjectExpired = prometheus.NewGaugeVec(
-			prometheus.GaugeOpts{
-				Name: "project_expired",
-				Help: "Whether project is expired. Because it has no TTL or TTL is expired. One means true, zero means false",
-			},
-			[]string{"project"},
-		)
-	*/
+	CreatedClients = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: prefix + "_created_clients_total",
+			Help: "Kubernetes API clients created since the controller was started",
+		},
+		[]string{"controller"},
+	)
+	ActiveClients = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: prefix + "_active_clients_total",
+			Help: "Currently active Kubernetes API clients",
+		},
+		[]string{"controller"},
+	)
 )
 
 func init() {
@@ -75,8 +66,7 @@ func init() {
 		ReconcileErrors,
 		Requests,
 		Operations,
-		//ProjectTTLSecondsInitial,
-		//ProjectTTLSecondsRemaining,
-		//ProjectExpired,
+		CreatedClients,
+		ActiveClients,
 	)
 }

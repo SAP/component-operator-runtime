@@ -36,7 +36,6 @@ import (
 
 	"github.com/sap/component-operator-runtime/internal/backoff"
 	"github.com/sap/component-operator-runtime/internal/cluster"
-	"github.com/sap/component-operator-runtime/internal/contexts"
 	"github.com/sap/component-operator-runtime/internal/metrics"
 	"github.com/sap/component-operator-runtime/pkg/manifests"
 	"github.com/sap/component-operator-runtime/pkg/reconciler"
@@ -150,7 +149,6 @@ func (r *Reconciler[T]) Reconcile(ctx context.Context, req ctrl.Request) (result
 	}
 	r.setupMutex.Unlock()
 
-	ctx = context.WithValue(ctx, contexts.ControllerNameKey, r.controllerName)
 	log := log.FromContext(ctx)
 	log.V(1).Info("running reconcile")
 
@@ -280,8 +278,13 @@ func (r *Reconciler[T]) Reconcile(ctx context.Context, req ctrl.Request) (result
 		CreateMissingNamespaces: r.options.CreateMissingNamespaces,
 		AdoptionPolicy:          r.options.AdoptionPolicy,
 		UpdatePolicy:            r.options.UpdatePolicy,
-		ControllerName:          r.controllerName,
 		StatusAnalyzer:          r.statusAnalyzer,
+		Metrics: reconciler.ReconcilerMetrics{
+			ReadCounter:   metrics.Operations.WithLabelValues(r.controllerName, "read"),
+			CreateCounter: metrics.Operations.WithLabelValues(r.controllerName, "create"),
+			UpdateCounter: metrics.Operations.WithLabelValues(r.controllerName, "update"),
+			DeleteCounter: metrics.Operations.WithLabelValues(r.controllerName, "delete"),
+		},
 	})
 	// TODO: enhance ctx with tailored logger and event recorder
 	// TODO: enhance ctx  with the local client
@@ -481,20 +484,7 @@ func (r *Reconciler[T]) SetupWithManagerAndBuilder(mgr ctrl.Manager, blder *ctrl
 	}
 	r.client = cluster.NewClient(mgr.GetClient(), discoveryClient, mgr.GetEventRecorderFor(r.name))
 
-	var schemeBuilders []types.SchemeBuilder
-	if schemeBuilder, ok := r.resourceGenerator.(types.SchemeBuilder); ok {
-		schemeBuilders = append(schemeBuilders, schemeBuilder)
-	}
-	if r.options.SchemeBuilder != nil {
-		schemeBuilders = append(schemeBuilders, r.options.SchemeBuilder)
-	}
-	r.clients, err = cluster.NewClientFactory(r.name, mgr.GetConfig(), schemeBuilders)
-	if err != nil {
-		return errors.Wrap(err, "error creating client factory")
-	}
-
 	component := newComponent[T]()
-
 	r.groupVersionKind, err = apiutil.GVKForObject(component, r.client.Scheme())
 	if err != nil {
 		return errors.Wrap(err, "error getting type metadata for component")
@@ -502,6 +492,18 @@ func (r *Reconciler[T]) SetupWithManagerAndBuilder(mgr ctrl.Manager, blder *ctrl
 	// TODO: should this be more fully qualified, or configurable?
 	// for we reproduce the controller-runtime default (the lowercase kind of the reconciled type)
 	r.controllerName = strings.ToLower(r.groupVersionKind.Kind)
+
+	var schemeBuilders []types.SchemeBuilder
+	if schemeBuilder, ok := r.resourceGenerator.(types.SchemeBuilder); ok {
+		schemeBuilders = append(schemeBuilders, schemeBuilder)
+	}
+	if r.options.SchemeBuilder != nil {
+		schemeBuilders = append(schemeBuilders, r.options.SchemeBuilder)
+	}
+	r.clients, err = cluster.NewClientFactory(r.name, r.controllerName, mgr.GetConfig(), schemeBuilders)
+	if err != nil {
+		return errors.Wrap(err, "error creating client factory")
+	}
 
 	if err := blder.
 		For(component, builder.WithPredicates(predicate.Or(predicate.GenerationChangedPredicate{}, predicate.AnnotationChangedPredicate{}))).
