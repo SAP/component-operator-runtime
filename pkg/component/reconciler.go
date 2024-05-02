@@ -10,6 +10,8 @@ import (
 	"fmt"
 	"reflect"
 	"regexp"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -34,6 +36,7 @@ import (
 
 	"github.com/sap/component-operator-runtime/internal/backoff"
 	"github.com/sap/component-operator-runtime/internal/cluster"
+	"github.com/sap/component-operator-runtime/internal/metrics"
 	"github.com/sap/component-operator-runtime/pkg/manifests"
 	"github.com/sap/component-operator-runtime/pkg/reconciler"
 	"github.com/sap/component-operator-runtime/pkg/status"
@@ -47,8 +50,6 @@ import (
 // TODO: allow to override namespace auto-creation on a per-object level
 // TODO: allow some timeout feature, such that component will go into error state if not ready within the given timeout
 // (e.g. through a TimeoutConfiguration interface that components could optionally implement)
-// TODO: from time to time, enforce dependent updates even if digest is matching
-// (this might be done by coding some timestamp into the digest, if it is not __once__)
 // TODO: run admission webhooks (if present) in reconcile (e.g. as post-read hook)
 // TODO: improve overall log output
 
@@ -96,6 +97,7 @@ type Reconciler[T Component] struct {
 	name               string
 	id                 string
 	groupVersionKind   schema.GroupVersionKind
+	controllerName     string
 	client             cluster.Client
 	resourceGenerator  manifests.Generator
 	statusAnalyzer     status.StatusAnalyzer
@@ -149,6 +151,8 @@ func (r *Reconciler[T]) Reconcile(ctx context.Context, req ctrl.Request) (result
 
 	log := log.FromContext(ctx)
 	log.V(1).Info("running reconcile")
+
+	metrics.Reconciles.WithLabelValues(r.controllerName).Inc()
 
 	now := metav1.Now()
 
@@ -219,6 +223,13 @@ func (r *Reconciler[T]) Reconcile(ctx context.Context, req ctrl.Request) (result
 			addJitter(&result.RequeueAfter, 1, 5)
 		}
 		log.V(1).Info("reconcile done", "withError", err != nil, "requeue", result.Requeue || result.RequeueAfter > 0, "requeueAfter", result.RequeueAfter.String())
+		if err != nil {
+			if status, ok := err.(apierrors.APIStatus); ok || errors.As(err, &status) {
+				metrics.ReconcileErrors.WithLabelValues(r.controllerName, strconv.Itoa(int(status.Status().Code))).Inc()
+			} else {
+				metrics.ReconcileErrors.WithLabelValues(r.controllerName, "other").Inc()
+			}
+		}
 		// TODO: should we move this behind the DeepEqual check below?
 		// note: it seems that no events will be written if the component's namespace is in deletion
 		state, reason, message := status.GetState()
@@ -268,6 +279,12 @@ func (r *Reconciler[T]) Reconcile(ctx context.Context, req ctrl.Request) (result
 		AdoptionPolicy:          r.options.AdoptionPolicy,
 		UpdatePolicy:            r.options.UpdatePolicy,
 		StatusAnalyzer:          r.statusAnalyzer,
+		Metrics: reconciler.ReconcilerMetrics{
+			ReadCounter:   metrics.Operations.WithLabelValues(r.controllerName, "read"),
+			CreateCounter: metrics.Operations.WithLabelValues(r.controllerName, "create"),
+			UpdateCounter: metrics.Operations.WithLabelValues(r.controllerName, "update"),
+			DeleteCounter: metrics.Operations.WithLabelValues(r.controllerName, "delete"),
+		},
 	})
 	// TODO: enhance ctx with tailored logger and event recorder
 	// TODO: enhance ctx  with the local client
@@ -467,6 +484,15 @@ func (r *Reconciler[T]) SetupWithManagerAndBuilder(mgr ctrl.Manager, blder *ctrl
 	}
 	r.client = cluster.NewClient(mgr.GetClient(), discoveryClient, mgr.GetEventRecorderFor(r.name))
 
+	component := newComponent[T]()
+	r.groupVersionKind, err = apiutil.GVKForObject(component, r.client.Scheme())
+	if err != nil {
+		return errors.Wrap(err, "error getting type metadata for component")
+	}
+	// TODO: should this be more fully qualified, or configurable?
+	// for now we reproduce the controller-runtime default (the lowercase kind of the reconciled type)
+	r.controllerName = strings.ToLower(r.groupVersionKind.Kind)
+
 	var schemeBuilders []types.SchemeBuilder
 	if schemeBuilder, ok := r.resourceGenerator.(types.SchemeBuilder); ok {
 		schemeBuilders = append(schemeBuilders, schemeBuilder)
@@ -474,20 +500,14 @@ func (r *Reconciler[T]) SetupWithManagerAndBuilder(mgr ctrl.Manager, blder *ctrl
 	if r.options.SchemeBuilder != nil {
 		schemeBuilders = append(schemeBuilders, r.options.SchemeBuilder)
 	}
-	r.clients, err = cluster.NewClientFactory(r.name, mgr.GetConfig(), schemeBuilders)
+	r.clients, err = cluster.NewClientFactory(r.name, r.controllerName, mgr.GetConfig(), schemeBuilders)
 	if err != nil {
 		return errors.Wrap(err, "error creating client factory")
 	}
 
-	component := newComponent[T]()
-
-	r.groupVersionKind, err = apiutil.GVKForObject(component, r.client.Scheme())
-	if err != nil {
-		return errors.Wrap(err, "error getting type metadata for component")
-	}
-
 	if err := blder.
 		For(component, builder.WithPredicates(predicate.Or(predicate.GenerationChangedPredicate{}, predicate.AnnotationChangedPredicate{}))).
+		Named(r.controllerName).
 		Complete(r); err != nil {
 		return errors.Wrap(err, "error creating controller")
 	}

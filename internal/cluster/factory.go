@@ -9,6 +9,7 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"reflect"
 	"sync"
 	"time"
@@ -25,20 +26,22 @@ import (
 	apiregistrationv1 "k8s.io/kube-aggregator/pkg/apis/apiregistration/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	"github.com/sap/component-operator-runtime/internal/metrics"
 	"github.com/sap/component-operator-runtime/pkg/types"
 )
 
 type ClientFactory struct {
-	mutex   sync.Mutex
-	name    string
-	config  *rest.Config
-	scheme  *runtime.Scheme
-	clients map[string]*clientImpl
+	mutex          sync.Mutex
+	name           string
+	controllerName string
+	config         *rest.Config
+	scheme         *runtime.Scheme
+	clients        map[string]*clientImpl
 }
 
 const validity = 15 * time.Minute
 
-func NewClientFactory(name string, config *rest.Config, schemeBuilders []types.SchemeBuilder) (*ClientFactory, error) {
+func NewClientFactory(name string, controllerName string, config *rest.Config, schemeBuilders []types.SchemeBuilder) (*ClientFactory, error) {
 	scheme := runtime.NewScheme()
 	if err := clientgoscheme.AddToScheme(scheme); err != nil {
 		return nil, err
@@ -56,10 +59,11 @@ func NewClientFactory(name string, config *rest.Config, schemeBuilders []types.S
 	}
 
 	factory := &ClientFactory{
-		name:    name,
-		config:  config,
-		scheme:  scheme,
-		clients: make(map[string]*clientImpl),
+		name:           name,
+		controllerName: controllerName,
+		config:         config,
+		scheme:         scheme,
+		clients:        make(map[string]*clientImpl),
 	}
 
 	go func() {
@@ -72,10 +76,10 @@ func NewClientFactory(name string, config *rest.Config, schemeBuilders []types.S
 				if clnt.validUntil.Before(now) {
 					clnt.eventBroadcaster.Shutdown()
 					// TODO: add some (debug) log output when client is removed; unfortunately, we have no logger in here ...
-					// TODO: add metrics about running clients
 					delete(factory.clients, key)
 				}
 			}
+			metrics.ActiveClients.WithLabelValues(factory.controllerName).Set(float64(len(factory.clients)))
 			factory.mutex.Unlock()
 		}
 	}()
@@ -122,6 +126,12 @@ func (f *ClientFactory) Get(kubeConfig []byte, impersonationUser string, imperso
 		return clnt, nil
 	}
 
+	config.Wrap(func(rt http.RoundTripper) http.RoundTripper {
+		return roundTripperFunc(func(r *http.Request) (*http.Response, error) {
+			metrics.Requests.WithLabelValues(f.controllerName, r.Method).Inc()
+			return rt.RoundTrip(r)
+		})
+	})
 	httpClient, err := rest.HTTPClientFor(config)
 	if err != nil {
 		return nil, err
@@ -145,10 +155,11 @@ func (f *ClientFactory) Get(kubeConfig []byte, impersonationUser string, imperso
 		validUntil:       time.Now().Add(validity),
 	}
 	f.clients[key] = clnt
+	metrics.CreatedClients.WithLabelValues(f.controllerName).Inc()
+	metrics.ActiveClients.WithLabelValues(f.controllerName).Set(float64(len(f.clients)))
 
 	// TODO: add some (debug) log output when new client is created; unfortunately, we have no logger in here ...
 	// maybe we could (at least in Get()) get one from the reconcile context ...
-	// TODO: add metrics about running clients
 	return clnt, nil
 }
 
@@ -159,4 +170,12 @@ func sha256sum(data any) string {
 	}
 	sha256sum := sha256.Sum256(dataAsJson)
 	return string(sha256sum[:])
+}
+
+type roundTripperFunc func(r *http.Request) (*http.Response, error)
+
+var _ http.RoundTripper = roundTripperFunc(nil)
+
+func (f roundTripperFunc) RoundTrip(r *http.Request) (*http.Response, error) {
+	return f(r)
 }

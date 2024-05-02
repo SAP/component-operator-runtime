@@ -15,6 +15,8 @@ import (
 	"github.com/sap/component-operator-runtime/pkg/types"
 )
 
+// TODO: rename GetSpec() to GetParameters()
+
 // Component is the central interface that component operators have to implement.
 // Besides being a conroller-runtime client.Object, the implementing type has to expose accessor
 // methods for the components's spec and status, GetSpec() and GetStatus().
