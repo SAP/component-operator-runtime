@@ -51,8 +51,6 @@ import (
 // TODO: allow to override namespace auto-creation on a per-object level
 // TODO: allow some timeout feature, such that component will go into error state if not ready within the given timeout
 // (e.g. through a TimeoutConfiguration interface that components could optionally implement)
-// TODO: from time to time, enforce dependent updates even if digest is matching
-// (this might be done by coding some timestamp into the digest, if it is not __once__)
 // TODO: run admission webhooks (if present) in reconcile (e.g. as post-read hook)
 // TODO: improve overall log output
 
