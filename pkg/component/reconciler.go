@@ -490,7 +490,7 @@ func (r *Reconciler[T]) SetupWithManagerAndBuilder(mgr ctrl.Manager, blder *ctrl
 		return errors.Wrap(err, "error getting type metadata for component")
 	}
 	// TODO: should this be more fully qualified, or configurable?
-	// for we reproduce the controller-runtime default (the lowercase kind of the reconciled type)
+	// for now we reproduce the controller-runtime default (the lowercase kind of the reconciled type)
 	r.controllerName = strings.ToLower(r.groupVersionKind.Kind)
 
 	var schemeBuilders []types.SchemeBuilder

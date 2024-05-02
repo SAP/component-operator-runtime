@@ -76,7 +76,6 @@ func NewClientFactory(name string, controllerName string, config *rest.Config, s
 				if clnt.validUntil.Before(now) {
 					clnt.eventBroadcaster.Shutdown()
 					// TODO: add some (debug) log output when client is removed; unfortunately, we have no logger in here ...
-					// TODO: add metrics about running clients
 					delete(factory.clients, key)
 				}
 			}
@@ -161,7 +160,6 @@ func (f *ClientFactory) Get(kubeConfig []byte, impersonationUser string, imperso
 
 	// TODO: add some (debug) log output when new client is created; unfortunately, we have no logger in here ...
 	// maybe we could (at least in Get()) get one from the reconcile context ...
-	// TODO: add metrics about running clients
 	return clnt, nil
 }
 
