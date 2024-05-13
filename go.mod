@@ -10,7 +10,7 @@ require (
 	github.com/onsi/gomega v1.33.1
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/client_golang v1.19.1
-	github.com/sap/go-generics v0.2.10
+	github.com/sap/go-generics v0.2.11
 	github.com/spf13/pflag v1.0.5
 	golang.org/x/time v0.5.0
 	k8s.io/api v0.30.0
