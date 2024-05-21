@@ -6,7 +6,7 @@ require (
 	github.com/Masterminds/sprig/v3 v3.2.3
 	github.com/hashicorp/go-multierror v1.1.1
 	github.com/iancoleman/strcase v0.3.0
-	github.com/onsi/ginkgo/v2 v2.17.3
+	github.com/onsi/ginkgo/v2 v2.18.0
 	github.com/onsi/gomega v1.33.1
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/client_golang v1.19.1
@@ -71,14 +71,14 @@ require (
 	github.com/spf13/cast v1.6.0 // indirect
 	github.com/xlab/treeprint v1.2.0 // indirect
 	go.starlark.net v0.0.0-20240123142251-f86470692795 // indirect
-	golang.org/x/crypto v0.22.0 // indirect
+	golang.org/x/crypto v0.23.0 // indirect
 	golang.org/x/exp v0.0.0-20240213143201-ec583247a57a // indirect
-	golang.org/x/net v0.24.0 // indirect
+	golang.org/x/net v0.25.0 // indirect
 	golang.org/x/oauth2 v0.17.0 // indirect
-	golang.org/x/sys v0.19.0 // indirect
-	golang.org/x/term v0.19.0 // indirect
-	golang.org/x/text v0.14.0 // indirect
-	golang.org/x/tools v0.20.0 // indirect
+	golang.org/x/sys v0.20.0 // indirect
+	golang.org/x/term v0.20.0 // indirect
+	golang.org/x/text v0.15.0 // indirect
+	golang.org/x/tools v0.21.0 // indirect
 	gomodules.xyz/jsonpatch/v2 v2.4.0 // indirect
 	google.golang.org/appengine v1.6.8 // indirect
 	google.golang.org/protobuf v1.33.0 // indirect
