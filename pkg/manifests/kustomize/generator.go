@@ -8,6 +8,7 @@ package kustomize
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"io/fs"
 	"os"
@@ -37,6 +38,20 @@ import (
 
 // TODO: carve out logic into an internal Kustomization type (similar to the helm Chart case)
 
+const (
+	componentConfigFilename = ".component-config.yaml"
+)
+
+// KustomizeGeneratorOptions allows to tweak the behavior of the kustomize generator.
+type KustomizeGeneratorOptions struct {
+	// If defined, only files with that suffix will be subject to templating.
+	TemplateSuffix *string
+	// If defined, the given left delimiter will be used to parse go templates; otherwise, defaults to '{{'
+	LeftTemplateDelimiter *string
+	// If defined, the given right delimiter will be used to parse go templates; otherwise, defaults to '}}'
+	RightTemplateDelimiter *string
+}
+
 // KustomizeGenerator is a Generator implementation that basically renders a given Kustomization.
 type KustomizeGenerator struct {
 	kustomizer *krusty.Kustomizer
@@ -54,7 +69,17 @@ var _ manifests.Generator = &KustomizeGenerator{}
 // If fsys is nil, the local operating system filesystem will be used, and kustomizationPath can be an absolute or relative path (in the latter case it will be considered
 // relative to the current working directory). If fsys is non-nil, then kustomizationPath should be a relative path; if an absolute path is supplied, it will be turned
 // An empty kustomizationPath will be treated like ".".
-func NewKustomizeGenerator(fsys fs.FS, kustomizationPath string, templateSuffix string, clnt client.Client) (*KustomizeGenerator, error) {
+func NewKustomizeGenerator(fsys fs.FS, kustomizationPath string, clnt client.Client, options KustomizeGeneratorOptions) (*KustomizeGenerator, error) {
+	if options.TemplateSuffix == nil {
+		options.TemplateSuffix = ref("")
+	}
+	if options.LeftTemplateDelimiter == nil {
+		options.LeftTemplateDelimiter = ref("")
+	}
+	if options.RightTemplateDelimiter == nil {
+		options.RightTemplateDelimiter = ref("")
+	}
+
 	g := KustomizeGenerator{
 		files:     make(map[string][]byte),
 		templates: make(map[string]*template.Template),
@@ -72,11 +97,15 @@ func NewKustomizeGenerator(fsys fs.FS, kustomizationPath string, templateSuffix 
 	}
 	kustomizationPath = filepath.Clean(kustomizationPath)
 
-	options := &krusty.Options{
+	kustomizerOptions := &krusty.Options{
 		LoadRestrictions: kustypes.LoadRestrictionsNone,
 		PluginConfig:     kustypes.DisabledPluginConfig(),
 	}
-	g.kustomizer = krusty.MakeKustomizer(options)
+	g.kustomizer = krusty.MakeKustomizer(kustomizerOptions)
+
+	if err := readOptions(fsys, filepath.Clean(kustomizationPath+"/"+componentConfigFilename), &options); err != nil {
+		return nil, err
+	}
 
 	var t *template.Template
 	// TODO: we should consider the whole of fsys, not only the subtree rooted at kustomizationPath;
@@ -100,9 +129,10 @@ func NewKustomizeGenerator(fsys fs.FS, kustomizationPath string, templateSuffix 
 			// TODO: is it ok to panic here in case of error ?
 			panic("this cannot happen")
 		}
-		if strings.HasSuffix(name, templateSuffix) {
+		if filepath.Base(name) != componentConfigFilename && strings.HasSuffix(name, *options.TemplateSuffix) {
 			if t == nil {
 				t = template.New(name)
+				t.Delims(*options.LeftTemplateDelimiter, *options.RightTemplateDelimiter)
 				t.Option("missingkey=zero").
 					Funcs(sprig.TxtFuncMap()).
 					Funcs(templatex.FuncMap()).
@@ -116,7 +146,7 @@ func NewKustomizeGenerator(fsys fs.FS, kustomizationPath string, templateSuffix 
 			if _, err := t.Parse(string(raw)); err != nil {
 				return nil, err
 			}
-			g.templates[strings.TrimSuffix(name, templateSuffix)] = t
+			g.templates[strings.TrimSuffix(name, *options.TemplateSuffix)] = t
 		} else {
 			g.files[name] = raw
 		}
@@ -128,8 +158,8 @@ func NewKustomizeGenerator(fsys fs.FS, kustomizationPath string, templateSuffix 
 }
 
 // Create a new KustomizeGenerator as TransformableGenerator.
-func NewTransformableKustomizeGenerator(fsys fs.FS, kustomizationPath string, templateSuffix string, clnt client.Client) (manifests.TransformableGenerator, error) {
-	g, err := NewKustomizeGenerator(fsys, kustomizationPath, templateSuffix, clnt)
+func NewTransformableKustomizeGenerator(fsys fs.FS, kustomizationPath string, clnt client.Client, options KustomizeGeneratorOptions) (manifests.TransformableGenerator, error) {
+	g, err := NewKustomizeGenerator(fsys, kustomizationPath, clnt, options)
 	if err != nil {
 		return nil, err
 	}
@@ -137,8 +167,8 @@ func NewTransformableKustomizeGenerator(fsys fs.FS, kustomizationPath string, te
 }
 
 // Create a new KustomizeGenerator with a ParameterTransformer attached (further transformers can be attached to the returned generator object).
-func NewKustomizeGeneratorWithParameterTransformer(fsys fs.FS, kustomizationPath string, templateSuffix string, clnt client.Client, transformer manifests.ParameterTransformer) (manifests.TransformableGenerator, error) {
-	g, err := NewTransformableKustomizeGenerator(fsys, kustomizationPath, templateSuffix, clnt)
+func NewKustomizeGeneratorWithParameterTransformer(fsys fs.FS, kustomizationPath string, clnt client.Client, options KustomizeGeneratorOptions, transformer manifests.ParameterTransformer) (manifests.TransformableGenerator, error) {
+	g, err := NewTransformableKustomizeGenerator(fsys, kustomizationPath, clnt, options)
 	if err != nil {
 		return nil, err
 	}
@@ -146,8 +176,8 @@ func NewKustomizeGeneratorWithParameterTransformer(fsys fs.FS, kustomizationPath
 }
 
 // Create a new KustomizeGenerator with an ObjectTransformer attached (further transformers can be attached to the returned generator object).
-func NewKustomizeGeneratorWithObjectTransformer(fsys fs.FS, kustomizationPath string, templateSuffix string, clnt client.Client, transformer manifests.ObjectTransformer) (manifests.TransformableGenerator, error) {
-	g, err := NewTransformableKustomizeGenerator(fsys, kustomizationPath, templateSuffix, clnt)
+func NewKustomizeGeneratorWithObjectTransformer(fsys fs.FS, kustomizationPath string, clnt client.Client, options KustomizeGeneratorOptions, transformer manifests.ObjectTransformer) (manifests.TransformableGenerator, error) {
+	g, err := NewTransformableKustomizeGenerator(fsys, kustomizationPath, clnt, options)
 	if err != nil {
 		return nil, err
 	}
@@ -279,7 +309,7 @@ func generateKustomization(fsys kustfsys.FileSystem) ([]byte, error) {
 		if err != nil {
 			return err
 		}
-		if !info.IsDir() && (strings.HasSuffix(path, ".yaml") || strings.HasSuffix(path, ".yml")) {
+		if !info.IsDir() && !strings.HasPrefix(filepath.Base(path), ".") && (strings.HasSuffix(path, ".yaml") || strings.HasSuffix(path, ".yml")) {
 			resources = append(resources, path)
 		}
 		return nil
@@ -303,4 +333,20 @@ func generateKustomization(fsys kustfsys.FileSystem) ([]byte, error) {
 	}
 
 	return rawKustomization, nil
+}
+
+func readOptions(fsys fs.FS, path string, options *KustomizeGeneratorOptions) error {
+	rawOptions, err := fs.ReadFile(fsys, path)
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return nil
+		}
+		return err
+	}
+
+	if err := kyaml.Unmarshal(rawOptions, options); err != nil {
+		return err
+	}
+
+	return nil
 }
