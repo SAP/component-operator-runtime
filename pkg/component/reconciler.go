@@ -44,7 +44,9 @@ import (
 )
 
 // TODO: in general add more retry to overcome 409 update errors (also etcd storage errors because of missed precondition on delete)
-// TODO: make a can-i check before emitting events to deployment target (e.g. in the client factory when creating the client)
+// TODO: emitting events to deployment target may fail if corresponding rbac privileges are missing; either this should be pre-discovered or we
+// should stop emitting events to remote targets at all; howerver pre-discovering is difficult (may vary from object to object); one option could
+// be to send events only if we are cluster-admin
 // TODO: allow to override namespace auto-creation and policies on a per-component level
 // (e.g. through annotations or another interface that components could optionally implement)
 // TODO: allow to override namespace auto-creation on a per-object level

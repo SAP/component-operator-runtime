@@ -1005,6 +1005,7 @@ func (r *Reconciler) updateObject(ctx context.Context, object client.Object, exi
 			return err
 		} else if changed {
 			log.V(1).Info("adjusting field managers as preparation of ssa")
+			// TODO: add a metric to count if this happens
 			gvk := object.GetObjectKind().GroupVersionKind()
 			obj := &metav1.PartialObjectMetadata{
 				TypeMeta: metav1.TypeMeta{
