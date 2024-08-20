@@ -61,6 +61,7 @@ const (
 	readyConditionReasonProcessing         = "Processing"
 	readyConditionReasonReady              = "Ready"
 	readyConditionReasonError              = "Error"
+	readyConditionReasonTimeout            = "Timeout"
 	readyConditionReasonDeletionPending    = "DeletionPending"
 	readyConditionReasonDeletionBlocked    = "DeletionBlocked"
 	readyConditionReasonDeletionProcessing = "DeletionProcessing"
@@ -169,11 +170,7 @@ func (r *Reconciler[T]) Reconcile(ctx context.Context, req ctrl.Request) (result
 	}
 	component.GetObjectKind().SetGroupVersionKind(r.groupVersionKind)
 
-	// convenience accessors
-	status := component.GetStatus()
-	savedStatus := status.DeepCopy()
-
-	// requeue/retry interval
+	// fetch requeue interval, retry interval and timeout
 	requeueInterval := time.Duration(0)
 	if requeueConfiguration, ok := assertRequeueConfiguration(component); ok {
 		requeueInterval = requeueConfiguration.GetRequeueInterval()
@@ -188,6 +185,17 @@ func (r *Reconciler[T]) Reconcile(ctx context.Context, req ctrl.Request) (result
 	if retryInterval == 0 {
 		retryInterval = requeueInterval
 	}
+	timeout := time.Duration(0)
+	if timeoutConfiguration, ok := assertTimeoutConfiguration(component); ok {
+		timeout = timeoutConfiguration.GetTimeout()
+	}
+	if timeout == 0 {
+		timeout = requeueInterval
+	}
+
+	// convenience accessors
+	status := component.GetStatus()
+	savedStatus := status.DeepCopy()
 
 	// always attempt to update the status
 	skipStatusUpdate := false
@@ -197,11 +205,27 @@ func (r *Reconciler[T]) Reconcile(ctx context.Context, req ctrl.Request) (result
 			// re-panic in order skip the remaining steps
 			panic(r)
 		}
+
+		status.ObservedGeneration = component.GetGeneration()
+
 		if status.State == StateReady || err != nil {
+			// clear backoff if state is ready (obviously) or if there is an error;
+			// even is the error is a RetriableError which will be turned into a non-error;
+			// this is correct, because in that case, the RequeueAfter will be determined through the RetriableError
 			r.backoff.Forget(req)
 		}
-		status.ObservedGeneration = component.GetGeneration()
+		if status.State != StateProcessing || err != nil {
+			// clear ProcessingDigest and ProcessingSince in all non-error cases where state is StateProcessing
+			status.ProcessingDigest = ""
+			status.ProcessingSince = nil
+		}
+		if status.State == StateProcessing && now.Sub(status.ProcessingSince.Time) >= timeout {
+			// TODO: maybe it would be better to have a dedicated StateTimeout?
+			status.SetState(StateError, readyConditionReasonTimeout, "Reconcilation of dependent resources timed out")
+		}
+
 		if err != nil {
+			// convert retriable errors into non-errors (Pending or DeletionPending state), and return specified or default backoff
 			retriableError := &types.RetriableError{}
 			if errors.As(err, retriableError) {
 				retryAfter := retriableError.RetryAfter()
@@ -220,10 +244,12 @@ func (r *Reconciler[T]) Reconcile(ctx context.Context, req ctrl.Request) (result
 				status.SetState(StateError, readyConditionReasonError, err.Error())
 			}
 		}
+
 		if result.RequeueAfter > 0 {
 			// add jitter of 1-5 percent to RequeueAfter
 			addJitter(&result.RequeueAfter, 1, 5)
 		}
+
 		log.V(1).Info("reconcile done", "withError", err != nil, "requeue", result.Requeue || result.RequeueAfter > 0, "requeueAfter", result.RequeueAfter.String())
 		if err != nil {
 			if status, ok := err.(apierrors.APIStatus); ok || errors.As(err, &status) {
@@ -232,22 +258,34 @@ func (r *Reconciler[T]) Reconcile(ctx context.Context, req ctrl.Request) (result
 				metrics.ReconcileErrors.WithLabelValues(r.controllerName, "other").Inc()
 			}
 		}
-		// TODO: should we move this behind the DeepEqual check below?
-		// note: it seems that no events will be written if the component's namespace is in deletion
+
+		// TODO: should we move this behind the DeepEqual check below to avoid noise?
+		// also note: it seems that no events will be written if the component's namespace is in deletion
 		state, reason, message := status.GetState()
 		if state == StateError {
 			r.client.EventRecorder().Event(component, corev1.EventTypeWarning, reason, message)
 		} else {
 			r.client.EventRecorder().Event(component, corev1.EventTypeNormal, reason, message)
 		}
+
 		if skipStatusUpdate {
 			return
 		}
 		if reflect.DeepEqual(status, savedStatus) {
 			return
 		}
-		// note: it's crucial to set the following timestamp late (otherwise the DeepEqual() check before would always be false)
+
+		// note: it's crucial to set the following timestamps late (otherwise the DeepEqual() check above would always be false)
+		// on the other hand it's a bit weird, because LastObservedAt will not be updated if no other changes have happened to the status;
+		// and same for the conditions' LastTransitionTime timestamps;
+		// maybe we should remove this optimization, and always do the Update() call
 		status.LastObservedAt = &now
+		for i := 0; i < len(status.Conditions); i++ {
+			cond := &status.Conditions[i]
+			if savedCond := savedStatus.getCondition(cond.Type); savedCond == nil || cond.Status != savedCond.Status {
+				cond.LastTransitionTime = &now
+			}
+		}
 		if updateErr := r.client.Status().Update(ctx, component, client.FieldOwner(r.name)); updateErr != nil {
 			err = utilerrors.NewAggregate([]error{err, updateErr})
 			result = ctrl.Result{}
@@ -256,7 +294,7 @@ func (r *Reconciler[T]) Reconcile(ctx context.Context, req ctrl.Request) (result
 
 	// set a first status (and requeue, because the status update itself will not trigger another reconciliation because of the event filter set)
 	if status.ObservedGeneration <= 0 {
-		status.SetState(StateProcessing, readyConditionReasonNew, "First seen")
+		status.SetState(StatePending, readyConditionReasonNew, "First seen")
 		return ctrl.Result{Requeue: true}, nil
 	}
 
@@ -301,7 +339,8 @@ func (r *Reconciler[T]) Reconcile(ctx context.Context, req ctrl.Request) (result
 				return ctrl.Result{}, errors.Wrap(err, "error adding finalizer")
 			}
 			// trigger another round trip
-			// this is necessary because the update call invalidates potential changes done by the post-read hook above
+			// this is necessary because the update call invalidates potential changes done to the component by the post-read
+			// hook above; this means, not to the object itself, but for example to loaded secrets or config maps;
 			// in the following round trip, the finalizer will already be there, and the update will not happen again
 			return ctrl.Result{Requeue: true}, nil
 		}
@@ -312,7 +351,7 @@ func (r *Reconciler[T]) Reconcile(ctx context.Context, req ctrl.Request) (result
 				return ctrl.Result{}, errors.Wrapf(err, "error running pre-reconcile hook (%d)", hookOrder)
 			}
 		}
-		ok, err := target.Apply(ctx, component)
+		ok, digest, err := target.Apply(ctx, component)
 		if err != nil {
 			log.V(1).Info("error while reconciling dependent resources")
 			return ctrl.Result{}, errors.Wrap(err, "error reconciling dependent resources")
@@ -324,16 +363,21 @@ func (r *Reconciler[T]) Reconcile(ctx context.Context, req ctrl.Request) (result
 				}
 			}
 			log.V(1).Info("all dependent resources successfully reconciled")
-			status.SetState(StateReady, readyConditionReasonReady, "Dependent resources successfully reconciled")
 			status.AppliedGeneration = component.GetGeneration()
 			status.LastAppliedAt = &now
+			status.SetState(StateReady, readyConditionReasonReady, "Dependent resources successfully reconciled")
 			return ctrl.Result{RequeueAfter: requeueInterval}, nil
 		} else {
 			log.V(1).Info("not all dependent resources successfully reconciled")
-			status.SetState(StateProcessing, readyConditionReasonProcessing, "Reconcilation of dependent resources triggered; waiting until all dependent resources are ready")
+			if digest != status.ProcessingDigest {
+				status.ProcessingDigest = digest
+				status.ProcessingSince = &now
+				r.backoff.Forget(req)
+			}
 			if !reflect.DeepEqual(status.Inventory, savedStatus.Inventory) {
 				r.backoff.Forget(req)
 			}
+			status.SetState(StateProcessing, readyConditionReasonProcessing, "Reconcilation of dependent resources triggered; waiting until all dependent resources are ready")
 			return ctrl.Result{RequeueAfter: r.backoff.Next(req, readyConditionReasonProcessing)}, nil
 		}
 	} else {
@@ -352,16 +396,16 @@ func (r *Reconciler[T]) Reconcile(ctx context.Context, req ctrl.Request) (result
 			log.V(1).Info("deletion not allowed")
 			// TODO: have an additional StateDeletionBlocked?
 			// TODO: eliminate this msg logic
-			status.SetState(StateDeleting, readyConditionReasonDeletionBlocked, "Deletion blocked: "+msg)
 			r.client.EventRecorder().Event(component, corev1.EventTypeNormal, readyConditionReasonDeletionBlocked, "Deletion blocked: "+msg)
+			status.SetState(StateDeleting, readyConditionReasonDeletionBlocked, "Deletion blocked: "+msg)
 			return ctrl.Result{RequeueAfter: 1*time.Second + r.backoff.Next(req, readyConditionReasonDeletionBlocked)}, nil
 		}
 		if len(slices.Remove(component.GetFinalizers(), r.name)) > 0 {
 			// deletion is blocked because of foreign finalizers
 			log.V(1).Info("deleted blocked due to existence of foreign finalizers")
 			// TODO: have an additional StateDeletionBlocked?
-			status.SetState(StateDeleting, readyConditionReasonDeletionBlocked, "Deletion blocked due to existing foreign finalizers")
 			r.client.EventRecorder().Event(component, corev1.EventTypeNormal, readyConditionReasonDeletionBlocked, "Deletion blocked due to existing foreign finalizers")
+			status.SetState(StateDeleting, readyConditionReasonDeletionBlocked, "Deletion blocked due to existing foreign finalizers")
 			return ctrl.Result{RequeueAfter: 1*time.Second + r.backoff.Next(req, readyConditionReasonDeletionBlocked)}, nil
 		}
 		// deletion case
@@ -392,10 +436,10 @@ func (r *Reconciler[T]) Reconcile(ctx context.Context, req ctrl.Request) (result
 		} else {
 			// deletion triggered for dependent resources, but some are not yet gone
 			log.V(1).Info("not all dependent resources are successfully deleted")
-			status.SetState(StateDeleting, readyConditionReasonDeletionProcessing, "Deletion of dependent resources triggered; waiting until dependent resources are deleted")
 			if !reflect.DeepEqual(status.Inventory, savedStatus.Inventory) {
 				r.backoff.Forget(req)
 			}
+			status.SetState(StateDeleting, readyConditionReasonDeletionProcessing, "Deletion of dependent resources triggered; waiting until dependent resources are deleted")
 			return ctrl.Result{RequeueAfter: r.backoff.Next(req, readyConditionReasonDeletionProcessing)}, nil
 		}
 	}

@@ -33,7 +33,7 @@ func newReconcileTarget[T Component](reconcilerName string, reconcilerId string,
 	}
 }
 
-func (t *reconcileTarget[T]) Apply(ctx context.Context, component T) (bool, error) {
+func (t *reconcileTarget[T]) Apply(ctx context.Context, component T) (bool, string, error) {
 	//log := log.FromContext(ctx)
 	namespace := ""
 	name := ""
@@ -59,10 +59,12 @@ func (t *reconcileTarget[T]) Apply(ctx context.Context, component T) (bool, erro
 		WithComponentDigest(componentDigest)
 	objects, err := t.resourceGenerator.Generate(generateCtx, namespace, name, component.GetSpec())
 	if err != nil {
-		return false, errors.Wrap(err, "error rendering manifests")
+		return false, "", errors.Wrap(err, "error rendering manifests")
 	}
 
-	return t.reconciler.Apply(ctx, &status.Inventory, objects, namespace, ownerId, component.GetGeneration())
+	ok, err := t.reconciler.Apply(ctx, &status.Inventory, objects, namespace, ownerId, component.GetGeneration())
+
+	return ok, calculateDigest(componentDigest, objects), err
 }
 
 func (t *reconcileTarget[T]) Delete(ctx context.Context, component T) (bool, error) {

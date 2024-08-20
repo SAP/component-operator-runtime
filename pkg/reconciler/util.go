@@ -95,6 +95,7 @@ func calculateObjectDigest(obj client.Object, item *InventoryItem, revision int6
 	}
 	now := time.Now().Unix()
 	timestamp := int64(0)
+	// TODO: make force-reconcile period configurable (globally, per object, ...?)
 	if previousDigest == digest && now-previousTimestamp <= 3600 {
 		timestamp = previousTimestamp
 	} else {
