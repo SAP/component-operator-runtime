@@ -171,3 +171,23 @@ type RequeueConfiguration interface {
 ```
 
 interface.
+
+## Tuning the timeout behavior
+
+If the dependent objects of a component do not reach a ready state after a certain time, the component state will switch from `Processing` to `Error`.
+This timeout restarts counting whenever something changed in the component, or in the manifests of the dependent objects, and by default has the value
+of the effective retry interval, which in turn defaults to 10 minutes.
+The timeout may be overridden by the component by implementing the 
+
+```go
+package component
+
+// The TimeoutConfiguration interface is meant to be implemented by components (or their spec) which offer
+// tweaking the processing timeout (by default, it would be the value of the requeue interval).
+type TimeoutConfiguration interface {
+	// Get timeout. Should be greater than 1 minute.
+	GetTimeout() time.Duration
+}
+```
+
+interface.
