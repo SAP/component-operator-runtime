@@ -77,6 +77,13 @@ type RetryConfiguration interface {
 	GetRetryInterval() time.Duration
 }
 
+// The TimeoutConfiguration interface is meant to be implemented by components (or their spec) which offer
+// tweaking the processing timeout (by default, it would be the value of the requeue interval).
+type TimeoutConfiguration interface {
+	// Get timeout. Should be greater than 1 minute.
+	GetTimeout() time.Duration
+}
+
 // +kubebuilder:object:generate=true
 
 // Legacy placement spec. Components may include this into their spec.
@@ -147,12 +154,27 @@ var _ RetryConfiguration = &RetrySpec{}
 
 // +kubebuilder:object:generate=true
 
+// TimeoutSpec defines the processing timeout, that is, the duration after which all dependent objects of the component
+// must have reached a ready state, or the component status will change to error.
+// Components providing TimeoutConfiguration may include this into their spec.
+type TimeoutSpec struct {
+	// +kubebuilder:validation:Type:=string
+	// +kubebuilder:validation:Pattern="^([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$"
+	Timeout *metav1.Duration `json:"timeout,omitempty"`
+}
+
+var _ TimeoutConfiguration = &TimeoutSpec{}
+
+// +kubebuilder:object:generate=true
+
 // Component Status. Components must include this into their status.
 type Status struct {
 	ObservedGeneration int64        `json:"observedGeneration"`
 	AppliedGeneration  int64        `json:"appliedGeneration,omitempty"`
 	LastObservedAt     *metav1.Time `json:"lastObservedAt,omitempty"`
 	LastAppliedAt      *metav1.Time `json:"lastAppliedAt,omitempty"`
+	ProcessingDigest   string       `json:"processingDigest,omitempty"`
+	ProcessingSince    *metav1.Time `json:"processingSince,omitempty"`
 	Conditions         []Condition  `json:"conditions,omitempty"`
 	// +kubebuilder:validation:Enum=Ready;Pending;Processing;DeletionPending;Deleting;Error
 	State     State                       `json:"state,omitempty"`

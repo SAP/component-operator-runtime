@@ -11,8 +11,6 @@ import (
 	"reflect"
 	"time"
 
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-
 	"github.com/sap/component-operator-runtime/internal/walk"
 )
 
@@ -88,7 +86,18 @@ func assertRetryConfiguration[T Component](component T) (RetryConfiguration, boo
 	return nil, false
 }
 
-// Calculate digest of given component, honoring annotations, spec, and references
+// Check if given component or its spec implements TimeoutConfiguration (and return it).
+func assertTimeoutConfiguration[T Component](component T) (TimeoutConfiguration, bool) {
+	if timeoutConfiguration, ok := Component(component).(TimeoutConfiguration); ok {
+		return timeoutConfiguration, true
+	}
+	if timeoutConfiguration, ok := getSpec(component).(TimeoutConfiguration); ok {
+		return timeoutConfiguration, true
+	}
+	return nil, false
+}
+
+// Calculate digest of given component, honoring annotations, spec, and references.
 func calculateComponentDigest[T Component](component T) string {
 	digestData := make(map[string]any)
 	spec := getSpec(component)
@@ -120,8 +129,7 @@ func calculateComponentDigest[T Component](component T) string {
 		// note: this panic is ok because walk.Walk() only produces errors if the given walker function raises any (which ours here does not do)
 		panic("this cannot happen")
 	}
-	// note: this must() is ok because digestData should contain only serializable stuff
-	return sha256hex(must(json.Marshal(digestData)))
+	return calculateDigest(digestData)
 }
 
 // Implement the PlacementConfiguration interface.
@@ -178,46 +186,62 @@ func (s *Status) IsReady() bool {
 	return s.State == StateReady
 }
 
-// Get state (and related details).
-func (s *Status) GetState() (State, string, string) {
+// Implement the TimeoutConfiguration interface.
+func (s *TimeoutSpec) GetTimeout() time.Duration {
+	if s.Timeout != nil {
+		return s.Timeout.Duration
+	}
+	return time.Duration(0)
+}
+
+// Get condition (and return nil if not existing).
+// Caveat: the returned pointer might become invalid if further appends happen to the Conditions slice in the status object.
+func (s *Status) getCondition(condType ConditionType) *Condition {
+	for i := 0; i < len(s.Conditions); i++ {
+		if s.Conditions[i].Type == condType {
+			return &s.Conditions[i]
+		}
+	}
+	return nil
+}
+
+// Get condition (adding it with initial values if not existing).
+// Caveat: the returned pointer might become invalid if further appends happen to the Conditions slice in the status object.
+func (s *Status) getOrAddCondition(condType ConditionType) *Condition {
 	var cond *Condition
 	for i := 0; i < len(s.Conditions); i++ {
-		if s.Conditions[i].Type == ConditionTypeReady {
+		if s.Conditions[i].Type == condType {
 			cond = &s.Conditions[i]
 			break
 		}
 	}
+	if cond == nil {
+		s.Conditions = append(s.Conditions, Condition{Type: condType, Status: ConditionUnknown})
+		cond = &s.Conditions[len(s.Conditions)-1]
+	}
+	return cond
+}
+
+// Get state (and related details).
+func (s *Status) GetState() (State, string, string) {
+	cond := s.getCondition(ConditionTypeReady)
 	if cond == nil {
 		return s.State, "", ""
 	}
 	return s.State, cond.Reason, cond.Message
 }
 
-// Set state and ready condition in status (according to the state value provided),
+// Set state and ready condition in status (according to the state value provided).
+// Note: this method does not touch the condition's LastTransitionTime.
 func (s *Status) SetState(state State, reason string, message string) {
-	var cond *Condition
-	for i := 0; i < len(s.Conditions); i++ {
-		if s.Conditions[i].Type == ConditionTypeReady {
-			cond = &s.Conditions[i]
-			break
-		}
-	}
-	if cond == nil {
-		s.Conditions = append(s.Conditions, Condition{Type: ConditionTypeReady})
-		cond = &s.Conditions[len(s.Conditions)-1]
-	}
-	var status ConditionStatus
+	cond := s.getOrAddCondition(ConditionTypeReady)
 	switch state {
 	case StateReady:
-		status = ConditionTrue
+		cond.Status = ConditionTrue
 	case StateError:
-		status = ConditionFalse
+		cond.Status = ConditionFalse
 	default:
-		status = ConditionUnknown
-	}
-	if status != cond.Status {
-		cond.Status = status
-		cond.LastTransitionTime = ref(metav1.Now())
+		cond.Status = ConditionUnknown
 	}
 	cond.Reason = reason
 	cond.Message = message

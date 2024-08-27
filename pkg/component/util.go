@@ -8,6 +8,7 @@ package component
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"math/rand"
 	"strings"
 	"time"
@@ -29,6 +30,11 @@ func must[T any](x T, err error) T {
 func sha256hex(data []byte) string {
 	sum := sha256.Sum256(data)
 	return hex.EncodeToString(sum[:])
+}
+
+func calculateDigest(values ...any) string {
+	// note: this must() is ok because the input values are expected to be JSON values
+	return sha256hex(must(json.Marshal(values)))
 }
 
 func capitalize(s string) string {

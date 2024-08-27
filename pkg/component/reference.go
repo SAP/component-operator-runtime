@@ -7,7 +7,6 @@ package component
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"reflect"
 	"strings"
@@ -69,8 +68,7 @@ func (r *ConfigMapReference) digest() string {
 	if !r.loaded {
 		return ""
 	}
-	// note: this must() is ok because marshalling map[string]string should always work
-	return sha256hex(must(json.Marshal(r.data)))
+	return calculateDigest(r.data)
 }
 
 // Return the previously loaded configmap data.
@@ -176,8 +174,7 @@ func (r *SecretReference) digest() string {
 	if !r.loaded {
 		return ""
 	}
-	// note: this must() is ok because marshalling map[string][]byte should always work
-	return sha256hex(must(json.Marshal(r.data)))
+	return calculateDigest(r.data)
 }
 
 // Return the previously loaded secret data.
