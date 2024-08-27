@@ -176,7 +176,7 @@ interface.
 
 If the dependent objects of a component do not reach a ready state after a certain time, the component state will switch from `Processing` to `Error`.
 This timeout restarts counting whenever something changed in the component, or in the manifests of the dependent objects, and by default has the value
-of the effective retry interval, which in turn defaults to 10 minutes.
+of the effective requeue interval, which in turn defaults to 10 minutes.
 The timeout may be overridden by the component by implementing the 
 
 ```go
