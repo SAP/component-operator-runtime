@@ -24,19 +24,22 @@ import (
 // template FuncMap generator
 func FuncMap() template.FuncMap {
 	return template.FuncMap{
-		"toYaml":           toYaml,
-		"mustToYaml":       toYaml,
-		"fromYaml":         fromYaml,
-		"mustFromYaml":     fromYaml,
-		"toJson":           toJson,
-		"mustToJson":       toJson,
-		"toPrettyJson":     toPrettyJson,
-		"mustToPrettyJson": toPrettyJson,
-		"toRawJson":        toRawJson,
-		"mustToRawJson":    toRawJson,
-		"fromJson":         fromJson,
-		"mustFromJson":     fromJson,
-		"required":         required,
+		"toYaml":            toYaml,
+		"mustToYaml":        toYaml,
+		"fromYaml":          fromYaml,
+		"fromYamlArray":     fromYamlArray,
+		"mustFromYaml":      fromYaml,
+		"toJson":            toJson,
+		"mustToJson":        toJson,
+		"toPrettyJson":      toPrettyJson,
+		"mustToPrettyJson":  toPrettyJson,
+		"toRawJson":         toRawJson,
+		"mustToRawJson":     toRawJson,
+		"fromJson":          fromJson,
+		"mustFromJson":      fromJson,
+		"fromJsonArray":     fromJsonArray,
+		"mustFromJsonArray": fromJsonArray,
+		"required":          required,
 	}
 }
 
@@ -80,6 +83,14 @@ func fromYaml(data string) (any, error) {
 	return res, nil
 }
 
+func fromYamlArray(data string) ([]any, error) {
+	var res []any
+	if err := kyaml.Unmarshal([]byte(data), &res); err != nil {
+		return nil, err
+	}
+	return res, nil
+}
+
 func toJson(data any) (string, error) {
 	raw, err := json.Marshal(data)
 	if err != nil {
@@ -109,6 +120,14 @@ func toRawJson(data any) (string, error) {
 
 func fromJson(data string) (any, error) {
 	var res any
+	if err := json.Unmarshal([]byte(data), &res); err != nil {
+		return nil, err
+	}
+	return res, nil
+}
+
+func fromJsonArray(data string) ([]any, error) {
+	var res []any
 	if err := json.Unmarshal([]byte(data), &res); err != nil {
 		return nil, err
 	}
