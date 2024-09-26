@@ -25,14 +25,19 @@ import (
 	apitypes "k8s.io/apimachinery/pkg/types"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/client-go/discovery"
+	"k8s.io/client-go/util/workqueue"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/event"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	"github.com/sap/component-operator-runtime/internal/backoff"
 	"github.com/sap/component-operator-runtime/internal/cluster"
@@ -65,6 +70,8 @@ const (
 	readyConditionReasonDeletionPending    = "DeletionPending"
 	readyConditionReasonDeletionBlocked    = "DeletionBlocked"
 	readyConditionReasonDeletionProcessing = "DeletionProcessing"
+
+	triggerBufferSize = 1024
 )
 
 // TODO: should we pass cluster.Client to hooks instead of just client.Client?
@@ -112,6 +119,7 @@ type Reconciler[T Component] struct {
 	postReconcileHooks []HookFunc[T]
 	preDeleteHooks     []HookFunc[T]
 	postDeleteHooks    []HookFunc[T]
+	triggerCh          chan event.TypedGenericEvent[apitypes.NamespacedName]
 	setupMutex         sync.Mutex
 	setupComplete      bool
 }
@@ -140,6 +148,7 @@ func NewReconciler[T Component](name string, resourceGenerator manifests.Generat
 		// TODO: make backoff configurable via options?
 		backoff:       backoff.NewBackoff(10 * time.Second),
 		postReadHooks: []HookFunc[T]{resolveReferences[T]},
+		triggerCh:     make(chan event.TypedGenericEvent[apitypes.NamespacedName], triggerBufferSize),
 	}
 }
 
@@ -445,6 +454,16 @@ func (r *Reconciler[T]) Reconcile(ctx context.Context, req ctrl.Request) (result
 	}
 }
 
+// Trigger ad-hoc reconcilation for specified component.
+func (r *Reconciler[T]) Trigger(namespace string, name string) error {
+	select {
+	case r.triggerCh <- event.TypedGenericEvent[apitypes.NamespacedName]{Object: apitypes.NamespacedName{Namespace: namespace, Name: name}}:
+		return nil
+	default:
+		return fmt.Errorf("error triggering reconcile for component %s/%s (buffer full)", namespace, name)
+	}
+}
+
 // Register post-read hook with reconciler.
 // This hook will be called after the reconciled component object has been retrieved from the Kubernetes API.
 func (r *Reconciler[T]) WithPostReadHook(hook HookFunc[T]) *Reconciler[T] {
@@ -553,6 +572,12 @@ func (r *Reconciler[T]) SetupWithManagerAndBuilder(mgr ctrl.Manager, blder *ctrl
 
 	if err := blder.
 		For(component, builder.WithPredicates(predicate.Or(predicate.GenerationChangedPredicate{}, predicate.AnnotationChangedPredicate{}))).
+		WatchesRawSource(source.Channel(
+			r.triggerCh,
+			handler.TypedFuncs[apitypes.NamespacedName, reconcile.Request]{GenericFunc: func(ctx context.Context, e event.TypedGenericEvent[apitypes.NamespacedName], q workqueue.TypedRateLimitingInterface[reconcile.Request]) {
+				q.Add(reconcile.Request{NamespacedName: e.Object})
+			}},
+			source.WithBufferSize[apitypes.NamespacedName, reconcile.Request](triggerBufferSize))).
 		Named(r.controllerName).
 		Complete(r); err != nil {
 		return errors.Wrap(err, "error creating controller")
