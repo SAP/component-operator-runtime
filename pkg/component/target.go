@@ -52,7 +52,7 @@ func (t *reconcileTarget[T]) Apply(ctx context.Context, component T) (bool, stri
 	componentDigest := calculateComponentDigest(component)
 
 	// TODO: enhance ctx with local client
-	generateCtx := newContext(ctx).
+	generateCtx := NewContext(ctx).
 		WithReconcilerName(t.reconcilerName).
 		WithClient(t.client).
 		WithComponent(component).

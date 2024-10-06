@@ -53,6 +53,8 @@ type KustomizeGeneratorOptions struct {
 }
 
 // KustomizeGenerator is a Generator implementation that basically renders a given Kustomization.
+// Note: KustomizeGenerator's Generate() method expects client and component to be set in the passed context;
+// see: Context.WithClient() and Context.WithComponent() in package pkg/component.
 type KustomizeGenerator struct {
 	kustomizer *krusty.Kustomizer
 	files      map[string][]byte
