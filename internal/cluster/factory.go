@@ -14,17 +14,12 @@ import (
 	"sync"
 	"time"
 
-	corev1 "k8s.io/api/core/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/client-go/kubernetes"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
-	typedcorev1 "k8s.io/client-go/kubernetes/typed/core/v1"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
-	"k8s.io/client-go/tools/record"
 	apiregistrationv1 "k8s.io/kube-aggregator/pkg/apis/apiregistration/v1"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/sap/component-operator-runtime/internal/metrics"
 	"github.com/sap/component-operator-runtime/pkg/types"
@@ -132,28 +127,11 @@ func (f *ClientFactory) Get(kubeConfig []byte, impersonationUser string, imperso
 			return rt.RoundTrip(r)
 		})
 	})
-	httpClient, err := rest.HTTPClientFor(config)
+	clnt, err := newClientFor(config, f.scheme, f.name)
 	if err != nil {
 		return nil, err
 	}
-	ctrlClient, err := client.New(config, client.Options{HTTPClient: httpClient, Scheme: f.scheme})
-	if err != nil {
-		return nil, err
-	}
-	clientset, err := kubernetes.NewForConfigAndClient(config, httpClient)
-	if err != nil {
-		return nil, err
-	}
-	eventBroadcaster := record.NewBroadcaster()
-	eventBroadcaster.StartRecordingToSink(&typedcorev1.EventSinkImpl{Interface: clientset.CoreV1().Events("")})
-	eventRecorder := eventBroadcaster.NewRecorder(f.scheme, corev1.EventSource{Component: f.name})
-	clnt := &clientImpl{
-		Client:           ctrlClient,
-		discoveryClient:  clientset,
-		eventBroadcaster: eventBroadcaster,
-		eventRecorder:    eventRecorder,
-		validUntil:       time.Now().Add(validity),
-	}
+	clnt.validUntil = time.Now().Add(validity)
 	f.clients[key] = clnt
 	metrics.CreatedClients.WithLabelValues(f.controllerName).Inc()
 	metrics.ActiveClients.WithLabelValues(f.controllerName).Set(float64(len(f.clients)))
