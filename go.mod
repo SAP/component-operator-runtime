@@ -12,7 +12,7 @@ require (
 	github.com/prometheus/client_golang v1.20.4
 	github.com/sap/go-generics v0.2.20
 	github.com/spf13/pflag v1.0.5
-	golang.org/x/time v0.6.0
+	golang.org/x/time v0.7.0
 	k8s.io/api v0.31.1
 	k8s.io/apiextensions-apiserver v0.31.1
 	k8s.io/apimachinery v0.31.1
@@ -20,8 +20,8 @@ require (
 	k8s.io/kube-aggregator v0.31.1
 	sigs.k8s.io/cli-utils v0.37.2
 	sigs.k8s.io/controller-runtime v0.19.0
-	sigs.k8s.io/kustomize/api v0.17.3
-	sigs.k8s.io/kustomize/kyaml v0.17.2
+	sigs.k8s.io/kustomize/api v0.18.0
+	sigs.k8s.io/kustomize/kyaml v0.18.1
 	sigs.k8s.io/structured-merge-diff/v4 v4.4.1
 	sigs.k8s.io/yaml v1.4.0
 )
