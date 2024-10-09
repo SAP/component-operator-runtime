@@ -97,6 +97,9 @@ func newDeleteCmd() *cobra.Command {
 				if ok {
 					break
 				}
+				if err := releaseClient.Update(context.TODO(), release); err != nil {
+					return err
+				}
 				select {
 				case <-time.After(backoff.Next()):
 				case <-timeout:
