@@ -1,4 +1,4 @@
-name: Publish scaffold
+name: Publish clm
 
 on:
   release:
@@ -26,13 +26,13 @@ jobs:
         mkdir -p bin
         for os in linux darwin; do
           for arch in amd64 arm64; do
-            file=bin/scaffold-$os-$arch
+            file=bin/clm-$os-$arch
             echo "Building $file ..."
             LDFLAGS=""
             LDFLAGS+=" -X \"github.com/sap/component-operator-runtime/internal/version.version=${{ github.event.release.tag_name }}\""
             LDFLAGS+=" -X \"github.com/sap/component-operator-runtime/internal/version.gitCommit=${{ github.sha }}\""
             LDFLAGS+=" -X \"github.com/sap/component-operator-runtime/internal/version.gitTreeState=clean\""
-            GOOS=$os GOARCH=$arch go build -o $file -ldflags "$LDFLAGS" ./scaffold
+            GOOS=$os GOARCH=$arch go build -o $file -ldflags "$LDFLAGS" ./clm
           done
         done
 
@@ -42,7 +42,7 @@ jobs:
           for arch in amd64 arm64; do
             upload_url="${{ github.event.release.upload_url }}"
             upload_url=${upload_url%%\{*\}}
-            file=bin/scaffold-$os-$arch
+            file=bin/clm-$os-$arch
             echo "Uploading $file to $upload_url ..."
             curl -sSf \
               -H "Accept: application/vnd.github+json" \
