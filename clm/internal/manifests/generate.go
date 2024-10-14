@@ -16,6 +16,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	kyaml "sigs.k8s.io/yaml"
 
+	"github.com/sap/component-operator-runtime/clm/internal/release"
 	"github.com/sap/component-operator-runtime/pkg/cluster"
 	"github.com/sap/component-operator-runtime/pkg/component"
 	"github.com/sap/component-operator-runtime/pkg/manifests"
@@ -24,7 +25,7 @@ import (
 	"github.com/sap/component-operator-runtime/pkg/types"
 )
 
-func Generate(manifestSources []string, valuesSources []string, reconcilerName string, clnt cluster.Client, namespace string, name string) ([]client.Object, error) {
+func Generate(manifestSources []string, valuesSources []string, reconcilerName string, clnt cluster.Client, release *release.Release) ([]client.Object, error) {
 	var allObjects []client.Object
 	var allValues = make(map[string]any)
 
@@ -55,9 +56,17 @@ func Generate(manifestSources []string, valuesSources []string, reconcilerName s
 				return nil, err
 			}
 		} else if !info.IsDir() {
-			return nil, fmt.Errorf("not a directory: %s", path)
+			tmpdir, err := os.MkdirTemp("", "clm-")
+			if err != nil {
+				return nil, err
+			}
+			defer os.RemoveAll(tmpdir)
+			if _, err := copyFile(path, fmt.Sprintf("%s/%s", tmpdir, "resources.yaml")); err != nil {
+				return nil, err
+			}
+			path = tmpdir
 		}
-		path, err := filepath.Abs(source)
+		path, err := filepath.Abs(path)
 		if err != nil {
 			return nil, err
 		}
@@ -82,9 +91,9 @@ func Generate(manifestSources []string, valuesSources []string, reconcilerName s
 		generateCtx := component.NewContext(context.TODO()).
 			WithReconcilerName(reconcilerName).
 			WithClient(clnt).
-			WithComponent(nil).
+			WithComponent(componentFromRelease(release, allValues)).
 			WithComponentDigest("")
-		objects, err := generator.Generate(generateCtx, namespace, name, types.UnstructurableMap(allValues))
+		objects, err := generator.Generate(generateCtx, release.GetNamespace(), release.GetName(), types.UnstructurableMap(allValues))
 		if err != nil {
 			return nil, err
 		}

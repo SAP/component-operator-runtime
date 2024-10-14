@@ -60,11 +60,6 @@ func newApplyCmd() *cobra.Command {
 
 			ownerId := fullName + "/" + namespace + "/" + name
 
-			objects, err := manifests.Generate(manifestSources, options.valuesSources, fullName, clnt, namespace, name)
-			if err != nil {
-				return err
-			}
-
 			release, err := releaseClient.Get(context.TODO(), namespace, name)
 			if err != nil {
 				if apierrors.IsNotFound(err) {
@@ -82,6 +77,11 @@ func newApplyCmd() *cobra.Command {
 			}
 
 			release.Revision += 1
+
+			objects, err := manifests.Generate(manifestSources, options.valuesSources, fullName, clnt, release)
+			if err != nil {
+				return err
+			}
 
 			backoff := backoff.New()
 
