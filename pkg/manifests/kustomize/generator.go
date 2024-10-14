@@ -198,7 +198,6 @@ func (g *KustomizeGenerator) Generate(ctx context.Context, namespace string, nam
 	if err != nil {
 		return nil, err
 	}
-
 	serverInfo, err := clnt.DiscoveryClient().ServerVersion()
 	if err != nil {
 		return nil, err
