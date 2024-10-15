@@ -228,8 +228,11 @@ func (r *Reconciler[T]) Reconcile(ctx context.Context, req ctrl.Request) (result
 			status.ProcessingDigest = ""
 			status.ProcessingSince = nil
 		}
-		if status.State == StateProcessing && now.Sub(status.ProcessingSince.Time) >= timeout {
+		if status.State == StateProcessing && err == nil && now.Sub(status.ProcessingSince.Time) >= timeout {
 			// TODO: maybe it would be better to have a dedicated StateTimeout?
+			// note: it is guaranteed that status.ProcessingSince is not nil here because
+			// - it was not cleared above because of the mutually exclusive clauses on status.State and err
+			// - it was set during reconcile when state was set to StateProcessing
 			status.SetState(StateError, readyConditionReasonTimeout, "Reconcilation of dependent resources timed out")
 		}
 
