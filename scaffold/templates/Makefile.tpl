@@ -24,7 +24,7 @@ manifests: controller-gen ## Generate CustomResourceDefinition objects
 	test ! -d chart || test -e chart/crds || ln -s ../crds chart/crds
 
 .PHONY: generate
-generate: generate-deepcopy # generate-client ## Generate required code pieces
+generate: generate-deepcopy ## Generate required code pieces
 
 .PHONY: generate-deepcopy
 generate-deepcopy: controller-gen ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations
