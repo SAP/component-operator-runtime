@@ -59,6 +59,10 @@ import (
 // (e.g. through a TimeoutConfiguration interface that components could optionally implement)
 // TODO: run admission webhooks (if present) in reconcile (e.g. as post-read hook)
 // TODO: improve overall log output
+// TODO: finalizer and fieldowner should be made more configurable (instead of just using the reconciler name)
+// TODO: finalizer should have the standard format prefix/finalizer
+// TODO: currently, the reconciler always claims/owns dependent objects entirely; but due to server-side-apply it can happen that
+// only parts of an object are managed: other parts/fiels might be managed by other actors (or even other components); how to handle such cases?
 
 const (
 	readyConditionReasonNew                = "FirstSeen"
@@ -604,11 +608,11 @@ func (r *Reconciler[T]) getClientForComponent(component T) (cluster.Client, erro
 	clientConfiguration, haveClientConfiguration := assertClientConfiguration(component)
 	impersonationConfiguration, haveImpersonationConfiguration := assertImpersonationConfiguration(component)
 
-	var kubeconfig []byte
+	var kubeConfig []byte
 	var impersonationUser string
 	var impersonationGroups []string
 	if haveClientConfiguration {
-		kubeconfig = clientConfiguration.GetKubeConfig()
+		kubeConfig = clientConfiguration.GetKubeConfig()
 	}
 	if haveImpersonationConfiguration {
 		impersonationUser = impersonationConfiguration.GetImpersonationUser()
@@ -626,7 +630,7 @@ func (r *Reconciler[T]) getClientForComponent(component T) (cluster.Client, erro
 			}
 		}
 	}
-	clnt, err := r.clients.Get(kubeconfig, impersonationUser, impersonationGroups)
+	clnt, err := r.clients.Get(kubeConfig, impersonationUser, impersonationGroups)
 	if err != nil {
 		return nil, errors.Wrap(err, "error getting remote or impersonated client")
 	}

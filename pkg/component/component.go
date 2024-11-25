@@ -183,6 +183,7 @@ func (s *RetrySpec) GetRetryInterval() time.Duration {
 
 // Check if state is Ready.
 func (s *Status) IsReady() bool {
+	// caveat: this operates only on the status, so it does not check that observedGeneration == generation
 	return s.State == StateReady
 }
 

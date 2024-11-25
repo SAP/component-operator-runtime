@@ -134,6 +134,8 @@ type Reconciler struct {
 }
 
 // Create new reconciler.
+// The passed name should be fully qualified; it will be used as field owner and finalizer.
+// The passed client's scheme must recognize at least the core group (v1) and apiextensions.k8s.io/v1 and apiregistration.k8s.io/v1.
 func NewReconciler(name string, clnt cluster.Client, options ReconcilerOptions) *Reconciler {
 	// TOOD: validate options
 	if options.CreateMissingNamespaces == nil {
