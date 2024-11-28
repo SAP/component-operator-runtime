@@ -389,6 +389,10 @@ func (r *Reconciler) Apply(ctx context.Context, inventory *[]*InventoryItem, obj
 		// if item was not found, append an empty item
 		if item == nil {
 			// TODO: should the owner id check happen always (not only if the object is unknown to the inventory)?
+			// TODO: since deletion handling now happens late, it can happen that, when an object is moved from its previous compoment into a new one,
+			// and the previous one gets deleted at the same time, applying the new one runs stuck because of the owner id check;
+			// so we might add some logic to skip the owner id check in that particular case
+
 			// fetch object (if existing)
 			existingObject, err := r.readObject(ctx, object)
 			if err != nil {
