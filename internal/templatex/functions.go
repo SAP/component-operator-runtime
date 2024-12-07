@@ -9,10 +9,14 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
+	"math"
+	"strconv"
 	"strings"
 	"text/template"
 
 	"github.com/pkg/errors"
+	"github.com/spf13/cast"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -40,6 +44,13 @@ func FuncMap() template.FuncMap {
 		"fromJsonArray":     fromJsonArray,
 		"mustFromJsonArray": fromJsonArray,
 		"required":          required,
+		"bitwiseShiftLeft":  bitwiseShiftLeft,
+		"bitwiseShiftRight": bitwiseShiftRight,
+		"bitwiseAnd":        bitwiseAnd,
+		"bitwiseOr":         bitwiseOr,
+		"bitwiseXor":        bitwiseXor,
+		"parseIPv4Address":  parseIPv4Address,
+		"formatIPv4Address": formatIPv4Address,
 	}
 }
 
@@ -143,6 +154,94 @@ func required(warn string, data any) (any, error) {
 		}
 	}
 	return data, nil
+}
+
+func bitwiseShiftLeft(by any, arg any) (uint64, error) {
+	a, err := cast.ToUint64E(arg)
+	if err != nil {
+		return 0, err
+	}
+	b, err := cast.ToUint64E(by)
+	if err != nil {
+		return 0, err
+	}
+	return a << b, nil
+}
+
+func bitwiseShiftRight(by any, arg any) (uint64, error) {
+	a, err := cast.ToUint64E(arg)
+	if err != nil {
+		return 0, err
+	}
+	b, err := cast.ToUint64E(by)
+	if err != nil {
+		return 0, err
+	}
+	return a >> b, nil
+}
+
+func bitwiseAnd(args ...any) (uint64, error) {
+	var r uint64 = math.MaxUint64
+	for _, arg := range args {
+		a, err := cast.ToUint64E(arg)
+		if err != nil {
+			return 0, err
+		}
+		r &= a
+	}
+	return r, nil
+}
+
+func bitwiseOr(args ...any) (uint64, error) {
+	var r uint64
+	for _, arg := range args {
+		a, err := cast.ToUint64E(arg)
+		if err != nil {
+			return 0, err
+		}
+		r |= a
+	}
+	return r, nil
+}
+
+func bitwiseXor(args ...any) (uint64, error) {
+	var r uint64
+	for _, arg := range args {
+		a, err := cast.ToUint64E(arg)
+		if err != nil {
+			return 0, err
+		}
+		r ^= a
+	}
+	return r, nil
+}
+
+func parseIPv4Address(data any) (uint32, error) {
+	s, err := cast.ToStringE(data)
+	if err != nil {
+		return 0, err
+	}
+	octets := strings.Split(s, ".")
+	if len(octets) != 4 {
+		return 0, errors.New("invalid IP address")
+	}
+	var r uint64
+	for i := uint64(0); i < 4; i++ {
+		x, err := strconv.ParseUint(octets[3-i], 10, 8)
+		if err != nil {
+			return 0, err
+		}
+		r |= x << (8 * i)
+	}
+	return uint32(r), nil
+}
+
+func formatIPv4Address(data any) (string, error) {
+	i, err := cast.ToUint32E(data)
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("%d.%d.%d.%d", i&0xFF000000>>24, i&0x0FF0000>>16, i&0x00FF00>>8, i&0x000000FF), nil
 }
 
 func makeFuncInclude(t *template.Template) func(string, any) (string, error) {
