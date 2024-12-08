@@ -94,6 +94,10 @@ type ReconcilerOptions struct {
 	// If unspecified, UpdatePolicyReplace is assumed.
 	// Can be overridden by annotation on object level.
 	UpdatePolicy *UpdatePolicy
+	// How to perform deletion of dependent objects.
+	// If unspecified, DeletePolicyDelete is assumed.
+	// Can be overridden by annotation on object level.
+	DeletePolicy *DeletePolicy
 	// How to analyze the state of the dependent objects.
 	// If unspecified, an optimized kstatus based implementation is used.
 	StatusAnalyzer status.StatusAnalyzer
@@ -147,6 +151,9 @@ func NewReconciler(name string, clnt cluster.Client, options ReconcilerOptions) 
 	if options.UpdatePolicy == nil {
 		options.UpdatePolicy = ref(UpdatePolicyReplace)
 	}
+	if options.DeletePolicy == nil {
+		options.DeletePolicy = ref(DeletePolicyDelete)
+	}
 	if options.StatusAnalyzer == nil {
 		options.StatusAnalyzer = status.NewStatusAnalyzer(name)
 	}
@@ -160,7 +167,7 @@ func NewReconciler(name string, clnt cluster.Client, options ReconcilerOptions) 
 		adoptionPolicy:               *options.AdoptionPolicy,
 		reconcilePolicy:              ReconcilePolicyOnObjectChange,
 		updatePolicy:                 *options.UpdatePolicy,
-		deletePolicy:                 DeletePolicyDelete,
+		deletePolicy:                 *options.DeletePolicy,
 		labelKeyOwnerId:              name + "/" + types.LabelKeySuffixOwnerId,
 		annotationKeyOwnerId:         name + "/" + types.AnnotationKeySuffixOwnerId,
 		annotationKeyDigest:          name + "/" + types.AnnotationKeySuffixDigest,
@@ -196,14 +203,13 @@ func NewReconciler(name string, clnt cluster.Client, options ReconcilerOptions) 
 //     will re-claim (and therefore potentially drop) fields owned by certain field managers, such as kubectl and helm
 //   - if the effective update policy is UpdatePolicyRecreate, the object will be deleted and recreated.
 //
-// Redundant objects will be removed; that means, in the regular case, a http DELETE request will be sent to the Kubernetes API; if the object specifies
-// its delete policy as DeletePolicyOrphan, no physcial deletion will be performed, and the object will be left around in the cluster; however it will be no
-// longer be part of the inventory.
-//
 // Objects will be applied and deleted in waves, according to their apply/delete order. Objects which specify a purge order will be deleted from the cluster at the
 // end of the wave specified as purge order; other than redundant objects, a purged object will remain as Completed in the inventory;
 // and it might be re-applied/re-purged in case it runs out of sync. Within a wave, objects are processed following a certain internal order;
 // in particular, instances of types which are part of the wave are processed only if all other objects in that wave have a ready state.
+//
+// Redundant objects will be removed; that means, a http DELETE request will be sent to the Kubernetes API; note that an effective Orphan deletion
+// policy will not prevent deletion here; the deletion policy will only be honored when the component as whole gets deleted.
 //
 // This method will change the passed inventory (add or remove elements, change elements). If Apply() returns true, then all objects are successfully reconciled;
 // otherwise, if it returns false, the caller should recall it timely, until it returns true. In any case, the passed inventory should match the state of the
@@ -727,7 +733,12 @@ func (r *Reconciler) Apply(ctx context.Context, inventory *[]*InventoryItem, obj
 				return false, errors.Wrapf(err, "error reading object %s", item)
 			}
 
-			orphan := item.DeletePolicy == DeletePolicyOrphan
+			// note: objects becoming obsolete during an apply are no longer honoring deletion policy (orphan)
+			// TODO: not sure if there is a case where someone would like to orphan such resources while applying;
+			// if so, then we probably should introduce a third deletion policy, OrphanApply or similar ...
+			// in any case, the following code should be revisited; cleaned up or adjusted
+			// orphan := item.DeletePolicy == DeletePolicyOrphan
+			orphan := false
 
 			switch item.Phase {
 			case PhaseScheduledForDeletion:
@@ -788,6 +799,7 @@ func (r *Reconciler) Apply(ctx context.Context, inventory *[]*InventoryItem, obj
 // objects having a certain delete order will only start if all objects with lower delete order are gone. Within a wave, objects are
 // deleted following a certain internal ordering; in particular, if there are instances of types which are part of the wave, then these
 // instances will be deleted first; only if all such instances are gone, the remaining objects of the wave will be deleted.
+// Objects which have an effective Orphan deletion policy will not be touched (remain in the cluster), but will no longer appear in the inventory.
 //
 // This method will change the passed inventory (remove elements, change elements). If Delete() returns true, then all objects are gone; otherwise,
 // if it returns false, the caller should recall it timely, until it returns true. In any case, the passed inventory should match the state of the
@@ -873,8 +885,12 @@ func (r *Reconciler) Delete(ctx context.Context, inventory *[]*InventoryItem) (b
 
 // Check if the object set defined by inventory is ready for deletion; that means: check if the inventory contains
 // types (as custom resource definition or from an api service), while there exist instances of these types in the cluster,
-// which are not contained in the inventory.
+// which are not contained in the inventory. There is one exception of this rule: if all objects in the inventory have their
+// delete policy set to DeletePolicyOrphan, then the deletion of the component is immediately allowed.
 func (r *Reconciler) IsDeletionAllowed(ctx context.Context, inventory *[]*InventoryItem) (bool, string, error) {
+	if slices.All(*inventory, func(item *InventoryItem) bool { return item.DeletePolicy == DeletePolicyOrphan }) {
+		return true, "", nil
+	}
 	for _, item := range *inventory {
 		switch {
 		case isCrd(item):
