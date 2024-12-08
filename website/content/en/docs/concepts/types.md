@@ -67,7 +67,7 @@ type Status struct {
 Note that, other than with the `GetSpec()` accessor, the framework will make changes to the returned `Status` structure.
 Thus, in almost all cases, the returned pointer should just reference the status of the component's API type (or an according substructure of that status).
 
-The component's custom resource type is supposed to be namespaced, and by default, dependent objects will be created in that same namespace. To be more precise, the `namespace` and `name` parameters of the used generator's `Generate()` method will be set to the component's `metadata.namespace` and `metadata.name`, respectively. Sometimes it might be desired to override these default, and to render the dependent objects with a different namespace or name. To allow this, the component (or its spec) can implement
+The component's custom resource type is supposed to be namespaced, and by default, dependent objects will be created in that same namespace. To be more precise, the `namespace` and `name` parameters of the used generator's `Generate()` method will be set to the component's `metadata.namespace` and `metadata.name`, respectively. Sometimes it might be desired to override these defaults, and to render the dependent objects with a different namespace or name. To allow this, the component (or its spec) can implement
 
 ```go
 package component

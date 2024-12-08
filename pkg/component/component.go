@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/sap/component-operator-runtime/internal/walk"
+	"github.com/sap/component-operator-runtime/pkg/reconciler"
 )
 
 // Instantiate given Component type T; panics unless T is a pointer type.
@@ -93,6 +94,17 @@ func assertTimeoutConfiguration[T Component](component T) (TimeoutConfiguration,
 	}
 	if timeoutConfiguration, ok := getSpec(component).(TimeoutConfiguration); ok {
 		return timeoutConfiguration, true
+	}
+	return nil, false
+}
+
+// Check if given component or its spec implements PolicyConfiguration (and return it).
+func assertPolicyConfiguration[T Component](component T) (PolicyConfiguration, bool) {
+	if policyConfiguration, ok := Component(component).(PolicyConfiguration); ok {
+		return policyConfiguration, true
+	}
+	if policyConfiguration, ok := getSpec(component).(PolicyConfiguration); ok {
+		return policyConfiguration, true
 	}
 	return nil, false
 }
@@ -181,18 +193,31 @@ func (s *RetrySpec) GetRetryInterval() time.Duration {
 	return time.Duration(0)
 }
 
-// Check if state is Ready.
-func (s *Status) IsReady() bool {
-	// caveat: this operates only on the status, so it does not check that observedGeneration == generation
-	return s.State == StateReady
-}
-
 // Implement the TimeoutConfiguration interface.
 func (s *TimeoutSpec) GetTimeout() time.Duration {
 	if s.Timeout != nil {
 		return s.Timeout.Duration
 	}
 	return time.Duration(0)
+}
+
+// Implement the PolicyConfiguration interface.
+func (s *PolicySpec) GetAdoptionPolicy() reconciler.AdoptionPolicy {
+	return s.AdoptionPolicy
+}
+
+func (s *PolicySpec) GetUpdatePolicy() reconciler.UpdatePolicy {
+	return s.UpdatePolicy
+}
+
+func (s *PolicySpec) GetDeletePolicy() reconciler.DeletePolicy {
+	return s.DeletePolicy
+}
+
+// Check if state is Ready.
+func (s *Status) IsReady() bool {
+	// caveat: this operates only on the status, so it does not check that observedGeneration == generation
+	return s.State == StateReady
 }
 
 // Get condition (and return nil if not existing).

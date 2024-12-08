@@ -52,8 +52,8 @@ import (
 // TODO: emitting events to deployment target may fail if corresponding rbac privileges are missing; either this should be pre-discovered or we
 // should stop emitting events to remote targets at all; howerver pre-discovering is difficult (may vary from object to object); one option could
 // be to send events only if we are cluster-admin
-// TODO: allow to override namespace auto-creation and policies on a per-component level
-// (e.g. through annotations or another interface that components could optionally implement)
+// TODO: allow to override namespace auto-creation and reconcile policy on a per-component level
+// that is: consider adding them to the PolicyConfiguration interface?
 // TODO: allow to override namespace auto-creation on a per-object level
 // TODO: allow some timeout feature, such that component will go into error state if not ready within the given timeout
 // (e.g. through a TimeoutConfiguration interface that components could optionally implement)
@@ -101,6 +101,10 @@ type ReconcilerOptions struct {
 	// If unspecified, UpdatePolicyReplace is assumed.
 	// Can be overridden by annotation on object level.
 	UpdatePolicy *reconciler.UpdatePolicy
+	// How to perform deletion of dependent objects.
+	// If unspecified, DeletePolicyDelete is assumed.
+	// Can be overridden by annotation on object level.
+	DeletePolicy *reconciler.DeletePolicy
 	// SchemeBuilder allows to define additional schemes to be made available in the
 	// target client.
 	SchemeBuilder types.SchemeBuilder
@@ -133,6 +137,8 @@ type Reconciler[T Component] struct {
 // resourceGenerator must be an implementation of the manifests.Generator interface.
 func NewReconciler[T Component](name string, resourceGenerator manifests.Generator, options ReconcilerOptions) *Reconciler[T] {
 	// TOOD: validate options
+	// TODO: currently, the defaulting of CreateMissingNamespaces and *Policy here is identical to the defaulting in the underlying reconciler.Reconciler;
+	// under the assumption that these attributes are not used here, we could skip the defaulting here, and let it happen in the underlying implementation only
 	if options.CreateMissingNamespaces == nil {
 		options.CreateMissingNamespaces = ref(true)
 	}
@@ -141,6 +147,9 @@ func NewReconciler[T Component](name string, resourceGenerator manifests.Generat
 	}
 	if options.UpdatePolicy == nil {
 		options.UpdatePolicy = ref(reconciler.UpdatePolicyReplace)
+	}
+	if options.DeletePolicy == nil {
+		options.DeletePolicy = ref(reconciler.DeletePolicyDelete)
 	}
 
 	return &Reconciler[T]{
@@ -330,18 +339,8 @@ func (r *Reconciler[T]) Reconcile(ctx context.Context, req ctrl.Request) (result
 	if err != nil {
 		return ctrl.Result{}, errors.Wrap(err, "error getting client for component")
 	}
-	target := newReconcileTarget[T](r.name, r.id, targetClient, r.resourceGenerator, reconciler.ReconcilerOptions{
-		CreateMissingNamespaces: r.options.CreateMissingNamespaces,
-		AdoptionPolicy:          r.options.AdoptionPolicy,
-		UpdatePolicy:            r.options.UpdatePolicy,
-		StatusAnalyzer:          r.statusAnalyzer,
-		Metrics: reconciler.ReconcilerMetrics{
-			ReadCounter:   metrics.Operations.WithLabelValues(r.controllerName, "read"),
-			CreateCounter: metrics.Operations.WithLabelValues(r.controllerName, "create"),
-			UpdateCounter: metrics.Operations.WithLabelValues(r.controllerName, "update"),
-			DeleteCounter: metrics.Operations.WithLabelValues(r.controllerName, "delete"),
-		},
-	})
+	targetOptions := r.getOptionsForComponent(component)
+	target := newReconcileTarget[T](r.name, r.id, targetClient, r.resourceGenerator, targetOptions)
 	// TODO: enhance ctx with tailored logger and event recorder
 	// TODO: enhance ctx  with the local client
 	hookCtx = NewContext(ctx).WithReconcilerName(r.name).WithClient(targetClient)
@@ -635,4 +634,33 @@ func (r *Reconciler[T]) getClientForComponent(component T) (cluster.Client, erro
 		return nil, errors.Wrap(err, "error getting remote or impersonated client")
 	}
 	return clnt, nil
+}
+
+func (r *Reconciler[T]) getOptionsForComponent(component T) reconciler.ReconcilerOptions {
+	options := reconciler.ReconcilerOptions{
+		CreateMissingNamespaces: r.options.CreateMissingNamespaces,
+		AdoptionPolicy:          r.options.AdoptionPolicy,
+		UpdatePolicy:            r.options.UpdatePolicy,
+		DeletePolicy:            r.options.DeletePolicy,
+		StatusAnalyzer:          r.statusAnalyzer,
+		Metrics: reconciler.ReconcilerMetrics{
+			ReadCounter:   metrics.Operations.WithLabelValues(r.controllerName, "read"),
+			CreateCounter: metrics.Operations.WithLabelValues(r.controllerName, "create"),
+			UpdateCounter: metrics.Operations.WithLabelValues(r.controllerName, "update"),
+			DeleteCounter: metrics.Operations.WithLabelValues(r.controllerName, "delete"),
+		},
+	}
+	if policyConfiguration, ok := assertPolicyConfiguration(component); ok {
+		// TODO: check the values returned by the PolicyConfiguration
+		if adoptionPolicy := policyConfiguration.GetAdoptionPolicy(); adoptionPolicy != "" {
+			options.AdoptionPolicy = &adoptionPolicy
+		}
+		if updatePolicy := policyConfiguration.GetUpdatePolicy(); updatePolicy != "" {
+			options.UpdatePolicy = &updatePolicy
+		}
+		if deletePolicy := policyConfiguration.GetDeletePolicy(); deletePolicy != "" {
+			options.DeletePolicy = &deletePolicy
+		}
+	}
+	return options
 }
