@@ -12,7 +12,10 @@ import (
 
 	"github.com/spf13/cobra"
 
+	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	apitypes "k8s.io/apimachinery/pkg/types"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 
 	"github.com/sap/component-operator-runtime/clm/internal/backoff"
@@ -26,8 +29,9 @@ import (
 const applyUsage = `Apply component manifests to Kubernetes cluster`
 
 type applyOptions struct {
-	valuesSources []string
-	timeout       time.Duration
+	valuesSources   []string
+	createNamespace bool
+	timeout         time.Duration
 }
 
 func newApplyCmd() *cobra.Command {
@@ -59,6 +63,14 @@ func newApplyCmd() *cobra.Command {
 			releaseClient := release.NewClient(fullName, clnt)
 
 			ownerId := fullName + "/" + namespace + "/" + name
+
+			if err := clnt.Get(context.TODO(), apitypes.NamespacedName{Name: namespace}, &corev1.Namespace{}); apierrors.IsNotFound(err) && options.createNamespace {
+				if err := clnt.Create(context.TODO(), &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: namespace}}); err != nil {
+					return err
+				}
+			} else if err != nil {
+				return err
+			}
 
 			release, err := releaseClient.Get(context.TODO(), namespace, name)
 			if err != nil {
@@ -145,6 +157,7 @@ func newApplyCmd() *cobra.Command {
 
 	flags := cmd.Flags()
 	flags.StringArrayVarP(&options.valuesSources, "values", "f", nil, "Path to values file in yaml format (can be repeated, values will be merged in order of appearance)")
+	flags.BoolVar(&options.createNamespace, "create-namespace", false, "Create release namespace if not existing")
 	flags.DurationVar(&options.timeout, "timeout", 0, "Time to wait for the operation to complete (default is to wait forever)")
 
 	return cmd
