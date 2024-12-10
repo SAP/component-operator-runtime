@@ -32,7 +32,7 @@ jobs:
             LDFLAGS+=" -X \"github.com/sap/component-operator-runtime/internal/version.version=${{ github.event.release.tag_name }}\""
             LDFLAGS+=" -X \"github.com/sap/component-operator-runtime/internal/version.gitCommit=${{ github.sha }}\""
             LDFLAGS+=" -X \"github.com/sap/component-operator-runtime/internal/version.gitTreeState=clean\""
-            GOOS=$os GOARCH=$arch go build -o $file -ldflags "$LDFLAGS" ./scaffold
+            CGO_ENABLED=0 GOOS=$os GOARCH=$arch go build -o $file -ldflags "$LDFLAGS" ./scaffold
           done
         done
 
