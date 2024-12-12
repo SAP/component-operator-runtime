@@ -8,6 +8,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"os"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -111,18 +112,27 @@ func newApplyCmd() *cobra.Command {
 				}
 			}()
 
+			const maxErrCount = 15
+			errCount := 0
+
 			for {
 				release.State = component.StateProcessing
 				ok, err := reconciler.Apply(context.TODO(), &release.Inventory, objects, namespace, ownerId, release.Revision)
 				if err != nil {
-					return err
-				}
-				if ok {
-					release.State = component.StateReady
-					break
-				}
-				if err := releaseClient.Update(context.TODO(), release); err != nil {
-					return err
+					if !isEphmeralError(err) || errCount >= maxErrCount {
+						return err
+					}
+					errCount++
+					fmt.Fprintf(os.Stderr, "Error: %s (retrying %d/%d)\n", err, errCount, maxErrCount)
+				} else {
+					errCount = 0
+					if ok {
+						release.State = component.StateReady
+						break
+					}
+					if err := releaseClient.Update(context.TODO(), release); err != nil {
+						return err
+					}
 				}
 				select {
 				case <-time.After(backoff.Next()):

@@ -12,6 +12,7 @@ import (
 
 	"github.com/sap/go-generics/slices"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
@@ -56,6 +57,13 @@ func getClient(kubeConfigPath string) (cluster.Client, error) {
 	utilruntime.Must(apiextensionsv1.AddToScheme(scheme))
 	utilruntime.Must(apiregistrationv1.AddToScheme(scheme))
 	return cluster.NewClientFor(config, scheme, fullName)
+}
+
+func isEphmeralError(err error) bool {
+	if apierrors.IsConflict(err) {
+		return true
+	}
+	return false
 }
 
 func formatTimestamp(t time.Time) string {
