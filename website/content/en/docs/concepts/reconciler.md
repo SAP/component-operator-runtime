@@ -40,21 +40,25 @@ The passed type parameter `T Component` is the concrete runtime type of the comp
     // If unspecified, true is assumed.
     CreateMissingNamespaces *bool
     // How to react if a dependent object exists but has no or a different owner.
-	  // If unspecified, AdoptionPolicyIfUnowned is assumed.
+    // If unspecified, AdoptionPolicyIfUnowned is assumed.
     // Can be overridden by annotation on object level.
-    AdoptionPolicy *AdoptionPolicy
+    AdoptionPolicy *reconciler.AdoptionPolicy
     // How to perform updates to dependent objects.
     // If unspecified, UpdatePolicyReplace is assumed.
     // Can be overridden by annotation on object level.
-    UpdatePolicy *UpdatePolicy
-    // Schemebuilder allows to define additional schemes to be made available in the
+    UpdatePolicy *reconciler.UpdatePolicy
+    // How to perform deletion of dependent objects.
+    // If unspecified, DeletePolicyDelete is assumed.
+    // Can be overridden by annotation on object level.
+    DeletePolicy *reconciler.DeletePolicy
+    // SchemeBuilder allows to define additional schemes to be made available in the
     // target client.
     SchemeBuilder types.SchemeBuilder
   }
   ```
 
 The object returned by `NewReconciler` implements controller-runtime's `Reconciler` interface, and can therefore be used as a drop-in
-in kubebuilder managed projects. After creation, the reconciler  has to be registered with the responsible controller-runtime manager instance by calling
+in kubebuilder managed projects. After creation, the reconciler can be registered with the responsible controller-runtime manager instance by calling
 
 ```go
 package component
@@ -119,8 +123,8 @@ func (r *Reconciler[T]) WithPostDeleteHook(hook HookFunc[T]) *Reconciler[T]
 ```
 
 Note that the client passed to the hook functions is the client of the manager that was used when calling `SetupWithManager()`
-(that is, the return value of that manager's `GetClient()` method). In addition, reconcile and delete hooks (that is all except the
-post-read hook) can retrieve a client for the deployment target by calling `utils.ClientFromContext()`.
+(that is, the return value of that manager's `GetClient()` method). In addition, reconcile and delete hooks (that is, all except the
+post-read hook) can retrieve a client for the deployment target by calling `ClientFromContext()`.
 
 ## Tuning the retry behavior
 

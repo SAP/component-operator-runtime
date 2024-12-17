@@ -1,5 +1,5 @@
 /*
-SPDX-FileCopyrightText: 2023 SAP SE or an SAP affiliate company and component-operator-runtime contributors
+SPDX-FileCopyrightText: 2024 SAP SE or an SAP affiliate company and component-operator-runtime contributors
 SPDX-License-Identifier: Apache-2.0
 */
 
@@ -26,28 +26,36 @@ var (
 	componentDigestContextKey = componentDigestContextKeyType{}
 )
 
-func newContext(ctx context.Context) *reconcileContext {
-	return &reconcileContext{Context: ctx}
+type Context interface {
+	context.Context
+	WithReconcilerName(reconcilerName string) Context
+	WithClient(clnt cluster.Client) Context
+	WithComponent(component Component) Context
+	WithComponentDigest(componentDigest string) Context
 }
 
-type reconcileContext struct {
+func NewContext(ctx context.Context) Context {
+	return &contextImpl{Context: ctx}
+}
+
+type contextImpl struct {
 	context.Context
 }
 
-func (c *reconcileContext) WithReconcilerName(reconcilerName string) *reconcileContext {
-	return &reconcileContext{Context: context.WithValue(c, reconcilerNameContextKey, reconcilerName)}
+func (c *contextImpl) WithReconcilerName(reconcilerName string) Context {
+	return &contextImpl{Context: context.WithValue(c, reconcilerNameContextKey, reconcilerName)}
 }
 
-func (c *reconcileContext) WithClient(clnt cluster.Client) *reconcileContext {
-	return &reconcileContext{Context: context.WithValue(c, clientContextKey, clnt)}
+func (c *contextImpl) WithClient(clnt cluster.Client) Context {
+	return &contextImpl{Context: context.WithValue(c, clientContextKey, clnt)}
 }
 
-func (c *reconcileContext) WithComponent(component Component) *reconcileContext {
-	return &reconcileContext{Context: context.WithValue(c, componentContextKey, component)}
+func (c *contextImpl) WithComponent(component Component) Context {
+	return &contextImpl{Context: context.WithValue(c, componentContextKey, component)}
 }
 
-func (c *reconcileContext) WithComponentDigest(componentDigest string) *reconcileContext {
-	return &reconcileContext{Context: context.WithValue(c, componentDigestContextKey, componentDigest)}
+func (c *contextImpl) WithComponentDigest(componentDigest string) Context {
+	return &contextImpl{Context: context.WithValue(c, componentDigestContextKey, componentDigest)}
 }
 
 func ReconcilerNameFromContext(ctx context.Context) (string, error) {

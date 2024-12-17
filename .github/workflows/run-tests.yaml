@@ -17,7 +17,7 @@ defaults:
 
 jobs:
   check-generate:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
 
     steps:
     - name: Checkout
@@ -41,7 +41,7 @@ jobs:
         fi
 
   unit-and-integration-tests:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     needs: check-generate
 
     steps:
@@ -58,7 +58,7 @@ jobs:
         make test
 
   test-scaffold:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     needs:
     - check-generate
     - unit-and-integration-tests
@@ -74,7 +74,11 @@ jobs:
 
     - name: Build scaffold
       run: |
-        go build -o bin/scaffold -ldflags "-X \"main.version=$(pwd)\"" ./scaffold
+        LDFLAGS=""
+        LDFLAGS+=" -X \"github.com/sap/component-operator-runtime/internal/version.version=$(pwd)\""
+        LDFLAGS+=" -X \"github.com/sap/component-operator-runtime/internal/version.gitCommit=${{ github.sha }}\""
+        LDFLAGS+=" -X \"github.com/sap/component-operator-runtime/internal/version.gitTreeState=clean\""
+        go build -o bin/scaffold -ldflags "$LDFLAGS" ./scaffold
         echo "Running 'scaffold --version' ..."
         bin/scaffold --version
 
@@ -141,3 +145,28 @@ jobs:
     #   run: |
     #     cd $RUNNER_TEMP/src
     #     make docker-build
+
+  test-clm:
+    runs-on: ubuntu-24.04
+    needs:
+    - check-generate
+    - unit-and-integration-tests
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Setup go
+      uses: actions/setup-go@v5
+      with:
+        go-version-file: 'go.mod'
+
+    - name: Build clm
+      run: |
+        LDFLAGS=""
+        LDFLAGS+=" -X \"github.com/sap/component-operator-runtime/internal/version.version=$(pwd)\""
+        LDFLAGS+=" -X \"github.com/sap/component-operator-runtime/internal/version.gitCommit=${{ github.sha }}\""
+        LDFLAGS+=" -X \"github.com/sap/component-operator-runtime/internal/version.gitTreeState=clean\""
+        go build -o bin/clm -ldflags "$LDFLAGS" ./clm
+        echo "Running 'clm version -o json' ..."
+        bin/clm version -o json

@@ -1,4 +1,4 @@
-name: Publish scaffolder
+name: Publish scaffold
 
 on:
   release:
@@ -10,7 +10,7 @@ defaults:
 
 jobs:
   deploy:
-    runs-on: [ubuntu-22.04]
+    runs-on: [ubuntu-24.04]
 
     steps:
     - name: Checkout
@@ -28,7 +28,11 @@ jobs:
           for arch in amd64 arm64; do
             file=bin/scaffold-$os-$arch
             echo "Building $file ..."
-            GOOS=$os GOARCH=$arch go build -o $file -ldflags "-X main.version=${{ github.event.release.tag_name }}" ./scaffold
+            LDFLAGS=""
+            LDFLAGS+=" -X \"github.com/sap/component-operator-runtime/internal/version.version=${{ github.event.release.tag_name }}\""
+            LDFLAGS+=" -X \"github.com/sap/component-operator-runtime/internal/version.gitCommit=${{ github.sha }}\""
+            LDFLAGS+=" -X \"github.com/sap/component-operator-runtime/internal/version.gitTreeState=clean\""
+            CGO_ENABLED=0 GOOS=$os GOARCH=$arch go build -o $file -ldflags "$LDFLAGS" ./scaffold
           done
         done
 

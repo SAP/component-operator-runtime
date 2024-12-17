@@ -24,6 +24,7 @@ __debug_bin
 *.swo
 *~
 .DS_Store
+.vscode
 
 # temp stuff
 /tmp

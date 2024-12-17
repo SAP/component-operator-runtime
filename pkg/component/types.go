@@ -1,5 +1,5 @@
 /*
-SPDX-FileCopyrightText: 2023 SAP SE or an SAP affiliate company and component-operator-runtime contributors
+SPDX-FileCopyrightText: 2024 SAP SE or an SAP affiliate company and component-operator-runtime contributors
 SPDX-License-Identifier: Apache-2.0
 */
 
@@ -84,6 +84,20 @@ type TimeoutConfiguration interface {
 	GetTimeout() time.Duration
 }
 
+// The PolicyConfiguration interface is meant to be implemented by compoments (or their spec) which offer
+// tweaking policies affecting the dependents handling.
+type PolicyConfiguration interface {
+	// Get adoption policy.
+	// Must return a valid AdoptionPolicy, or the empty string (then the reconciler/framework default applies).
+	GetAdoptionPolicy() reconciler.AdoptionPolicy
+	// Get update policy.
+	// Must return a valid UpdatePolicy, or the empty string (then the reconciler/framework default applies).
+	GetUpdatePolicy() reconciler.UpdatePolicy
+	// Get delete policy.
+	// Must return a valid DeletePolicy, or the empty string (then the reconciler/framework default applies).
+	GetDeletePolicy() reconciler.DeletePolicy
+}
+
 // +kubebuilder:object:generate=true
 
 // Legacy placement spec. Components may include this into their spec.
@@ -164,6 +178,21 @@ type TimeoutSpec struct {
 }
 
 var _ TimeoutConfiguration = &TimeoutSpec{}
+
+// +kubebuilder:object:generate=true
+
+// PolicySpec defines some of the policies tuning the reconciliation of the compooment's dependent objects.
+// Components providing PolicyConfiguration may include this into their spec.
+type PolicySpec struct {
+	// +kubebuilder:validation:Enum=Never;IfUnowned;Always
+	AdoptionPolicy reconciler.AdoptionPolicy `json:"adoptionPolicy,omitempty"`
+	// +kubebuilder:validation:Enum=Recreate;Replace;SsaMerge;SsaOverride
+	UpdatePolicy reconciler.UpdatePolicy `json:"updatePolicy,omitempty"`
+	// +kubebuilder:validation:Enum=Delete;Orphan
+	DeletePolicy reconciler.DeletePolicy `json:"deletePolicy,omitempty"`
+}
+
+var _ PolicyConfiguration = &PolicySpec{}
 
 // +kubebuilder:object:generate=true
 

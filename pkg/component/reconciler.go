@@ -1,5 +1,5 @@
 /*
-SPDX-FileCopyrightText: 2023 SAP SE or an SAP affiliate company and component-operator-runtime contributors
+SPDX-FileCopyrightText: 2024 SAP SE or an SAP affiliate company and component-operator-runtime contributors
 SPDX-License-Identifier: Apache-2.0
 */
 
@@ -25,14 +25,19 @@ import (
 	apitypes "k8s.io/apimachinery/pkg/types"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/client-go/discovery"
+	"k8s.io/client-go/util/workqueue"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/event"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	"github.com/sap/component-operator-runtime/internal/backoff"
 	"github.com/sap/component-operator-runtime/internal/cluster"
@@ -47,13 +52,17 @@ import (
 // TODO: emitting events to deployment target may fail if corresponding rbac privileges are missing; either this should be pre-discovered or we
 // should stop emitting events to remote targets at all; howerver pre-discovering is difficult (may vary from object to object); one option could
 // be to send events only if we are cluster-admin
-// TODO: allow to override namespace auto-creation and policies on a per-component level
-// (e.g. through annotations or another interface that components could optionally implement)
+// TODO: allow to override namespace auto-creation and reconcile policy on a per-component level
+// that is: consider adding them to the PolicyConfiguration interface?
 // TODO: allow to override namespace auto-creation on a per-object level
 // TODO: allow some timeout feature, such that component will go into error state if not ready within the given timeout
 // (e.g. through a TimeoutConfiguration interface that components could optionally implement)
 // TODO: run admission webhooks (if present) in reconcile (e.g. as post-read hook)
 // TODO: improve overall log output
+// TODO: finalizer and fieldowner should be made more configurable (instead of just using the reconciler name)
+// TODO: finalizer should have the standard format prefix/finalizer
+// TODO: currently, the reconciler always claims/owns dependent objects entirely; but due to server-side-apply it can happen that
+// only parts of an object are managed: other parts/fiels might be managed by other actors (or even other components); how to handle such cases?
 
 const (
 	readyConditionReasonNew                = "FirstSeen"
@@ -65,6 +74,8 @@ const (
 	readyConditionReasonDeletionPending    = "DeletionPending"
 	readyConditionReasonDeletionBlocked    = "DeletionBlocked"
 	readyConditionReasonDeletionProcessing = "DeletionProcessing"
+
+	triggerBufferSize = 1024
 )
 
 // TODO: should we pass cluster.Client to hooks instead of just client.Client?
@@ -90,6 +101,10 @@ type ReconcilerOptions struct {
 	// If unspecified, UpdatePolicyReplace is assumed.
 	// Can be overridden by annotation on object level.
 	UpdatePolicy *reconciler.UpdatePolicy
+	// How to perform deletion of dependent objects.
+	// If unspecified, DeletePolicyDelete is assumed.
+	// Can be overridden by annotation on object level.
+	DeletePolicy *reconciler.DeletePolicy
 	// SchemeBuilder allows to define additional schemes to be made available in the
 	// target client.
 	SchemeBuilder types.SchemeBuilder
@@ -112,6 +127,7 @@ type Reconciler[T Component] struct {
 	postReconcileHooks []HookFunc[T]
 	preDeleteHooks     []HookFunc[T]
 	postDeleteHooks    []HookFunc[T]
+	triggerCh          chan event.TypedGenericEvent[apitypes.NamespacedName]
 	setupMutex         sync.Mutex
 	setupComplete      bool
 }
@@ -121,6 +137,8 @@ type Reconciler[T Component] struct {
 // resourceGenerator must be an implementation of the manifests.Generator interface.
 func NewReconciler[T Component](name string, resourceGenerator manifests.Generator, options ReconcilerOptions) *Reconciler[T] {
 	// TOOD: validate options
+	// TODO: currently, the defaulting of CreateMissingNamespaces and *Policy here is identical to the defaulting in the underlying reconciler.Reconciler;
+	// under the assumption that these attributes are not used here, we could skip the defaulting here, and let it happen in the underlying implementation only
 	if options.CreateMissingNamespaces == nil {
 		options.CreateMissingNamespaces = ref(true)
 	}
@@ -129,6 +147,9 @@ func NewReconciler[T Component](name string, resourceGenerator manifests.Generat
 	}
 	if options.UpdatePolicy == nil {
 		options.UpdatePolicy = ref(reconciler.UpdatePolicyReplace)
+	}
+	if options.DeletePolicy == nil {
+		options.DeletePolicy = ref(reconciler.DeletePolicyDelete)
 	}
 
 	return &Reconciler[T]{
@@ -140,6 +161,7 @@ func NewReconciler[T Component](name string, resourceGenerator manifests.Generat
 		// TODO: make backoff configurable via options?
 		backoff:       backoff.NewBackoff(10 * time.Second),
 		postReadHooks: []HookFunc[T]{resolveReferences[T]},
+		triggerCh:     make(chan event.TypedGenericEvent[apitypes.NamespacedName], triggerBufferSize),
 	}
 }
 
@@ -219,8 +241,11 @@ func (r *Reconciler[T]) Reconcile(ctx context.Context, req ctrl.Request) (result
 			status.ProcessingDigest = ""
 			status.ProcessingSince = nil
 		}
-		if status.State == StateProcessing && now.Sub(status.ProcessingSince.Time) >= timeout {
+		if status.State == StateProcessing && err == nil && now.Sub(status.ProcessingSince.Time) >= timeout {
 			// TODO: maybe it would be better to have a dedicated StateTimeout?
+			// note: it is guaranteed that status.ProcessingSince is not nil here because
+			// - it was not cleared above because of the mutually exclusive clauses on status.State and err
+			// - it was set during reconcile when state was set to StateProcessing
 			status.SetState(StateError, readyConditionReasonTimeout, "Reconcilation of dependent resources timed out")
 		}
 
@@ -302,7 +327,7 @@ func (r *Reconciler[T]) Reconcile(ctx context.Context, req ctrl.Request) (result
 	// note: it's important that this happens after deferring the status handler
 	// TODO: enhance ctx with tailored logger and event recorder
 	// TODO: enhance ctx  with the local client
-	hookCtx := newContext(ctx).WithReconcilerName(r.name)
+	hookCtx := NewContext(ctx).WithReconcilerName(r.name)
 	for hookOrder, hook := range r.postReadHooks {
 		if err := hook(hookCtx, r.client, component); err != nil {
 			return ctrl.Result{}, errors.Wrapf(err, "error running post-read hook (%d)", hookOrder)
@@ -314,21 +339,11 @@ func (r *Reconciler[T]) Reconcile(ctx context.Context, req ctrl.Request) (result
 	if err != nil {
 		return ctrl.Result{}, errors.Wrap(err, "error getting client for component")
 	}
-	target := newReconcileTarget[T](r.name, r.id, targetClient, r.resourceGenerator, reconciler.ReconcilerOptions{
-		CreateMissingNamespaces: r.options.CreateMissingNamespaces,
-		AdoptionPolicy:          r.options.AdoptionPolicy,
-		UpdatePolicy:            r.options.UpdatePolicy,
-		StatusAnalyzer:          r.statusAnalyzer,
-		Metrics: reconciler.ReconcilerMetrics{
-			ReadCounter:   metrics.Operations.WithLabelValues(r.controllerName, "read"),
-			CreateCounter: metrics.Operations.WithLabelValues(r.controllerName, "create"),
-			UpdateCounter: metrics.Operations.WithLabelValues(r.controllerName, "update"),
-			DeleteCounter: metrics.Operations.WithLabelValues(r.controllerName, "delete"),
-		},
-	})
+	targetOptions := r.getOptionsForComponent(component)
+	target := newReconcileTarget[T](r.name, r.id, targetClient, r.resourceGenerator, targetOptions)
 	// TODO: enhance ctx with tailored logger and event recorder
 	// TODO: enhance ctx  with the local client
-	hookCtx = newContext(ctx).WithReconcilerName(r.name).WithClient(targetClient)
+	hookCtx = NewContext(ctx).WithReconcilerName(r.name).WithClient(targetClient)
 
 	// do the reconciliation
 	if component.GetDeletionTimestamp().IsZero() {
@@ -445,6 +460,16 @@ func (r *Reconciler[T]) Reconcile(ctx context.Context, req ctrl.Request) (result
 	}
 }
 
+// Trigger ad-hoc reconcilation for specified component.
+func (r *Reconciler[T]) Trigger(namespace string, name string) error {
+	select {
+	case r.triggerCh <- event.TypedGenericEvent[apitypes.NamespacedName]{Object: apitypes.NamespacedName{Namespace: namespace, Name: name}}:
+		return nil
+	default:
+		return fmt.Errorf("error triggering reconcile for component %s/%s (buffer full)", namespace, name)
+	}
+}
+
 // Register post-read hook with reconciler.
 // This hook will be called after the reconciled component object has been retrieved from the Kubernetes API.
 func (r *Reconciler[T]) WithPostReadHook(hook HookFunc[T]) *Reconciler[T] {
@@ -553,6 +578,12 @@ func (r *Reconciler[T]) SetupWithManagerAndBuilder(mgr ctrl.Manager, blder *ctrl
 
 	if err := blder.
 		For(component, builder.WithPredicates(predicate.Or(predicate.GenerationChangedPredicate{}, predicate.AnnotationChangedPredicate{}))).
+		WatchesRawSource(source.Channel(
+			r.triggerCh,
+			handler.TypedFuncs[apitypes.NamespacedName, reconcile.Request]{GenericFunc: func(ctx context.Context, e event.TypedGenericEvent[apitypes.NamespacedName], q workqueue.TypedRateLimitingInterface[reconcile.Request]) {
+				q.Add(reconcile.Request{NamespacedName: e.Object})
+			}},
+			source.WithBufferSize[apitypes.NamespacedName, reconcile.Request](triggerBufferSize))).
 		Named(r.controllerName).
 		Complete(r); err != nil {
 		return errors.Wrap(err, "error creating controller")
@@ -576,11 +607,11 @@ func (r *Reconciler[T]) getClientForComponent(component T) (cluster.Client, erro
 	clientConfiguration, haveClientConfiguration := assertClientConfiguration(component)
 	impersonationConfiguration, haveImpersonationConfiguration := assertImpersonationConfiguration(component)
 
-	var kubeconfig []byte
+	var kubeConfig []byte
 	var impersonationUser string
 	var impersonationGroups []string
 	if haveClientConfiguration {
-		kubeconfig = clientConfiguration.GetKubeConfig()
+		kubeConfig = clientConfiguration.GetKubeConfig()
 	}
 	if haveImpersonationConfiguration {
 		impersonationUser = impersonationConfiguration.GetImpersonationUser()
@@ -598,9 +629,38 @@ func (r *Reconciler[T]) getClientForComponent(component T) (cluster.Client, erro
 			}
 		}
 	}
-	clnt, err := r.clients.Get(kubeconfig, impersonationUser, impersonationGroups)
+	clnt, err := r.clients.Get(kubeConfig, impersonationUser, impersonationGroups)
 	if err != nil {
 		return nil, errors.Wrap(err, "error getting remote or impersonated client")
 	}
 	return clnt, nil
+}
+
+func (r *Reconciler[T]) getOptionsForComponent(component T) reconciler.ReconcilerOptions {
+	options := reconciler.ReconcilerOptions{
+		CreateMissingNamespaces: r.options.CreateMissingNamespaces,
+		AdoptionPolicy:          r.options.AdoptionPolicy,
+		UpdatePolicy:            r.options.UpdatePolicy,
+		DeletePolicy:            r.options.DeletePolicy,
+		StatusAnalyzer:          r.statusAnalyzer,
+		Metrics: reconciler.ReconcilerMetrics{
+			ReadCounter:   metrics.Operations.WithLabelValues(r.controllerName, "read"),
+			CreateCounter: metrics.Operations.WithLabelValues(r.controllerName, "create"),
+			UpdateCounter: metrics.Operations.WithLabelValues(r.controllerName, "update"),
+			DeleteCounter: metrics.Operations.WithLabelValues(r.controllerName, "delete"),
+		},
+	}
+	if policyConfiguration, ok := assertPolicyConfiguration(component); ok {
+		// TODO: check the values returned by the PolicyConfiguration
+		if adoptionPolicy := policyConfiguration.GetAdoptionPolicy(); adoptionPolicy != "" {
+			options.AdoptionPolicy = &adoptionPolicy
+		}
+		if updatePolicy := policyConfiguration.GetUpdatePolicy(); updatePolicy != "" {
+			options.UpdatePolicy = &updatePolicy
+		}
+		if deletePolicy := policyConfiguration.GetDeletePolicy(); deletePolicy != "" {
+			options.DeletePolicy = &deletePolicy
+		}
+	}
+	return options
 }

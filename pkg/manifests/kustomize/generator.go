@@ -1,5 +1,5 @@
 /*
-SPDX-FileCopyrightText: 2023 SAP SE or an SAP affiliate company and component-operator-runtime contributors
+SPDX-FileCopyrightText: 2024 SAP SE or an SAP affiliate company and component-operator-runtime contributors
 SPDX-License-Identifier: Apache-2.0
 */
 
@@ -53,6 +53,8 @@ type KustomizeGeneratorOptions struct {
 }
 
 // KustomizeGenerator is a Generator implementation that basically renders a given Kustomization.
+// Note: KustomizeGenerator's Generate() method expects client and component to be set in the passed context;
+// see: Context.WithClient() and Context.WithComponent() in package pkg/component.
 type KustomizeGenerator struct {
 	kustomizer *krusty.Kustomizer
 	files      map[string][]byte
@@ -196,7 +198,6 @@ func (g *KustomizeGenerator) Generate(ctx context.Context, namespace string, nam
 	if err != nil {
 		return nil, err
 	}
-
 	serverInfo, err := clnt.DiscoveryClient().ServerVersion()
 	if err != nil {
 		return nil, err

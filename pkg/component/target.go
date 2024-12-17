@@ -1,5 +1,5 @@
 /*
-SPDX-FileCopyrightText: 2023 SAP SE or an SAP affiliate company and component-operator-runtime contributors
+SPDX-FileCopyrightText: 2024 SAP SE or an SAP affiliate company and component-operator-runtime contributors
 SPDX-License-Identifier: Apache-2.0
 */
 
@@ -52,7 +52,7 @@ func (t *reconcileTarget[T]) Apply(ctx context.Context, component T) (bool, stri
 	componentDigest := calculateComponentDigest(component)
 
 	// TODO: enhance ctx with local client
-	generateCtx := newContext(ctx).
+	generateCtx := NewContext(ctx).
 		WithReconcilerName(t.reconcilerName).
 		WithClient(t.client).
 		WithComponent(component).

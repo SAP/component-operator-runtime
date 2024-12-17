@@ -1,5 +1,5 @@
 /*
-SPDX-FileCopyrightText: 2023 SAP SE or an SAP affiliate company and component-operator-runtime contributors
+SPDX-FileCopyrightText: 2024 SAP SE or an SAP affiliate company and component-operator-runtime contributors
 SPDX-License-Identifier: Apache-2.0
 */
 
@@ -21,9 +21,12 @@ import (
 
 	"github.com/Masterminds/sprig/v3"
 	"github.com/spf13/pflag"
+
 	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	kyaml "sigs.k8s.io/yaml"
+
+	"github.com/sap/component-operator-runtime/internal/version"
 )
 
 type Config struct {
@@ -96,7 +99,7 @@ func main() {
 	errlog := log.New(os.Stderr, "", 0)
 
 	showVersion := false
-	config := Config{Version: version}
+	config := Config{Version: version.GetVersion()}
 	outputDir := ""
 	skipPostProcessing := false
 
@@ -131,7 +134,7 @@ func main() {
 	outputDir = pflag.Arg(0)
 
 	if showVersion {
-		fmt.Println(version)
+		fmt.Println(version.GetVersion())
 		os.Exit(0)
 	}
 

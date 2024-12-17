@@ -1,5 +1,5 @@
 /*
-SPDX-FileCopyrightText: 2023 SAP SE or an SAP affiliate company and component-operator-runtime contributors
+SPDX-FileCopyrightText: 2024 SAP SE or an SAP affiliate company and component-operator-runtime contributors
 SPDX-License-Identifier: Apache-2.0
 */
 
@@ -25,6 +25,8 @@ import (
 // HelmGenerator is a Generator implementation that basically renders a given Helm chart.
 // A few restrictions apply to the provided Helm chart: it must not contain any subcharts, some template functions are not supported,
 // some bultin variables are not supported, and hooks are processed in a slightly different fashion.
+// Note: HelmGenerator's Generate() method expects client and reconciler name to be set in the passed context;
+// see: Context.WithClient() and Context.WithReconcilerName() in package pkg/component.
 type HelmGenerator struct {
 	client client.Client
 	chart  *helm.Chart

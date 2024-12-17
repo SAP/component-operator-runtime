@@ -1,5 +1,5 @@
 /*
-SPDX-FileCopyrightText: 2023 SAP SE or an SAP affiliate company and component-operator-runtime contributors
+SPDX-FileCopyrightText: 2024 SAP SE or an SAP affiliate company and component-operator-runtime contributors
 SPDX-License-Identifier: Apache-2.0
 */
 
@@ -94,6 +94,10 @@ type ReconcilerOptions struct {
 	// If unspecified, UpdatePolicyReplace is assumed.
 	// Can be overridden by annotation on object level.
 	UpdatePolicy *UpdatePolicy
+	// How to perform deletion of dependent objects.
+	// If unspecified, DeletePolicyDelete is assumed.
+	// Can be overridden by annotation on object level.
+	DeletePolicy *DeletePolicy
 	// How to analyze the state of the dependent objects.
 	// If unspecified, an optimized kstatus based implementation is used.
 	StatusAnalyzer status.StatusAnalyzer
@@ -134,6 +138,8 @@ type Reconciler struct {
 }
 
 // Create new reconciler.
+// The passed name should be fully qualified; it will be used as field owner and finalizer.
+// The passed client's scheme must recognize at least the core group (v1) and apiextensions.k8s.io/v1 and apiregistration.k8s.io/v1.
 func NewReconciler(name string, clnt cluster.Client, options ReconcilerOptions) *Reconciler {
 	// TOOD: validate options
 	if options.CreateMissingNamespaces == nil {
@@ -144,6 +150,9 @@ func NewReconciler(name string, clnt cluster.Client, options ReconcilerOptions) 
 	}
 	if options.UpdatePolicy == nil {
 		options.UpdatePolicy = ref(UpdatePolicyReplace)
+	}
+	if options.DeletePolicy == nil {
+		options.DeletePolicy = ref(DeletePolicyDelete)
 	}
 	if options.StatusAnalyzer == nil {
 		options.StatusAnalyzer = status.NewStatusAnalyzer(name)
@@ -158,7 +167,7 @@ func NewReconciler(name string, clnt cluster.Client, options ReconcilerOptions) 
 		adoptionPolicy:               *options.AdoptionPolicy,
 		reconcilePolicy:              ReconcilePolicyOnObjectChange,
 		updatePolicy:                 *options.UpdatePolicy,
-		deletePolicy:                 DeletePolicyDelete,
+		deletePolicy:                 *options.DeletePolicy,
 		labelKeyOwnerId:              name + "/" + types.LabelKeySuffixOwnerId,
 		annotationKeyOwnerId:         name + "/" + types.AnnotationKeySuffixOwnerId,
 		annotationKeyDigest:          name + "/" + types.AnnotationKeySuffixDigest,
@@ -194,14 +203,13 @@ func NewReconciler(name string, clnt cluster.Client, options ReconcilerOptions) 
 //     will re-claim (and therefore potentially drop) fields owned by certain field managers, such as kubectl and helm
 //   - if the effective update policy is UpdatePolicyRecreate, the object will be deleted and recreated.
 //
-// Redundant objects will be removed; that means, in the regular case, a http DELETE request will be sent to the Kubernetes API; if the object specifies
-// its delete policy as DeletePolicyOrphan, no physcial deletion will be performed, and the object will be left around in the cluster; however it will be no
-// longer be part of the inventory.
-//
 // Objects will be applied and deleted in waves, according to their apply/delete order. Objects which specify a purge order will be deleted from the cluster at the
 // end of the wave specified as purge order; other than redundant objects, a purged object will remain as Completed in the inventory;
 // and it might be re-applied/re-purged in case it runs out of sync. Within a wave, objects are processed following a certain internal order;
 // in particular, instances of types which are part of the wave are processed only if all other objects in that wave have a ready state.
+//
+// Redundant objects will be removed; that means, a http DELETE request will be sent to the Kubernetes API; note that an effective Orphan deletion
+// policy will not prevent deletion here; the deletion policy will only be honored when the component as whole gets deleted.
 //
 // This method will change the passed inventory (add or remove elements, change elements). If Apply() returns true, then all objects are successfully reconciled;
 // otherwise, if it returns false, the caller should recall it timely, until it returns true. In any case, the passed inventory should match the state of the
@@ -368,7 +376,7 @@ func (r *Reconciler) Apply(ctx context.Context, inventory *[]*InventoryItem, obj
 		}
 	}
 
-	// add/update inventory with target objects
+	// prepare (add/update) new inventory with target objects
 	// TODO: review this; it would be cleaner to use a DeepCopy method for a []*InventoryItem type (if there would be such a type)
 	newInventory := slices.Collect(*inventory, func(item *InventoryItem) *InventoryItem { return item.DeepCopy() })
 	numAdded := 0
@@ -387,6 +395,10 @@ func (r *Reconciler) Apply(ctx context.Context, inventory *[]*InventoryItem, obj
 		// if item was not found, append an empty item
 		if item == nil {
 			// TODO: should the owner id check happen always (not only if the object is unknown to the inventory)?
+			// TODO: since deletion handling now happens late, it can happen that, when an object is moved from its previous compoment into a new one,
+			// and the previous one gets deleted at the same time, applying the new one runs stuck because of the owner id check;
+			// so we might add some logic to skip the owner id check in that particular case
+
 			// fetch object (if existing)
 			existingObject, err := r.readObject(ctx, object)
 			if err != nil {
@@ -433,7 +445,7 @@ func (r *Reconciler) Apply(ctx context.Context, inventory *[]*InventoryItem, obj
 		}
 	}
 
-	// mark obsolete inventory items (clear digest)
+	// mark obsolete items (clear digest) in new inventory
 	for _, item := range newInventory {
 		found := false
 		for _, object := range objects {
@@ -449,7 +461,7 @@ func (r *Reconciler) Apply(ctx context.Context, inventory *[]*InventoryItem, obj
 		}
 	}
 
-	// validate object set:
+	// validate new inventory:
 	// - check that all managed instances have apply-order greater than or equal to the according managed type
 	// - check that all managed instances have delete-order less than or equal to the according managed type
 	// - check that no managed types are about to be deleted (empty digest) unless all related managed instances are as well
@@ -489,7 +501,7 @@ func (r *Reconciler) Apply(ctx context.Context, inventory *[]*InventoryItem, obj
 		}
 	}
 
-	// accept inventory for further processing, put into right order for future deletion
+	// accept new inventory for further processing, put into right order for future deletion
 	*inventory = sortObjectsForDelete(newInventory)
 
 	// trigger another reconcile if something was added (to be sure that it is persisted)
@@ -502,119 +514,21 @@ func (r *Reconciler) Apply(ctx context.Context, inventory *[]*InventoryItem, obj
 	// - the persisted inventory at least has the same object keys as the in-memory inventory
 	// now it is about to synchronize the cluster state with the inventory
 
-	// delete redundant objects and maintain inventory;
-	// objects are deleted in waves according to their delete order;
-	// that means, only if all redundant objects of a wave are gone or comppleted, the next
-	// wave will be processed; within each wave, objects which are instances of managed
-	// types are deleted before all other objects, and namespaces will only be deleted
-	// if they are not used by any object in the inventory (note that this may cause deadlocks)
-	numManagedToBeDeleted := 0
-	numToBeDeleted := 0
-	for k, item := range *inventory {
-		// if this is the first object of an order, then
-		// count instances of managed types in this wave which are about to be deleted
-		if k == 0 || (*inventory)[k-1].DeleteOrder < item.DeleteOrder {
-			log.V(2).Info("begin of deletion wave", "order", item.DeleteOrder)
-			numManagedToBeDeleted = 0
-			for j := k; j < len(*inventory) && (*inventory)[j].DeleteOrder == item.DeleteOrder; j++ {
-				_item := (*inventory)[j]
-				if (_item.Phase == PhaseScheduledForDeletion || _item.Phase == PhaseScheduledForCompletion || _item.Phase == PhaseDeleting || _item.Phase == PhaseCompleting) && isInstanceOfManagedType(*inventory, _item) {
-					numManagedToBeDeleted++
-				}
-			}
-		}
-
-		if item.Phase == PhaseScheduledForDeletion || item.Phase == PhaseScheduledForCompletion || item.Phase == PhaseDeleting || item.Phase == PhaseCompleting {
-			// fetch object (if existing)
-			existingObject, err := r.readObject(ctx, item)
-			if err != nil {
-				return false, errors.Wrapf(err, "error reading object %s", item)
-			}
-
-			orphan := item.DeletePolicy == DeletePolicyOrphan
-
-			switch item.Phase {
-			case PhaseScheduledForDeletion:
-				// delete namespaces after all contained inventory items
-				// delete all instances of managed types before remaining objects; this ensures that no objects are prematurely
-				// deleted which are needed for the deletion of the managed instances, such as webhook servers, api servers, ...
-				if (!isNamespace(item) || !isNamespaceUsed(*inventory, item.Name)) && (numManagedToBeDeleted == 0 || isInstanceOfManagedType(*inventory, item)) {
-					if orphan {
-						item.Phase = ""
-					} else {
-						// note: here is a theoretical risk that we delete an existing foreign object, because informers are not yet synced
-						// however not sending the delete request is also not an option, because this might lead to orphaned own dependents
-						// TODO: perform an additional owner id check
-						if err := r.deleteObject(ctx, item, existingObject); err != nil {
-							return false, errors.Wrapf(err, "error deleting object %s", item)
-						}
-						item.Phase = PhaseDeleting
-						item.Status = status.TerminatingStatus
-						numToBeDeleted++
-					}
-				} else {
-					numToBeDeleted++
-				}
-			case PhaseScheduledForCompletion:
-				// delete namespaces after all contained inventory items
-				// delete all instances of managed types before remaining objects; this ensures that no objects are prematurely
-				// deleted which are needed for the deletion of the managed instances, such as webhook servers, api servers, ...
-				if (!isNamespace(item) || !isNamespaceUsed(*inventory, item.Name)) && (numManagedToBeDeleted == 0 || isInstanceOfManagedType(*inventory, item)) {
-					if orphan {
-						return false, fmt.Errorf("invalid usage of deletion policy: object %s is scheduled for completion and therefore cannot be orphaned", item)
-					} else {
-						// note: here is a theoretical risk that we delete an existing foreign object, because informers are not yet synced
-						// however not sending the delete request is also not an option, because this might lead to orphaned own dependents
-						// TODO: perform an additional owner id check
-						if err := r.deleteObject(ctx, item, existingObject); err != nil {
-							return false, errors.Wrapf(err, "error deleting object %s", item)
-						}
-						item.Phase = PhaseCompleting
-						item.Status = status.TerminatingStatus
-						numToBeDeleted++
-					}
-				} else {
-					numToBeDeleted++
-				}
-			case PhaseDeleting:
-				// if object is gone, we can remove it from inventory
-				if existingObject == nil {
-					item.Phase = ""
-				} else {
-					numToBeDeleted++
-				}
-			case PhaseCompleting:
-				// if object is gone, it is set to completed, and kept in inventory
-				if existingObject == nil {
-					item.Phase = PhaseCompleted
-					item.Status = ""
-				} else {
-					numToBeDeleted++
-				}
-			default:
-				// note: any other phase value would indicate a severe code problem, so we want to see the panic in that case
-				panic("this cannot happen")
-			}
-		}
-
-		// trigger another reconcile if this is the last object of the wave, and some deletions are not yet completed
-		if k == len(*inventory)-1 || (*inventory)[k+1].DeleteOrder > item.DeleteOrder {
-			log.V(2).Info("end of deletion wave", "order", item.DeleteOrder)
-			if numToBeDeleted > 0 {
-				break
-			}
-		}
-	}
-
-	*inventory = slices.Select(*inventory, func(item *InventoryItem) bool { return item.Phase != "" })
-
-	// trigger another reconcile
-	if numToBeDeleted > 0 {
-		return false, nil
-	}
-
-	// note: after this point, PhaseScheduledForDeletion, PhaseScheduledForCompletion, PhaseDeleting, PhaseCompleting cannot occur anymore in inventory
-	// in other words: the inventory and objects contains the same resources
+	// note: after this point, it is also guaranteed that objects is contained in the persisted inventory;
+	// the inventory therefore consists of two parts:
+	// - items which are contained in objects
+	//   these items can have one of the following phases:
+	//   - PhaseScheduledForApplication
+	//   - PhaseCreating
+	//   - PhaseUpdating
+	//   - PhaseReady
+	//   - PhaseScheduledForCompletion
+	//   - PhaseCompleting
+	//   - PhaseCompleted
+	// - items which are not contained in objects
+	//   their phase is one of the following:
+	//   - PhaseScheduledForDeletion
+	//   - PhaseDeleting
 
 	// create missing namespaces
 	if r.createMissingNamespaces {
@@ -632,6 +546,45 @@ func (r *Reconciler) Apply(ctx context.Context, inventory *[]*InventoryItem, obj
 
 	// put objects into right order for applying
 	objects = sortObjectsForApply(objects, getApplyOrder)
+
+	// finish due completions
+	// note that completions do not honor delete-order or delete-policy
+	// however, due to the way how PhaseScheduledForCompletion is set, the affected objects will
+	// always be in one and the same apply order
+	// in addition deletions are triggered in the canonical deletion order (but not waited for)
+	numToBeCompleted := 0
+	for _, item := range *inventory {
+		if item.Phase == PhaseScheduledForCompletion || item.Phase == PhaseCompleting {
+			existingObject, err := r.readObject(ctx, item)
+			if err != nil {
+				return false, errors.Wrapf(err, "error reading object %s", item)
+			}
+
+			switch item.Phase {
+			case PhaseScheduledForCompletion:
+				if err := r.deleteObject(ctx, item, existingObject); err != nil {
+					return false, errors.Wrapf(err, "error deleting object %s", item)
+				}
+				item.Phase = PhaseCompleting
+				item.Status = status.TerminatingStatus
+				numToBeCompleted++
+			case PhaseCompleting:
+				if existingObject == nil {
+					item.Phase = PhaseCompleted
+					item.Status = ""
+				} else {
+					numToBeCompleted++
+				}
+			}
+		}
+	}
+
+	// trigger another reconcile if any to-be-completed objects are left
+	if numToBeCompleted > 0 {
+		return false, nil
+	}
+
+	// note: after this point, PhaseScheduledForCompletion, PhaseCompleting cannot occur anymore in inventory
 
 	// apply objects and maintain inventory;
 	// objects are applied (i.e. created/updated) in waves according to their apply order;
@@ -746,7 +699,99 @@ func (r *Reconciler) Apply(ctx context.Context, inventory *[]*InventoryItem, obj
 		}
 	}
 
-	return numUnready == 0, nil
+	// trigger another reconcile if any unready objects are left
+	if numUnready > 0 {
+		return false, nil
+	}
+
+	// delete redundant objects and maintain inventory;
+	// objects are deleted in waves according to their delete order;
+	// that means, only if all redundant objects of a wave are gone , the next
+	// wave will be processed; within each wave, objects which are instances of managed
+	// types are deleted before all other objects, and namespaces will only be deleted
+	// if they are not used by any object in the inventory (note that this may cause deadlocks)
+	numManagedToBeDeleted := 0
+	numToBeDeleted := 0
+	for k, item := range *inventory {
+		// if this is the first object of an order, then
+		// count instances of managed types in this wave which are about to be deleted
+		if k == 0 || (*inventory)[k-1].DeleteOrder < item.DeleteOrder {
+			log.V(2).Info("begin of deletion wave", "order", item.DeleteOrder)
+			numManagedToBeDeleted = 0
+			for j := k; j < len(*inventory) && (*inventory)[j].DeleteOrder == item.DeleteOrder; j++ {
+				_item := (*inventory)[j]
+				if (_item.Phase == PhaseScheduledForDeletion || _item.Phase == PhaseDeleting) && isInstanceOfManagedType(*inventory, _item) {
+					numManagedToBeDeleted++
+				}
+			}
+		}
+
+		if item.Phase == PhaseScheduledForDeletion || item.Phase == PhaseDeleting {
+			// fetch object (if existing)
+			existingObject, err := r.readObject(ctx, item)
+			if err != nil {
+				return false, errors.Wrapf(err, "error reading object %s", item)
+			}
+
+			// note: objects becoming obsolete during an apply are no longer honoring deletion policy (orphan)
+			// TODO: not sure if there is a case where someone would like to orphan such resources while applying;
+			// if so, then we probably should introduce a third deletion policy, OrphanApply or similar ...
+			// in any case, the following code should be revisited; cleaned up or adjusted
+			// orphan := item.DeletePolicy == DeletePolicyOrphan
+			orphan := false
+
+			switch item.Phase {
+			case PhaseScheduledForDeletion:
+				// delete namespaces after all contained inventory items
+				// delete all instances of managed types before remaining objects; this ensures that no objects are prematurely
+				// deleted which are needed for the deletion of the managed instances, such as webhook servers, api servers, ...
+				if (!isNamespace(item) || !isNamespaceUsed(*inventory, item.Name)) && (numManagedToBeDeleted == 0 || isInstanceOfManagedType(*inventory, item)) {
+					if orphan {
+						item.Phase = ""
+					} else {
+						// note: here is a theoretical risk that we delete an existing foreign object, because informers are not yet synced
+						// however not sending the delete request is also not an option, because this might lead to orphaned own dependents
+						// TODO: perform an additional owner id check
+						if err := r.deleteObject(ctx, item, existingObject); err != nil {
+							return false, errors.Wrapf(err, "error deleting object %s", item)
+						}
+						item.Phase = PhaseDeleting
+						item.Status = status.TerminatingStatus
+						numToBeDeleted++
+					}
+				} else {
+					numToBeDeleted++
+				}
+			case PhaseDeleting:
+				// if object is gone, we can remove it from inventory
+				if existingObject == nil {
+					item.Phase = ""
+				} else {
+					numToBeDeleted++
+				}
+			default:
+				// note: any other phase value would indicate a severe code problem, so we want to see the panic in that case
+				panic("this cannot happen")
+			}
+		}
+
+		// trigger another reconcile if this is the last object of the wave, and some deletions are not yet finished
+		if k == len(*inventory)-1 || (*inventory)[k+1].DeleteOrder > item.DeleteOrder {
+			log.V(2).Info("end of deletion wave", "order", item.DeleteOrder)
+			if numToBeDeleted > 0 {
+				break
+			}
+		}
+	}
+
+	*inventory = slices.Select(*inventory, func(item *InventoryItem) bool { return item.Phase != "" })
+
+	// trigger another reconcile if any to-be-deleted objects are left
+	if numToBeDeleted > 0 {
+		return false, nil
+	}
+
+	return true, nil
 }
 
 // Delete objects stored in the inventory from the target cluster and maintain inventory.
@@ -754,6 +799,7 @@ func (r *Reconciler) Apply(ctx context.Context, inventory *[]*InventoryItem, obj
 // objects having a certain delete order will only start if all objects with lower delete order are gone. Within a wave, objects are
 // deleted following a certain internal ordering; in particular, if there are instances of types which are part of the wave, then these
 // instances will be deleted first; only if all such instances are gone, the remaining objects of the wave will be deleted.
+// Objects which have an effective Orphan deletion policy will not be touched (remain in the cluster), but will no longer appear in the inventory.
 //
 // This method will change the passed inventory (remove elements, change elements). If Delete() returns true, then all objects are gone; otherwise,
 // if it returns false, the caller should recall it timely, until it returns true. In any case, the passed inventory should match the state of the
@@ -839,8 +885,12 @@ func (r *Reconciler) Delete(ctx context.Context, inventory *[]*InventoryItem) (b
 
 // Check if the object set defined by inventory is ready for deletion; that means: check if the inventory contains
 // types (as custom resource definition or from an api service), while there exist instances of these types in the cluster,
-// which are not contained in the inventory.
+// which are not contained in the inventory. There is one exception of this rule: if all objects in the inventory have their
+// delete policy set to DeletePolicyOrphan, then the deletion of the component is immediately allowed.
 func (r *Reconciler) IsDeletionAllowed(ctx context.Context, inventory *[]*InventoryItem) (bool, string, error) {
+	if slices.All(*inventory, func(item *InventoryItem) bool { return item.DeletePolicy == DeletePolicyOrphan }) {
+		return true, "", nil
+	}
 	for _, item := range *inventory {
 		switch {
 		case isCrd(item):
