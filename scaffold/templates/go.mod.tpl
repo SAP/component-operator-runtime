@@ -8,7 +8,7 @@ replace github.com/sap/component-operator-runtime => {{ .version }}
 {{- end }}
 
 require (
-	{{ if or .validatingWebhookEnabled .mutatingWebhookEnabled }}
+	{{- if or .validatingWebhookEnabled .mutatingWebhookEnabled }}
 	github.com/sap/admission-webhook-runtime {{ .admissionWebhookRuntimeVersion }}
 	{{- end }}
 	{{- if contains "/" .version }}
@@ -19,6 +19,8 @@ require (
 	k8s.io/apiextensions-apiserver {{ .kubernetesVersion }}
 	k8s.io/apimachinery {{ .kubernetesVersion }}
 	k8s.io/client-go {{ .kubernetesVersion }}
+	k8s.io/code-generator {{ .codeGeneratorVersion }}
 	k8s.io/kube-aggregator {{ .kubernetesVersion }}
 	sigs.k8s.io/controller-runtime {{ .controllerRuntimeVersion }}
+	sigs.k8s.io/controller-tools {{ .controllerToolsVersion }}
 )
