@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"math"
 	"strconv"
+	"time"
 
 	"github.com/iancoleman/strcase"
 	"github.com/pkg/errors"
@@ -387,7 +388,7 @@ func (r *Reconciler) Apply(ctx context.Context, inventory *[]*InventoryItem, obj
 		// calculate object digest
 		// note: if the effective reconcile policy of an object changes, it will always be reconciled at least one more time;
 		// this is in particular the case if the policy changes from or to ReconcilePolicyOnce.
-		digest, err := calculateObjectDigest(object, item, componentRevision, getReconcilePolicy(object))
+		digest, err := calculateObjectDigest(object, componentRevision, getReconcilePolicy(object))
 		if err != nil {
 			return false, errors.Wrapf(err, "error calculating digest for object %s", types.ObjectKeyToString(object))
 		}
@@ -632,14 +633,18 @@ func (r *Reconciler) Apply(ctx context.Context, inventory *[]*InventoryItem, obj
 				setAnnotation(object, r.annotationKeyDigest, item.Digest)
 
 				updatePolicy := getUpdatePolicy(object)
+				now := time.Now()
 				if existingObject == nil {
 					if err := r.createObject(ctx, object, nil, updatePolicy); err != nil {
 						return false, errors.Wrapf(err, "error creating object %s", item)
 					}
 					item.Phase = PhaseCreating
 					item.Status = status.InProgressStatus
+					item.LastAppliedAt = &metav1.Time{Time: now}
 					numUnready++
-				} else if existingObject.GetDeletionTimestamp().IsZero() && existingObject.GetAnnotations()[r.annotationKeyDigest] != item.Digest {
+				} else if existingObject.GetDeletionTimestamp().IsZero() &&
+					// TODO: make force-reconcile period (60 minutes as of now) configurable
+					(existingObject.GetAnnotations()[r.annotationKeyDigest] != item.Digest || item.LastAppliedAt != nil && item.LastAppliedAt.Time.Before(now.Add(-60*time.Minute))) {
 					switch updatePolicy {
 					case UpdatePolicyRecreate:
 						// TODO: perform an additional owner id check
@@ -654,6 +659,7 @@ func (r *Reconciler) Apply(ctx context.Context, inventory *[]*InventoryItem, obj
 					}
 					item.Phase = PhaseUpdating
 					item.Status = status.InProgressStatus
+					item.LastAppliedAt = &metav1.Time{Time: now}
 					numUnready++
 				} else {
 					existingStatus, err := r.statusAnalyzer.ComputeStatus(existingObject)

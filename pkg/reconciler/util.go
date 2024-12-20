@@ -11,10 +11,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"regexp"
-	"strconv"
 	"strings"
-	"time"
 
 	"github.com/pkg/errors"
 	"github.com/sap/go-generics/slices"
@@ -61,7 +58,7 @@ func checkRange(x int, min int, max int) error {
 	return nil
 }
 
-func calculateObjectDigest(obj client.Object, item *InventoryItem, revision int64, reconcilePolicy ReconcilePolicy) (string, error) {
+func calculateObjectDigest(obj client.Object, revision int64, reconcilePolicy ReconcilePolicy) (string, error) {
 	if reconcilePolicy == ReconcilePolicyOnce {
 		return "__once__", nil
 	}
@@ -85,24 +82,7 @@ func calculateObjectDigest(obj client.Object, item *InventoryItem, revision int6
 		digest = fmt.Sprintf("%s@%d", digest, revision)
 	}
 
-	previousDigest := ""
-	previousTimestamp := int64(0)
-	if item != nil {
-		if m := regexp.MustCompile(`^([0-9a-f@]+):(\d{10})$`).FindStringSubmatch(item.Digest); m != nil {
-			previousDigest = m[1]
-			previousTimestamp = must(strconv.ParseInt(m[2], 10, 64))
-		}
-	}
-	now := time.Now().Unix()
-	timestamp := int64(0)
-	// TODO: make force-reconcile period configurable (globally, per object, ...?)
-	if previousDigest == digest && now-previousTimestamp <= 3600 {
-		timestamp = previousTimestamp
-	} else {
-		timestamp = now
-	}
-
-	return fmt.Sprintf("%s:%d", digest, timestamp), nil
+	return digest, nil
 }
 
 func setLabel(obj client.Object, key string, value string) {
