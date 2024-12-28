@@ -6,6 +6,8 @@ SPDX-License-Identifier: Apache-2.0
 package reconciler
 
 import (
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
 	"github.com/sap/component-operator-runtime/pkg/status"
 )
 
@@ -105,6 +107,8 @@ type InventoryItem struct {
 	Phase Phase `json:"phase,omitempty"`
 	// Observed status of the dependent object.
 	Status status.Status `json:"status,omitempty"`
+	// Timestamp when this object was last applied.
+	LastAppliedAt *metav1.Time `json:"lastAppliedAt,omitempty"`
 }
 
 type Phase string

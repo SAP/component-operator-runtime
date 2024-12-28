@@ -32,6 +32,7 @@ type statusAnalyzer struct {
 //   - certain hints about the object's status type can be passed by setting the annotation '<reconcilerName>/status-hint' on the object, as a comma-separated list;
 //     if this list contains the value 'has-observed-generation', the object's status (where appropriate) will be enhanced with an observed generation of -1 before passing it to kstatus;
 //     if this list contains the value 'has-ready-condition', the object's status (where appropriate) will be enhanced by a ready condition with 'Unknown' state
+//     if this list contains the value 'conditions=cond[;cond...]', then the listed conditions must be present and true in order to make the object considered ready
 //   - jobs will be treated differently as with kstatus; other than kstatus, which considers jobs as ready if they are successfully started, this implementation waits for
 //     the JobComplete or JobFailed condidtion to be present on the job's status.
 func NewStatusAnalyzer(reconcilerName string) StatusAnalyzer {
