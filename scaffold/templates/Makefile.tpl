@@ -97,7 +97,7 @@ $(CONTROLLER_GEN): $(LOCALBIN)
 .PHONY: setup-envtest
 setup-envtest: $(SETUP_ENVTEST) ## Install setup-envtest
 $(SETUP_ENVTEST): $(LOCALBIN)
-	go mod download sigs.k8s.io/controller-runtime
+	go mod download sigs.k8s.io/controller-runtime/tools/setup-envtest
 	GOBIN=$(LOCALBIN) go install $$(go list -m -f '{{`{{`}}.Dir{{`}}`}}' sigs.k8s.io/controller-runtime/tools/setup-envtest)
 
 .PHONY: envtest
