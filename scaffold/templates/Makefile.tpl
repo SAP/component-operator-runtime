@@ -20,7 +20,7 @@ help: ## Display this help
 
 .PHONY: manifests
 manifests: controller-gen ## Generate CustomResourceDefinition objects
-	$(CONTROLLER_GEN) crd paths="./api/..." output:crd:artifacts:config=crds ;\
+	$(LOCALBIN)/controller-gen crd paths="./api/..." output:crd:artifacts:config=crds && \
 	test ! -d chart || test -e chart/crds || ln -s ../crds chart/crds
 
 .PHONY: generate
@@ -28,7 +28,7 @@ generate: generate-deepcopy ## Generate required code pieces
 
 .PHONY: generate-deepcopy
 generate-deepcopy: controller-gen ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations
-	$(CONTROLLER_GEN) object:headerFile="hack/boilerplate.go.txt" paths="./api/..."
+	$(LOCALBIN)/controller-gen object:headerFile="hack/boilerplate.go.txt" paths="./api/..."
 
 .PHONY: generate-client
 generate-client: ## Generate typed client
@@ -82,27 +82,35 @@ docker-buildx: ## Build and push docker image for the manager for cross-platform
 ## Location to install dependencies to
 LOCALBIN ?= $(shell pwd)/bin
 $(LOCALBIN):
-	mkdir -p $(LOCALBIN)
-
-## Tool Binaries
-CONTROLLER_GEN ?= $(LOCALBIN)/controller-gen
-SETUP_ENVTEST ?= $(LOCALBIN)/setup-envtest
+	@mkdir -p $(LOCALBIN)
 
 .PHONY: controller-gen
-controller-gen: $(CONTROLLER_GEN) ## Install controller-gen
-$(CONTROLLER_GEN): $(LOCALBIN)
-	go mod download sigs.k8s.io/controller-tools
-	GOBIN=$(LOCALBIN) go install $$(go list -m -f '{{`{{`}}.Dir{{`}}`}}' sigs.k8s.io/controller-tools)/cmd/controller-gen
+controller-gen: $(LOCALBIN) ## Install controller-gen
+	@go mod download sigs.k8s.io/controller-tools && \
+	VERSION=$$(go list -m -f '{{`{{`}}.Version{{`}}`}}' sigs.k8s.io/controller-tools) && \
+	if [ ! -L $(LOCALBIN)/controller-gen ] || [ "$$(readlink $(LOCALBIN)/controller-gen)" != "controller-gen-$$VERSION" ]; then \
+	echo "Installing controller-gen $$VERSION" && \
+	rm -f $(LOCALBIN)/controller-gen && \
+	GOBIN=$(LOCALBIN) go install $$(go list -m -f '{{`{{`}}.Dir{{`}}`}}' sigs.k8s.io/controller-tools)/cmd/controller-gen && \
+	mv $(LOCALBIN)/controller-gen $(LOCALBIN)/controller-gen-$$VERSION && \
+	ln -s controller-gen-$$VERSION $(LOCALBIN)/controller-gen; \
+	fi
 
 .PHONY: setup-envtest
-setup-envtest: $(SETUP_ENVTEST) ## Install setup-envtest
-$(SETUP_ENVTEST): $(LOCALBIN)
-	go mod download sigs.k8s.io/controller-runtime/tools/setup-envtest
-	GOBIN=$(LOCALBIN) go install $$(go list -m -f '{{`{{`}}.Dir{{`}}`}}' sigs.k8s.io/controller-runtime/tools/setup-envtest)
+setup-envtest: $(LOCALBIN) ## Install setup-envtest
+	@go mod download sigs.k8s.io/controller-runtime/tools/setup-envtest && \
+	VERSION=$$(go list -m -f '{{`{{`}}.Version{{`}}`}}' sigs.k8s.io/controller-runtime/tools/setup-envtest) && \
+	if [ ! -L $(LOCALBIN)/setup-envtest ] || [ "$$(readlink $(LOCALBIN)/setup-envtest)" != "setup-envtest-$$VERSION" ]; then \
+	echo "Installing setup-envtest $$VERSION" && \
+	rm -f $(LOCALBIN)/setup-envtest && \
+	GOBIN=$(LOCALBIN) go install $$(go list -m -f '{{`{{`}}.Dir{{`}}`}}' sigs.k8s.io/controller-runtime/tools/setup-envtest) && \
+	mv $(LOCALBIN)/setup-envtest $(LOCALBIN)/setup-envtest-$$VERSION && \
+	ln -s setup-envtest-$$VERSION $(LOCALBIN)/setup-envtest; \
+	fi
 
 .PHONY: envtest
 envtest: setup-envtest ## Install envtest binaries
-	ENVTESTDIR=$$($(SETUP_ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path) ;\
-	chmod -R u+w $$ENVTESTDIR ;\
-	rm -f $(LOCALBIN)/k8s/current ;\
+	@ENVTESTDIR=$$($(LOCALBIN)/setup-envtest use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path) && \
+	chmod -R u+w $$ENVTESTDIR && \
+	rm -f $(LOCALBIN)/k8s/current && \
 	ln -s $$ENVTESTDIR $(LOCALBIN)/k8s/current
