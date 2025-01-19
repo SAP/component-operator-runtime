@@ -21,6 +21,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	apitypes "k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/tools/clientcmd"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	kyaml "sigs.k8s.io/yaml"
 )
@@ -65,8 +66,10 @@ func FuncMapForTemplate(t *template.Template) template.FuncMap {
 // template FuncMap generator for functions called in target Kubernetes context
 func FuncMapForClient(c client.Client) template.FuncMap {
 	return template.FuncMap{
-		"lookup":     makeFuncLookup(c, true),
-		"mustLookup": makeFuncLookup(c, false),
+		"lookup":                   makeFuncLookup(c, true),
+		"mustLookup":               makeFuncLookup(c, false),
+		"lookupWithKubeConfig":     makeFuncLookupWithKubeConfig(true),
+		"mustLookupWithKubeConfig": makeFuncLookupWithKubeConfig(false),
 	}
 }
 
@@ -271,6 +274,30 @@ func makeFuncTpl(t *template.Template) func(string, any) (string, error) {
 
 func makeFuncLookup(c client.Client, ignoreNotFound bool) func(string, string, string, string) (map[string]any, error) {
 	return func(apiVersion string, kind string, namespace string, name string) (map[string]any, error) {
+		object := &unstructured.Unstructured{}
+		object.SetAPIVersion(apiVersion)
+		object.SetKind(kind)
+		if err := c.Get(context.Background(), apitypes.NamespacedName{Namespace: namespace, Name: name}, object); err != nil {
+			// TODO: should apimeta.IsNoMatchError be ignored as well?
+			if apierrors.IsNotFound(err) && ignoreNotFound {
+				err = nil
+			}
+			return map[string]any{}, err
+		}
+		return object.UnstructuredContent(), nil
+	}
+}
+
+func makeFuncLookupWithKubeConfig(ignoreNotFound bool) func(string, string, string, string, string) (map[string]any, error) {
+	return func(apiVersion string, kind string, namespace string, name string, kubeConfig string) (map[string]any, error) {
+		cfg, err := clientcmd.RESTConfigFromKubeConfig([]byte(kubeConfig))
+		if err != nil {
+			return map[string]any{}, err
+		}
+		c, err := client.New(cfg, client.Options{})
+		if err != nil {
+			return map[string]any{}, err
+		}
 		object := &unstructured.Unstructured{}
 		object.SetAPIVersion(apiVersion)
 		object.SetKind(kind)
