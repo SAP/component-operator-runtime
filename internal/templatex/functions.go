@@ -288,9 +288,9 @@ func makeFuncLookup(c client.Client, ignoreNotFound bool) func(string, string, s
 	}
 }
 
-func makeFuncLookupWithKubeConfig(ignoreNotFound bool) func(string, string, string, string, []byte) (map[string]any, error) {
-	return func(apiVersion string, kind string, namespace string, name string, kubeConfig []byte) (map[string]any, error) {
-		cfg, err := clientcmd.RESTConfigFromKubeConfig(kubeConfig)
+func makeFuncLookupWithKubeConfig(ignoreNotFound bool) func(string, string, string, string, string) (map[string]any, error) {
+	return func(apiVersion string, kind string, namespace string, name string, kubeConfig string) (map[string]any, error) {
+		cfg, err := clientcmd.RESTConfigFromKubeConfig([]byte(kubeConfig))
 		if err != nil {
 			return map[string]any{}, err
 		}
