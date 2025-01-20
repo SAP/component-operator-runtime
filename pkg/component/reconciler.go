@@ -90,6 +90,12 @@ type HookFunc[T Component] func(ctx context.Context, clnt client.Client, compone
 
 // ReconcilerOptions are creation options for a Reconciler.
 type ReconcilerOptions struct {
+	// Which field manager to use in API calls.
+	// If unspecified, the reconciler name is used.
+	FieldOwner *string
+	// Which finalizer to use.
+	// If unspecified, the reconciler name is used.
+	Finalizer *string
 	// Whether namespaces are auto-created if missing.
 	// If unspecified, true is assumed.
 	CreateMissingNamespaces *bool
@@ -137,8 +143,14 @@ type Reconciler[T Component] struct {
 // resourceGenerator must be an implementation of the manifests.Generator interface.
 func NewReconciler[T Component](name string, resourceGenerator manifests.Generator, options ReconcilerOptions) *Reconciler[T] {
 	// TOOD: validate options
-	// TODO: currently, the defaulting of CreateMissingNamespaces and *Policy here is identical to the defaulting in the underlying reconciler.Reconciler;
+	// TODO: currently, the defaulting here is identical to the defaulting in the underlying reconciler.Reconciler;
 	// under the assumption that these attributes are not used here, we could skip the defaulting here, and let it happen in the underlying implementation only
+	if options.FieldOwner == nil {
+		options.FieldOwner = &name
+	}
+	if options.Finalizer == nil {
+		options.Finalizer = &name
+	}
 	if options.CreateMissingNamespaces == nil {
 		options.CreateMissingNamespaces = ref(true)
 	}
@@ -311,7 +323,7 @@ func (r *Reconciler[T]) Reconcile(ctx context.Context, req ctrl.Request) (result
 				cond.LastTransitionTime = &now
 			}
 		}
-		if updateErr := r.client.Status().Update(ctx, component, client.FieldOwner(r.name)); updateErr != nil {
+		if updateErr := r.client.Status().Update(ctx, component, client.FieldOwner(*r.options.FieldOwner)); updateErr != nil {
 			err = utilerrors.NewAggregate([]error{err, updateErr})
 			result = ctrl.Result{}
 		}
@@ -349,8 +361,8 @@ func (r *Reconciler[T]) Reconcile(ctx context.Context, req ctrl.Request) (result
 	if component.GetDeletionTimestamp().IsZero() {
 		// create/update case
 		// TODO: optionally (to be completely consistent) set finalizer through a mutating webhook
-		if added := controllerutil.AddFinalizer(component, r.name); added {
-			if err := r.client.Update(ctx, component, client.FieldOwner(r.name)); err != nil {
+		if added := controllerutil.AddFinalizer(component, *r.options.Finalizer); added {
+			if err := r.client.Update(ctx, component, client.FieldOwner(*r.options.FieldOwner)); err != nil {
 				return ctrl.Result{}, errors.Wrap(err, "error adding finalizer")
 			}
 			// trigger another round trip
@@ -415,7 +427,7 @@ func (r *Reconciler[T]) Reconcile(ctx context.Context, req ctrl.Request) (result
 			status.SetState(StateDeleting, readyConditionReasonDeletionBlocked, "Deletion blocked: "+msg)
 			return ctrl.Result{RequeueAfter: 1*time.Second + r.backoff.Next(req, readyConditionReasonDeletionBlocked)}, nil
 		}
-		if len(slices.Remove(component.GetFinalizers(), r.name)) > 0 {
+		if len(slices.Remove(component.GetFinalizers(), *r.options.Finalizer)) > 0 {
 			// deletion is blocked because of foreign finalizers
 			log.V(1).Info("deleted blocked due to existence of foreign finalizers")
 			// TODO: have an additional StateDeletionBlocked?
@@ -438,8 +450,8 @@ func (r *Reconciler[T]) Reconcile(ctx context.Context, req ctrl.Request) (result
 			}
 			// all dependent resources are already gone, so that's it
 			log.V(1).Info("all dependent resources are successfully deleted; removing finalizer")
-			if removed := controllerutil.RemoveFinalizer(component, r.name); removed {
-				if err := r.client.Update(ctx, component, client.FieldOwner(r.name)); err != nil {
+			if removed := controllerutil.RemoveFinalizer(component, *r.options.Finalizer); removed {
+				if err := r.client.Update(ctx, component, client.FieldOwner(*r.options.FieldOwner)); err != nil {
 					return ctrl.Result{}, errors.Wrap(err, "error removing finalizer")
 				}
 			}
@@ -638,6 +650,8 @@ func (r *Reconciler[T]) getClientForComponent(component T) (cluster.Client, erro
 
 func (r *Reconciler[T]) getOptionsForComponent(component T) reconciler.ReconcilerOptions {
 	options := reconciler.ReconcilerOptions{
+		FieldOwner:              r.options.FieldOwner,
+		Finalizer:               r.options.Finalizer,
 		CreateMissingNamespaces: r.options.CreateMissingNamespaces,
 		AdoptionPolicy:          r.options.AdoptionPolicy,
 		UpdatePolicy:            r.options.UpdatePolicy,
