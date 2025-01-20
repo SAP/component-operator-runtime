@@ -96,6 +96,12 @@ type ReconcilerOptions struct {
 	// Which finalizer to use.
 	// If unspecified, the reconciler name is used.
 	Finalizer *string
+	// Default service account used for impersonation of the target client.
+	// If set this service account (in the namespace of the reconciled component) will be used
+	// to default the impersonation of the target client (that is, the client used to manage dependents);
+	// otherwise no impersonation happens by default, and the controller's own service account is used.
+	// Of course, components can still customize impersonation by implementing the ImpersonationConfiguration interface.
+	DefaultServiceAccount *string
 	// Whether namespaces are auto-created if missing.
 	// If unspecified, true is assumed.
 	CreateMissingNamespaces *bool
@@ -640,6 +646,9 @@ func (r *Reconciler[T]) getClientForComponent(component T) (cluster.Client, erro
 				impersonationUser = fmt.Sprintf("%s:%s:%s", m[1], namespace, m[3])
 			}
 		}
+	}
+	if !haveClientConfiguration && !haveImpersonationConfiguration && r.options.DefaultServiceAccount != nil {
+		impersonationUser = fmt.Sprintf("system:serviceaccount:%s:%s", component.GetNamespace(), *r.options.DefaultServiceAccount)
 	}
 	clnt, err := r.clients.Get(kubeConfig, impersonationUser, impersonationGroups)
 	if err != nil {
