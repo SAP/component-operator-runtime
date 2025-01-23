@@ -56,6 +56,8 @@ func (t *reconcileTarget[T]) Apply(ctx context.Context, component T) (bool, stri
 		WithReconcilerName(t.reconcilerName).
 		WithClient(t.client).
 		WithComponent(component).
+		WithComponentName(component.GetName()).
+		WithComponentNamespace(component.GetNamespace()).
 		WithComponentDigest(componentDigest)
 	objects, err := t.resourceGenerator.Generate(generateCtx, namespace, name, component.GetSpec())
 	if err != nil {

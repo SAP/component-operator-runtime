@@ -52,11 +52,9 @@ import (
 // TODO: emitting events to deployment target may fail if corresponding rbac privileges are missing; either this should be pre-discovered or we
 // should stop emitting events to remote targets at all; howerver pre-discovering is difficult (may vary from object to object); one option could
 // be to send events only if we are cluster-admin
-// TODO: allow to override namespace auto-creation and reconcile policy on a per-component level
+// TODO: allow to override namespace auto-creation on a per-component level
 // that is: consider adding them to the PolicyConfiguration interface?
 // TODO: allow to override namespace auto-creation on a per-object level
-// TODO: allow some timeout feature, such that component will go into error state if not ready within the given timeout
-// (e.g. through a TimeoutConfiguration interface that components could optionally implement)
 // TODO: run admission webhooks (if present) in reconcile (e.g. as post-read hook)
 // TODO: improve overall log output
 // TODO: finalizer and fieldowner should be made more configurable (instead of just using the reconciler name)
@@ -554,6 +552,11 @@ func (r *Reconciler[T]) WithPostDeleteHook(hook HookFunc[T]) *Reconciler[T] {
 
 // Register the reconciler with a given controller-runtime Manager and Builder.
 // This will call For() and Complete() on the provided builder.
+// It populates the recnciler's client with an enhnanced client derived from mgr.GetClient() and mgr.GetConfig().
+// That client is used for three purposes:
+// - reading/updating the reconciled component, sending events for this component
+// - it is passed to hooks
+// - it is passed to the factory for target clients as a default local client
 func (r *Reconciler[T]) SetupWithManagerAndBuilder(mgr ctrl.Manager, blder *ctrl.Builder) error {
 	r.setupMutex.Lock()
 	defer r.setupMutex.Unlock()
@@ -647,7 +650,7 @@ func (r *Reconciler[T]) getClientForComponent(component T) (cluster.Client, erro
 			}
 		}
 	}
-	if !haveClientConfiguration && !haveImpersonationConfiguration && r.options.DefaultServiceAccount != nil {
+	if len(kubeConfig) == 0 && impersonationUser == "" && len(impersonationGroups) == 0 && r.options.DefaultServiceAccount != nil {
 		impersonationUser = fmt.Sprintf("system:serviceaccount:%s:%s", component.GetNamespace(), *r.options.DefaultServiceAccount)
 	}
 	clnt, err := r.clients.Get(kubeConfig, impersonationUser, impersonationGroups)
