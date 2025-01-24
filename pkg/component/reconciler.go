@@ -97,6 +97,7 @@ type ReconcilerOptions struct {
 	// to default the impersonation of the target client (that is, the client used to manage dependents);
 	// otherwise no impersonation happens by default, and the controller's own service account is used.
 	// Of course, components can still customize impersonation by implementing the ImpersonationConfiguration interface.
+	// Note that this setting has no meaning if the reconciled component specifies a kubeconfig.
 	DefaultServiceAccount *string
 	// How to react if a dependent object exists but has no or a different owner.
 	// If unspecified, AdoptionPolicyIfUnowned is assumed.
