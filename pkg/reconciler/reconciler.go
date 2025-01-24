@@ -546,7 +546,6 @@ func (r *Reconciler) Apply(ctx context.Context, inventory *[]*InventoryItem, obj
 	//   - PhaseDeleting
 
 	// create missing namespaces
-	// TODO: we should exclude objects which are anyway about to be deleted
 	if r.missingNamespacesPolicy == MissingNamespacesPolicyCreate {
 		for _, namespace := range findMissingNamespaces(objects) {
 			if err := r.client.Get(ctx, apitypes.NamespacedName{Name: namespace}, &corev1.Namespace{}); err != nil {
