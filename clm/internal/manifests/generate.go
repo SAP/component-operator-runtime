@@ -87,11 +87,14 @@ func Generate(manifestSources []string, valuesSources []string, reconcilerName s
 			return nil, err
 		}
 
-		// TODO: what about component and component digest
+		releaseComponent := componentFromRelease(release, allValues)
+		// TODO: what about component digest
 		generateCtx := component.NewContext(context.TODO()).
 			WithReconcilerName(reconcilerName).
 			WithClient(clnt).
-			WithComponent(componentFromRelease(release, allValues)).
+			WithComponent(releaseComponent).
+			WithComponentName(releaseComponent.GetName()).
+			WithComponentNamespace(releaseComponent.GetNamespace()).
 			WithComponentDigest("")
 		objects, err := generator.Generate(generateCtx, release.GetNamespace(), release.GetName(), types.UnstructurableMap(allValues))
 		if err != nil {
