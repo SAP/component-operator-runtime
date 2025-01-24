@@ -686,6 +686,9 @@ func (r *Reconciler[T]) getOptionsForComponent(component T) reconciler.Reconcile
 		if deletePolicy := policyConfiguration.GetDeletePolicy(); deletePolicy != "" {
 			options.DeletePolicy = &deletePolicy
 		}
+		if missingNamespacesPolicy := policyConfiguration.GetMissingNamespacesPolicy(); missingNamespacesPolicy != "" {
+			options.MissingNamespacesPolicy = &missingNamespacesPolicy
+		}
 	}
 	return options
 }
