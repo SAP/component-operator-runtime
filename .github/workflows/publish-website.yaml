@@ -27,7 +27,7 @@ jobs:
   build:
     runs-on: ubuntu-24.04
     env:
-      HUGO_VERSION: 0.111.2
+      HUGO_VERSION: 0.142.0
 
     steps:
     - name: Install Hugo
