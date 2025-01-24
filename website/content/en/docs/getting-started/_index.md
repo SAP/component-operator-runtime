@@ -17,15 +17,14 @@ Then, a git repository for the operator code is needed; in this example, we call
 We assume that you have cloned the empty repository to your local desktop, and have changed the current directory
 to the checked out repository.
 
-We assume here that you are implementing a [Kyma module operator](https://github.com/kyma-project/template-operator), and that
-the managed component shall be represented by a Kubernetes type called `MyComponent`. Then run:
+Then, to scaffold a component operator for a component type `MyComponent` in group `group.my-domain.io`, just run:
 
 ```bash
 scaffold-component-operator \
-  --group-name operator.kyma-project.io \
+  --group-name group.my-domain.io \
   --group-version v1alpha1 \
   --kind MyComponent \
-  --operator-name mycomponent-operator.kyma-project.io \
+  --operator-name mycomponent-operator.group.my-domain.io \
   --go-module github.com/myorg/mycomponent-operator \
   --image mycomponent-operator:latest \
   .
@@ -35,15 +34,15 @@ This will give you a syntactically correct Go module. In order to start the oper
 custom resource definition into your development (e.g. [kind](https://kind.sigs.k8s.io/)) cluster:
 
 ```bash
-kubectl apply -f crds/operator.kyma-project.io_mycomponents.yaml
+kubectl apply -f crds
 ```
 
-Then, after copying or linking the cluster's kubeconfig to `./tmp/kubeconfig` (no worries, it will not submitted to git because `./tmp` is excluded by `.gitignore`), you can use the generated `./vscode/launch.json` to start the
+Then, after copying or linking the cluster's kubeconfig to `./tmp/kubeconfig` (no worries, it is not submitted to git because `./tmp` is excluded by `.gitignore`), you can use the generated `./vscode/launch.json` to start the
 operator against your cluster with your Visual Studio Code. Now you are ready to instantiate your component:
 
 ```bash
 kubectl apply -f - <<END
-apiVersion: operator.kyma-project.io/v1alpha1
+apiVersion: group.my-domain.io/v1alpha1
 kind: MyComponent
 metadata:
   namespace: default
@@ -67,15 +66,12 @@ type Generator interface {
 }
 ```
 
-When called by the framework, the `namespace` and `name` arguments of the `Generate()` method will be assigned the component's namespace and name or, if the component or its spec implements the `PlacementConfiguration` interface, they will match the return values
-of the respective `GetDeploymentNamespace()`, `GetDeploymentName()` methods. The `parameter` argument will be set to the return value of the component's `GetSpec()` method.
-In simplistic words, the spec of the component resource will be fed into the resource generator, which will return the
-concrete manifests of the dependent objects, which will then be applied to the cluster.
+When called by the framework, the `namespace` and `name` arguments of the `Generate()` method is assigned the component's namespace and name or, if the component or its spec implements the `PlacementConfiguration` interface, they match the return values
+of the respective `GetDeploymentNamespace()`, `GetDeploymentName()` methods. The `parameter` argument is set to the return value of the component's `GetSpec()` method.
+In simplified words, the spec of the component resource is fed into the resource generator, which returns the
+concrete manifests of the dependent objects, which then is applied to the cluster.
 
-In some cases, the best option is to implement your own resource generator from scratch. When doing so, the returned resources `[]client.Object` either have to be of type `*unstructured.Unstructured`, or the according type must be known to the used scheme.
+In some cases, the best option is to implement your own resource generator from scratch. When doing so, the returned resources `[]client.Object` can of type `*unstructured.Unstructured`, or the according specific type must be known to the used scheme.
 
 In many other cases however, it makes more sense to just reuse one of the [generic generators shipped with this
   repository](../generators).
-
-
-

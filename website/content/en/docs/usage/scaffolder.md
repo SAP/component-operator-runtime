@@ -14,9 +14,9 @@ After installing the scaffolder, a new project can be created like this:
 
 ```bash
 scaffold \
-  --group-name operator.kyma-project.io \
+  --group-name operator.group.my-domain.io \
   --kind MyComponent \
-  --operator-name mycomponent-operator.kyma-project.io \
+  --operator-name mycomponent-operator.group.my-domain.io \
   --go-module github.com/myorg/mycomponent-operator \
   --image mycomponent-operator:latest \
   <output-directory>
@@ -38,14 +38,14 @@ Usage: scaffold [options] [output directory]
       --operator-name string                       Unique name for this operator, used e.g. for leader election and labels; should be a valid DNS hostname
       --with-validating-webhook                    Whether to scaffold validating webhook
       --with-mutating-webhook                      Whether to scaffold mutating webhook
-      --go-version string                          Go version to be used (default "1.21")
+      --go-version string                          Go version to be used (default "1.23.4")
       --go-module string                           Name of the Go module, as written to the go.mod file
-      --kubernetes-version string                  Kubernetes go-client version to be used (default "v0.28.1")
-      --controller-runtime-version string          Controller-runtime version to be used (default "v0.16.0")
-      --controller-tools-version string            Controller-tools version to be used (default "v0.13.0")
-      --code-generator-version string              Code-generator version to be used (default "v0.28.1")
-      --admission-webhook-runtime-version string   Admission-webhook-runtime version to be used (default "v0.1.0")
-      --envtest-kubernetes-version string          Kubernetes version to be used by envtest (default "1.27.1")
+      --kubernetes-version string                  Kubernetes go-client version to be used (default "v0.32.0")
+      --controller-runtime-version string          Controller-runtime version to be used (default "v0.19.3")
+      --controller-tools-version string            Controller-tools version to be used (default "v0.16.5")
+      --code-generator-version string              Code-generator version to be used (default "v0.32.0")
+      --admission-webhook-runtime-version string   Admission-webhook-runtime version to be used (default "v0.1.52")
+      --envtest-kubernetes-version string          Kubernetes version to be used by envtest (default "1.30.3")
       --image string                               Name of the Docker/OCI image produced by this project (default "controller:latest")
       --skip-post-processing                       Skip post-processing
 ```

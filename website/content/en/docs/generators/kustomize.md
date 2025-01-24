@@ -25,15 +25,29 @@ package kustomize
 func NewKustomizeGenerator(
   fsys fs.FS,
   kustomizationPath string,
-  templateSuffix string,
-  client client.Client
+  clnt client.Client,
+  options KustomizeGeneratorOptions
 ) (*KustomizeGenerator, error) {
 ```
 
 Here:
 - `fsys` must be an implementation of `fs.FS`, such as `embed.FS`; or it can be passed as nil; then, all file operations will be executed on the current OS filesystem.
 - `kustomizationPath` is the directory containing the (potentially templatized) kustomatization; if `fsys` was provided, this has to be a relative path; otherwise, it will be interpreted with respect to the OS filesystem (as an absolute path, or relative to the current working directory of the controller).
-- `templateSuffx` is optional; if empty, all files under `kustomizationPath` will be subject to go templating; otherwise, only files matching the specified suffix will be considered as templates.
-- `client` should be a client for the local cluster (i.e. the cluster where the component object exists).
+- `clnt` should be a client for the local cluster (i.e. the cluster where the component object exists).
+- `options` allows to tweak the generator:
+  ```go
+  package kustomize
+  
+  type KustomizeGeneratorOptions struct {
+    // If defined, only files with that suffix will be subject to templating.
+    TemplateSuffix *string
+    // If defined, the given left delimiter will be used to parse go templates;
+    // otherwise, defaults to '{{'
+    LeftTemplateDelimiter *string
+    // If defined, the given right delimiter will be used to parse go templates;
+    // otherwise, defaults to '}}'
+    RightTemplateDelimiter *string
+  }
+  ```
 
 As of now, the specified kustomization must not reference files or paths outside `kustomizationPath`. Remote references are generally not supported.

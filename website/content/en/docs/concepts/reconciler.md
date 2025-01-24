@@ -26,7 +26,7 @@ func NewReconciler[T Component](
 ) *Reconciler[T]
 ```
 
-The passed type parameter `T Component` is the concrete runtime type of the component's custom resource type. Furthermore,
+The passed type parameter `T Component` is the concrete runtime type of the component's custom resource type (respectively, a pointer to that). Furthermore,
 - `name` is supposed to be a unique name (typically a DNS name) identifying this component operator in the cluster; ìt will be used in annotations, labels, for leader election, ...
 - `resourceGenerator` is an implementation of the `Generator` interface, describing how the dependent objects are rendered from the component's spec.
 - `options` can be used to tune the behavior of the reconciler:
@@ -149,7 +149,7 @@ will be used instead of the backoff. Implementations should use
 pacakge types
 
 func NewRetriableError(err error, retryAfter *time.Duration) RetriableError {
-	return RetriableError{err: err, retryAfter: retryAfter}
+  return RetriableError{err: err, retryAfter: retryAfter}
 }
 ```
 
@@ -163,8 +163,8 @@ package component
 // The RetryConfiguration interface is meant to be implemented by components (or their spec) which offer
 // tweaking the retry interval (by default, it would be the value of the requeue interval).
 type RetryConfiguration interface {
-	// Get retry interval. Should be greater than 1 minute.
-	GetRetryInterval() time.Duration
+  // Get retry interval. Should be greater than 1 minute.
+  GetRetryInterval() time.Duration
 }
 ```
 
@@ -181,8 +181,8 @@ package component
 // The RequeueConfiguration interface is meant to be implemented by components (or their spec) which offer
 // tweaking the requeue interval (by default, it would be 10 minutes).
 type RequeueConfiguration interface {
-	// Get requeue interval. Should be greater than 1 minute.
-	GetRequeueInterval() time.Duration
+  // Get requeue interval. Should be greater than 1 minute.
+  GetRequeueInterval() time.Duration
 }
 ```
 
@@ -201,9 +201,37 @@ package component
 // The TimeoutConfiguration interface is meant to be implemented by components (or their spec) which offer
 // tweaking the processing timeout (by default, it would be the value of the requeue interval).
 type TimeoutConfiguration interface {
-	// Get timeout. Should be greater than 1 minute.
-	GetTimeout() time.Duration
+  // Get timeout. Should be greater than 1 minute.
+  GetTimeout() time.Duration
 }
 ```
 
 interface.
+
+## Tuning the handling of dependent objects
+
+The reconciler allows to tweak how dependent objects are applied to or deleted from the cluster.
+To change the shipped framework defaults, a component type can implement the 
+
+```go
+package component
+
+// The PolicyConfiguration interface is meant to be implemented by compoments (or their spec) which offer
+// tweaking policies affecting the dependents handling.
+type PolicyConfiguration interface {
+  // Get adoption policy.
+  // Must return a valid AdoptionPolicy, or the empty string (then the reconciler/framework default applies).
+  GetAdoptionPolicy() reconciler.AdoptionPolicy
+  // Get update policy.
+  // Must return a valid UpdatePolicy, or the empty string (then the reconciler/framework default applies).
+  GetUpdatePolicy() reconciler.UpdatePolicy
+  // Get delete policy.
+  // Must return a valid DeletePolicy, or the empty string (then the reconciler/framework default applies).
+  GetDeletePolicy() reconciler.DeletePolicy
+  // Get namspace auto-creation policy.
+  // Must return a valid MissingNamespacesPolicy, or the empty string (then the reconciler/framework default applies).
+  GetMissingNamespacesPolicy() reconciler.MissingNamespacesPolicy
+}
+```
+
+interface. Note that most of the above policies can be overridden on a per-object level by setting certain annotations, as described [here](../dependents).
