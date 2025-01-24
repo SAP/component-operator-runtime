@@ -36,9 +36,18 @@ The passed type parameter `T Component` is the concrete runtime type of the comp
 
   // ReconcilerOptions are creation options for a Reconciler.
   type ReconcilerOptions struct {
-    // Whether namespaces are auto-created if missing.
-    // If unspecified, true is assumed.
-    CreateMissingNamespaces *bool
+    // Which field manager to use in API calls.
+    // If unspecified, the reconciler name is used.
+    FieldOwner *string
+    // Which finalizer to use.
+    // If unspecified, the reconciler name is used.
+    Finalizer *string
+    // Default service account used for impersonation of the target client.
+    // If set this service account (in the namespace of the reconciled component) will be used
+    // to default the impersonation of the target client (that is, the client used to manage dependents);
+    // otherwise no impersonation happens by default, and the controller's own service account is used.
+    // Of course, components can still customize impersonation by implementing the ImpersonationConfiguration interface.
+    DefaultServiceAccount *string
     // How to react if a dependent object exists but has no or a different owner.
     // If unspecified, AdoptionPolicyIfUnowned is assumed.
     // Can be overridden by annotation on object level.
@@ -51,6 +60,9 @@ The passed type parameter `T Component` is the concrete runtime type of the comp
     // If unspecified, DeletePolicyDelete is assumed.
     // Can be overridden by annotation on object level.
     DeletePolicy *reconciler.DeletePolicy
+    // Whether namespaces are auto-created if missing.
+    // If unspecified, MissingNamespacesPolicyCreate is assumed.
+    MissingNamespacesPolicy *reconciler.MissingNamespacesPolicy
     // SchemeBuilder allows to define additional schemes to be made available in the
     // target client.
     SchemeBuilder types.SchemeBuilder

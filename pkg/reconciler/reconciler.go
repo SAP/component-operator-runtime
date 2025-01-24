@@ -90,9 +90,6 @@ type ReconcilerOptions struct {
 	// Which finalizer to use.
 	// If unspecified, the reconciler name is used.
 	Finalizer *string
-	// Whether namespaces are auto-created if missing.
-	// If unspecified, true is assumed.
-	CreateMissingNamespaces *bool
 	// How to react if a dependent object exists but has no or a different owner.
 	// If unspecified, AdoptionPolicyIfUnowned is assumed.
 	// Can be overridden by annotation on object level.
@@ -105,6 +102,9 @@ type ReconcilerOptions struct {
 	// If unspecified, DeletePolicyDelete is assumed.
 	// Can be overridden by annotation on object level.
 	DeletePolicy *DeletePolicy
+	// Whether namespaces are auto-created if missing.
+	// If unspecified, MissingNamespacesPolicyCreate is assumed.
+	MissingNamespacesPolicy *MissingNamespacesPolicy
 	// How to analyze the state of the dependent objects.
 	// If unspecified, an optimized kstatus based implementation is used.
 	StatusAnalyzer status.StatusAnalyzer
@@ -128,11 +128,11 @@ type Reconciler struct {
 	client                       cluster.Client
 	statusAnalyzer               status.StatusAnalyzer
 	metrics                      ReconcilerMetrics
-	createMissingNamespaces      bool
 	adoptionPolicy               AdoptionPolicy
 	reconcilePolicy              ReconcilePolicy
 	updatePolicy                 UpdatePolicy
 	deletePolicy                 DeletePolicy
+	missingNamespacesPolicy      MissingNamespacesPolicy
 	labelKeyOwnerId              string
 	annotationKeyOwnerId         string
 	annotationKeyDigest          string
@@ -156,9 +156,6 @@ func NewReconciler(name string, clnt cluster.Client, options ReconcilerOptions) 
 	if options.Finalizer == nil {
 		options.Finalizer = &name
 	}
-	if options.CreateMissingNamespaces == nil {
-		options.CreateMissingNamespaces = ref(true)
-	}
 	if options.AdoptionPolicy == nil {
 		options.AdoptionPolicy = ref(AdoptionPolicyIfUnowned)
 	}
@@ -167,6 +164,9 @@ func NewReconciler(name string, clnt cluster.Client, options ReconcilerOptions) 
 	}
 	if options.DeletePolicy == nil {
 		options.DeletePolicy = ref(DeletePolicyDelete)
+	}
+	if options.MissingNamespacesPolicy == nil {
+		options.MissingNamespacesPolicy = ref(MissingNamespacesPolicyCreate)
 	}
 	if options.StatusAnalyzer == nil {
 		options.StatusAnalyzer = status.NewStatusAnalyzer(name)
@@ -178,11 +178,11 @@ func NewReconciler(name string, clnt cluster.Client, options ReconcilerOptions) 
 		client:                       clnt,
 		statusAnalyzer:               options.StatusAnalyzer,
 		metrics:                      options.Metrics,
-		createMissingNamespaces:      *options.CreateMissingNamespaces,
 		adoptionPolicy:               *options.AdoptionPolicy,
 		reconcilePolicy:              ReconcilePolicyOnObjectChange,
 		updatePolicy:                 *options.UpdatePolicy,
 		deletePolicy:                 *options.DeletePolicy,
+		missingNamespacesPolicy:      *options.MissingNamespacesPolicy,
 		labelKeyOwnerId:              name + "/" + types.LabelKeySuffixOwnerId,
 		annotationKeyOwnerId:         name + "/" + types.AnnotationKeySuffixOwnerId,
 		annotationKeyDigest:          name + "/" + types.AnnotationKeySuffixDigest,
@@ -546,7 +546,8 @@ func (r *Reconciler) Apply(ctx context.Context, inventory *[]*InventoryItem, obj
 	//   - PhaseDeleting
 
 	// create missing namespaces
-	if r.createMissingNamespaces {
+	// TODO: we should exclude objects which are anyway about to be deleted
+	if r.missingNamespacesPolicy == MissingNamespacesPolicyCreate {
 		for _, namespace := range findMissingNamespaces(objects) {
 			if err := r.client.Get(ctx, apitypes.NamespacedName{Name: namespace}, &corev1.Namespace{}); err != nil {
 				if !apierrors.IsNotFound(err) {

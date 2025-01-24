@@ -52,9 +52,7 @@ import (
 // TODO: emitting events to deployment target may fail if corresponding rbac privileges are missing; either this should be pre-discovered or we
 // should stop emitting events to remote targets at all; howerver pre-discovering is difficult (may vary from object to object); one option could
 // be to send events only if we are cluster-admin
-// TODO: allow to override namespace auto-creation on a per-component level
-// that is: consider adding them to the PolicyConfiguration interface?
-// TODO: allow to override namespace auto-creation on a per-object level
+// TODO: allow to override namespace auto-creation on a per-object level?
 // TODO: run admission webhooks (if present) in reconcile (e.g. as post-read hook)
 // TODO: improve overall log output
 // TODO: finalizer and fieldowner should be made more configurable (instead of just using the reconciler name)
@@ -100,9 +98,6 @@ type ReconcilerOptions struct {
 	// otherwise no impersonation happens by default, and the controller's own service account is used.
 	// Of course, components can still customize impersonation by implementing the ImpersonationConfiguration interface.
 	DefaultServiceAccount *string
-	// Whether namespaces are auto-created if missing.
-	// If unspecified, true is assumed.
-	CreateMissingNamespaces *bool
 	// How to react if a dependent object exists but has no or a different owner.
 	// If unspecified, AdoptionPolicyIfUnowned is assumed.
 	// Can be overridden by annotation on object level.
@@ -115,6 +110,9 @@ type ReconcilerOptions struct {
 	// If unspecified, DeletePolicyDelete is assumed.
 	// Can be overridden by annotation on object level.
 	DeletePolicy *reconciler.DeletePolicy
+	// Whether namespaces are auto-created if missing.
+	// If unspecified, MissingNamespacesPolicyCreate is assumed.
+	MissingNamespacesPolicy *reconciler.MissingNamespacesPolicy
 	// SchemeBuilder allows to define additional schemes to be made available in the
 	// target client.
 	SchemeBuilder types.SchemeBuilder
@@ -148,15 +146,13 @@ type Reconciler[T Component] struct {
 func NewReconciler[T Component](name string, resourceGenerator manifests.Generator, options ReconcilerOptions) *Reconciler[T] {
 	// TOOD: validate options
 	// TODO: currently, the defaulting here is identical to the defaulting in the underlying reconciler.Reconciler;
-	// under the assumption that these attributes are not used here, we could skip the defaulting here, and let it happen in the underlying implementation only
+	// under the assumption that these attributes are not used here, we could skip the defaulting here,
+	// and let it happen in the underlying implementation only
 	if options.FieldOwner == nil {
 		options.FieldOwner = &name
 	}
 	if options.Finalizer == nil {
 		options.Finalizer = &name
-	}
-	if options.CreateMissingNamespaces == nil {
-		options.CreateMissingNamespaces = ref(true)
 	}
 	if options.AdoptionPolicy == nil {
 		options.AdoptionPolicy = ref(reconciler.AdoptionPolicyIfUnowned)
@@ -166,6 +162,9 @@ func NewReconciler[T Component](name string, resourceGenerator manifests.Generat
 	}
 	if options.DeletePolicy == nil {
 		options.DeletePolicy = ref(reconciler.DeletePolicyDelete)
+	}
+	if options.MissingNamespacesPolicy == nil {
+		options.MissingNamespacesPolicy = ref(reconciler.MissingNamespacesPolicyCreate)
 	}
 
 	return &Reconciler[T]{
@@ -664,10 +663,10 @@ func (r *Reconciler[T]) getOptionsForComponent(component T) reconciler.Reconcile
 	options := reconciler.ReconcilerOptions{
 		FieldOwner:              r.options.FieldOwner,
 		Finalizer:               r.options.Finalizer,
-		CreateMissingNamespaces: r.options.CreateMissingNamespaces,
 		AdoptionPolicy:          r.options.AdoptionPolicy,
 		UpdatePolicy:            r.options.UpdatePolicy,
 		DeletePolicy:            r.options.DeletePolicy,
+		MissingNamespacesPolicy: r.options.MissingNamespacesPolicy,
 		StatusAnalyzer:          r.statusAnalyzer,
 		Metrics: reconciler.ReconcilerMetrics{
 			ReadCounter:   metrics.Operations.WithLabelValues(r.controllerName, "read"),

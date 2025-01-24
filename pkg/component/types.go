@@ -96,6 +96,9 @@ type PolicyConfiguration interface {
 	// Get delete policy.
 	// Must return a valid DeletePolicy, or the empty string (then the reconciler/framework default applies).
 	GetDeletePolicy() reconciler.DeletePolicy
+	// Get namspace auto-creation policy.
+	// Must return a valid MissingNamespacesPolicy, or the empty string (then the reconciler/framework default applies).
+	GetMissingNamespacesPolicy() reconciler.MissingNamespacesPolicy
 }
 
 // +kubebuilder:object:generate=true
@@ -190,6 +193,8 @@ type PolicySpec struct {
 	UpdatePolicy reconciler.UpdatePolicy `json:"updatePolicy,omitempty"`
 	// +kubebuilder:validation:Enum=Delete;Orphan
 	DeletePolicy reconciler.DeletePolicy `json:"deletePolicy,omitempty"`
+	// +kubebuilder:validation:Enum=DoNotCreate;Create
+	MissingNamespacesPolicy reconciler.MissingNamespacesPolicy `json:"missingNamespacesPolicy,omitempty"`
 }
 
 var _ PolicyConfiguration = &PolicySpec{}
