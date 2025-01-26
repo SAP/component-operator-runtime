@@ -50,8 +50,8 @@ func NewHelmGenerator(fsys fs.FS, chartPath string, _ client.Client) (*HelmGener
 }
 
 // Create a new HelmGenerator as TransformableGenerator.
-func NewTransformableHelmGenerator(fsys fs.FS, chartPath string, clnt client.Client) (manifests.TransformableGenerator, error) {
-	g, err := NewHelmGenerator(fsys, chartPath, clnt)
+func NewTransformableHelmGenerator(fsys fs.FS, chartPath string, _ client.Client) (manifests.TransformableGenerator, error) {
+	g, err := NewHelmGenerator(fsys, chartPath, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -59,8 +59,8 @@ func NewTransformableHelmGenerator(fsys fs.FS, chartPath string, clnt client.Cli
 }
 
 // Create a new HelmGenerator with a ParameterTransformer attached (further transformers can be attached to the returned generator object).
-func NewHelmGeneratorWithParameterTransformer(fsys fs.FS, chartPath string, clnt client.Client, transformer manifests.ParameterTransformer) (manifests.TransformableGenerator, error) {
-	g, err := NewTransformableHelmGenerator(fsys, chartPath, clnt)
+func NewHelmGeneratorWithParameterTransformer(fsys fs.FS, chartPath string, _ client.Client, transformer manifests.ParameterTransformer) (manifests.TransformableGenerator, error) {
+	g, err := NewTransformableHelmGenerator(fsys, chartPath, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -68,8 +68,8 @@ func NewHelmGeneratorWithParameterTransformer(fsys fs.FS, chartPath string, clnt
 }
 
 // Create a new HelmGenerator with an ObjectTransformer attached (further transformers can be attached to the returned generator object).
-func NewHelmGeneratorWithObjectTransformer(fsys fs.FS, chartPath string, clnt client.Client, transformer manifests.ObjectTransformer) (manifests.TransformableGenerator, error) {
-	g, err := NewTransformableHelmGenerator(fsys, chartPath, clnt)
+func NewHelmGeneratorWithObjectTransformer(fsys fs.FS, chartPath string, _ client.Client, transformer manifests.ObjectTransformer) (manifests.TransformableGenerator, error) {
+	g, err := NewTransformableHelmGenerator(fsys, chartPath, nil)
 	if err != nil {
 		return nil, err
 	}

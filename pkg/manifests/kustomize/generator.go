@@ -159,8 +159,8 @@ func NewKustomizeGenerator(fsys fs.FS, kustomizationPath string, _ client.Client
 }
 
 // Create a new KustomizeGenerator as TransformableGenerator.
-func NewTransformableKustomizeGenerator(fsys fs.FS, kustomizationPath string, clnt client.Client, options KustomizeGeneratorOptions) (manifests.TransformableGenerator, error) {
-	g, err := NewKustomizeGenerator(fsys, kustomizationPath, clnt, options)
+func NewTransformableKustomizeGenerator(fsys fs.FS, kustomizationPath string, _ client.Client, options KustomizeGeneratorOptions) (manifests.TransformableGenerator, error) {
+	g, err := NewKustomizeGenerator(fsys, kustomizationPath, nil, options)
 	if err != nil {
 		return nil, err
 	}
@@ -168,8 +168,8 @@ func NewTransformableKustomizeGenerator(fsys fs.FS, kustomizationPath string, cl
 }
 
 // Create a new KustomizeGenerator with a ParameterTransformer attached (further transformers can be attached to the returned generator object).
-func NewKustomizeGeneratorWithParameterTransformer(fsys fs.FS, kustomizationPath string, clnt client.Client, options KustomizeGeneratorOptions, transformer manifests.ParameterTransformer) (manifests.TransformableGenerator, error) {
-	g, err := NewTransformableKustomizeGenerator(fsys, kustomizationPath, clnt, options)
+func NewKustomizeGeneratorWithParameterTransformer(fsys fs.FS, kustomizationPath string, _ client.Client, options KustomizeGeneratorOptions, transformer manifests.ParameterTransformer) (manifests.TransformableGenerator, error) {
+	g, err := NewTransformableKustomizeGenerator(fsys, kustomizationPath, nil, options)
 	if err != nil {
 		return nil, err
 	}
@@ -177,8 +177,8 @@ func NewKustomizeGeneratorWithParameterTransformer(fsys fs.FS, kustomizationPath
 }
 
 // Create a new KustomizeGenerator with an ObjectTransformer attached (further transformers can be attached to the returned generator object).
-func NewKustomizeGeneratorWithObjectTransformer(fsys fs.FS, kustomizationPath string, clnt client.Client, options KustomizeGeneratorOptions, transformer manifests.ObjectTransformer) (manifests.TransformableGenerator, error) {
-	g, err := NewTransformableKustomizeGenerator(fsys, kustomizationPath, clnt, options)
+func NewKustomizeGeneratorWithObjectTransformer(fsys fs.FS, kustomizationPath string, _ client.Client, options KustomizeGeneratorOptions, transformer manifests.ObjectTransformer) (manifests.TransformableGenerator, error) {
+	g, err := NewTransformableKustomizeGenerator(fsys, kustomizationPath, nil, options)
 	if err != nil {
 		return nil, err
 	}
