@@ -14,6 +14,7 @@ import (
 
 type (
 	reconcilerNameContextKeyType     struct{}
+	localClientContextKeyType        struct{}
 	clientContextKeyType             struct{}
 	componentContextKeyType          struct{}
 	componentNameContextKeyType      struct{}
@@ -23,6 +24,7 @@ type (
 
 var (
 	reconcilerNameContextKey     = reconcilerNameContextKeyType{}
+	localClientContextKey        = localClientContextKeyType{}
 	clientContextKey             = clientContextKeyType{}
 	componentContextKey          = componentContextKeyType{}
 	componentNameContextKey      = componentNameContextKeyType{}
@@ -33,6 +35,7 @@ var (
 type Context interface {
 	context.Context
 	WithReconcilerName(reconcilerName string) Context
+	WithLocalClient(clnt cluster.Client) Context
 	WithClient(clnt cluster.Client) Context
 	WithComponent(component Component) Context
 	WithComponentName(componentName string) Context
@@ -50,6 +53,10 @@ type contextImpl struct {
 
 func (c *contextImpl) WithReconcilerName(reconcilerName string) Context {
 	return &contextImpl{Context: context.WithValue(c, reconcilerNameContextKey, reconcilerName)}
+}
+
+func (c *contextImpl) WithLocalClient(clnt cluster.Client) Context {
+	return &contextImpl{Context: context.WithValue(c, localClientContextKey, clnt)}
 }
 
 func (c *contextImpl) WithClient(clnt cluster.Client) Context {
@@ -77,6 +84,13 @@ func ReconcilerNameFromContext(ctx context.Context) (string, error) {
 		return reconcilerName, nil
 	}
 	return "", fmt.Errorf("reconciler name not found in context")
+}
+
+func LocalClientFromContext(ctx context.Context) (cluster.Client, error) {
+	if clnt, ok := ctx.Value(localClientContextKey).(cluster.Client); ok {
+		return clnt, nil
+	}
+	return nil, fmt.Errorf("local client not found in context")
 }
 
 func ClientFromContext(ctx context.Context) (cluster.Client, error) {

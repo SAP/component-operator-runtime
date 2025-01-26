@@ -118,8 +118,7 @@ type ImpersonationConfiguration interface {
 }
 ```
 
-to use different user/groups for the deployment of dependent objects. Implementing both `ClientConfiguration` and `ImpersonationConfiguration` means that
-the provided kubeconfig will be impersonated as specified.
+to use different user/groups for the deployment of dependent objects.
 
 Note that, as mentioned above, the interfaces `PlacementConfiguration`, `ClientConfiguration` and `ImpersonationConfiguration` can be implemented by the component
 itself as well as by its spec type. In the theoretical case that both is the case, the implementation on the component level takes higher precedence.

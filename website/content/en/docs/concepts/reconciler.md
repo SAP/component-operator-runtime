@@ -42,10 +42,7 @@ The passed type parameter `T Component` is the concrete runtime type of the comp
     // Which finalizer to use.
     // If unspecified, the reconciler name is used.
     Finalizer *string
-    // Default service account used for impersonation of the target client.
-    // If set this service account (in the namespace of the reconciled component) will be used
-    // to default the impersonation of the target client (that is, the client used to manage dependents);
-    // otherwise no impersonation happens by default, and the controller's own service account is used.
+    // Default service account used for impersonation of clients.
     // Of course, components can still customize impersonation by implementing the ImpersonationConfiguration interface.
     DefaultServiceAccount *string
     // How to react if a dependent object exists but has no or a different owner.
@@ -134,9 +131,7 @@ func (r *Reconciler[T]) WithPreDeleteHook(hook HookFunc[T]) *Reconciler[T]
 func (r *Reconciler[T]) WithPostDeleteHook(hook HookFunc[T]) *Reconciler[T]
 ```
 
-Note that the client passed to the hook functions is the client of the manager that was used when calling `SetupWithManager()`
-(that is, the return value of that manager's `GetClient()` method). In addition, reconcile and delete hooks (that is, all except the
-post-read hook) can retrieve a client for the deployment target by calling `ClientFromContext()`.
+Note that the client passed to the hook functions is the client of the manager that was used when calling `SetupWithManager()` (that is, the return value of that manager's `GetClient()` method). In addition, reconcile and delete hooks (that is, all except the post-read hook) can retrieve a client for the deployment target by calling `ClientFromContext()`.
 
 ## Tuning the retry behavior
 

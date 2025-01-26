@@ -92,12 +92,8 @@ type ReconcilerOptions struct {
 	// Which finalizer to use.
 	// If unspecified, the reconciler name is used.
 	Finalizer *string
-	// Default service account used for impersonation of the target client.
-	// If set this service account (in the namespace of the reconciled component) will be used
-	// to default the impersonation of the target client (that is, the client used to manage dependents);
-	// otherwise no impersonation happens by default, and the controller's own service account is used.
+	// Default service account used for impersonation of clients.
 	// Of course, components can still customize impersonation by implementing the ImpersonationConfiguration interface.
-	// Note that this setting has no meaning if the reconciled component specifies a kubeconfig.
 	DefaultServiceAccount *string
 	// How to react if a dependent object exists but has no or a different owner.
 	// If unspecified, AdoptionPolicyIfUnowned is assumed.
@@ -351,15 +347,22 @@ func (r *Reconciler[T]) Reconcile(ctx context.Context, req ctrl.Request) (result
 	}
 
 	// setup target
+	localClient, err := r.getLocalClientForComponent(component)
+	if err != nil {
+		return ctrl.Result{}, errors.Wrap(err, "error getting local client for component")
+	}
 	targetClient, err := r.getClientForComponent(component)
 	if err != nil {
 		return ctrl.Result{}, errors.Wrap(err, "error getting client for component")
 	}
 	targetOptions := r.getOptionsForComponent(component)
-	target := newReconcileTarget[T](r.name, r.id, targetClient, r.resourceGenerator, targetOptions)
+	target := newReconcileTarget[T](r.name, r.id, localClient, targetClient, r.resourceGenerator, targetOptions)
 	// TODO: enhance ctx with tailored logger and event recorder
 	// TODO: enhance ctx  with the local client
-	hookCtx = NewContext(ctx).WithReconcilerName(r.name).WithClient(targetClient)
+	hookCtx = NewContext(ctx).
+		WithReconcilerName(r.name).
+		WithLocalClient(localClient).
+		WithClient(targetClient)
 
 	// do the reconciliation
 	if component.GetDeletionTimestamp().IsZero() {
@@ -623,8 +626,49 @@ func (r *Reconciler[T]) SetupWithManager(mgr ctrl.Manager) error {
 	)
 }
 
+func (r *Reconciler[T]) getLocalClientForComponent(component T) (cluster.Client, error) {
+	impersonationConfiguration, haveImpersonationConfiguration := assertImpersonationConfiguration(component)
+
+	var impersonationUser string
+	var impersonationGroups []string
+	if haveImpersonationConfiguration {
+		impersonationUser = impersonationConfiguration.GetImpersonationUser()
+		impersonationGroups = impersonationConfiguration.GetImpersonationGroups()
+		// note: the following is needed due to the implementation of ImpersonationSpec
+		if m := regexp.MustCompile(`^(system:serviceaccount):(.*):(.+)$`).FindStringSubmatch(impersonationUser); m != nil {
+			if m[2] == "" {
+				impersonationUser = fmt.Sprintf("%s:%s:%s", m[1], component.GetNamespace(), m[3])
+			}
+		}
+	}
+	if impersonationUser == "" && len(impersonationGroups) == 0 && r.options.DefaultServiceAccount != nil {
+		impersonationUser = fmt.Sprintf("system:serviceaccount:%s:%s", component.GetNamespace(), *r.options.DefaultServiceAccount)
+	}
+	clnt, err := r.clients.Get(nil, impersonationUser, impersonationGroups)
+	if err != nil {
+		return nil, errors.Wrap(err, "error getting local client")
+	}
+	return clnt, nil
+}
+
 func (r *Reconciler[T]) getClientForComponent(component T) (cluster.Client, error) {
-	placementConfiguration, havePlacementConfiguration := assertPlacementConfiguration(component)
+	/*
+		// we could also write it like this:
+		clientConfiguration, haveClientConfiguration := assertClientConfiguration(component)
+
+		var kubeConfig []byte
+		if haveClientConfiguration {
+			kubeConfig = clientConfiguration.GetKubeConfig()
+		}
+		if len(kubeConfig) > 0 {
+			clnt, err := r.clients.Get(kubeConfig, "", nil)
+			if err != nil {
+				return nil, errors.Wrap(err, "error getting target client")
+			}
+			return clnt, nil
+		}
+		return r.getLocalClientForComponent(component)
+	*/
 	clientConfiguration, haveClientConfiguration := assertClientConfiguration(component)
 	impersonationConfiguration, haveImpersonationConfiguration := assertImpersonationConfiguration(component)
 
@@ -634,19 +678,13 @@ func (r *Reconciler[T]) getClientForComponent(component T) (cluster.Client, erro
 	if haveClientConfiguration {
 		kubeConfig = clientConfiguration.GetKubeConfig()
 	}
-	if haveImpersonationConfiguration {
+	if len(kubeConfig) == 0 && haveImpersonationConfiguration {
 		impersonationUser = impersonationConfiguration.GetImpersonationUser()
 		impersonationGroups = impersonationConfiguration.GetImpersonationGroups()
+		// note: the following is needed due to the implementation of ImpersonationSpec
 		if m := regexp.MustCompile(`^(system:serviceaccount):(.*):(.+)$`).FindStringSubmatch(impersonationUser); m != nil {
 			if m[2] == "" {
-				namespace := ""
-				if havePlacementConfiguration {
-					namespace = placementConfiguration.GetDeploymentNamespace()
-				}
-				if namespace == "" {
-					namespace = component.GetNamespace()
-				}
-				impersonationUser = fmt.Sprintf("%s:%s:%s", m[1], namespace, m[3])
+				impersonationUser = fmt.Sprintf("%s:%s:%s", m[1], component.GetNamespace(), m[3])
 			}
 		}
 	}
@@ -655,7 +693,7 @@ func (r *Reconciler[T]) getClientForComponent(component T) (cluster.Client, erro
 	}
 	clnt, err := r.clients.Get(kubeConfig, impersonationUser, impersonationGroups)
 	if err != nil {
-		return nil, errors.Wrap(err, "error getting remote or impersonated client")
+		return nil, errors.Wrap(err, "error getting target client")
 	}
 	return clnt, nil
 }

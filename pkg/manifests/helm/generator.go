@@ -25,11 +25,10 @@ import (
 // HelmGenerator is a Generator implementation that basically renders a given Helm chart.
 // A few restrictions apply to the provided Helm chart: it must not contain any subcharts, some template functions are not supported,
 // some bultin variables are not supported, and hooks are processed in a slightly different fashion.
-// Note: HelmGenerator's Generate() method expects client and reconciler name to be set in the passed context;
-// see: Context.WithClient() and Context.WithReconcilerName() in package pkg/component.
+// Note: HelmGenerator's Generate() method expects local client, client and reconciler name to be set in the passed context;
+// see: Context.WithLocalClient(), Context.WithClient() and Context.WithReconcilerName() in package pkg/component.
 type HelmGenerator struct {
-	client client.Client
-	chart  *helm.Chart
+	chart *helm.Chart
 }
 
 var _ manifests.Generator = &HelmGenerator{}
@@ -37,18 +36,17 @@ var _ manifests.Generator = &HelmGenerator{}
 // TODO: add a way to pass custom template functions
 
 // Create a new HelmGenerator.
-// The parameter client should be a client for the local cluster (i.e. the cluster where the component object resides);
-// it is used by the localLookup and mustLocalLookup template functions.
+// The client parameter is deprecated (ignored) and will be removed in a future release.
 // If fsys is nil, the local operating system filesystem will be used, and chartPath can be an absolute or relative path (in the latter case it will be considered
 // relative to the current working directory). If fsys is non-nil, then chartPath should be a relative path; if an absolute path is supplied, it will be turned
 // An empty chartPath will be treated like ".".
-func NewHelmGenerator(fsys fs.FS, chartPath string, clnt client.Client) (*HelmGenerator, error) {
+func NewHelmGenerator(fsys fs.FS, chartPath string, _ client.Client) (*HelmGenerator, error) {
 	chart, err := helm.ParseChart(fsys, chartPath, nil)
 	if err != nil {
 		return nil, err
 	}
 
-	return &HelmGenerator{client: clnt, chart: chart}, nil
+	return &HelmGenerator{chart: chart}, nil
 }
 
 // Create a new HelmGenerator as TransformableGenerator.
@@ -86,13 +84,17 @@ func (g *HelmGenerator) Generate(ctx context.Context, namespace string, name str
 	if err != nil {
 		return nil, err
 	}
+	localClient, err := component.LocalClientFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
 	clnt, err := component.ClientFromContext(ctx)
 	if err != nil {
 		return nil, err
 	}
 
 	renderedObjects, err := g.chart.Render(helm.RenderContext{
-		LocalClient:     g.client,
+		LocalClient:     localClient,
 		Client:          clnt,
 		DiscoveryClient: clnt.DiscoveryClient(),
 		Release: &helm.Release{

@@ -53,8 +53,8 @@ type KustomizeGeneratorOptions struct {
 }
 
 // KustomizeGenerator is a Generator implementation that basically renders a given Kustomization.
-// Note: KustomizeGenerator's Generate() method expects client and component to be set in the passed context;
-// see: Context.WithClient() and Context.WithComponent() in package pkg/component.
+// Note: KustomizeGenerator's Generate() method expects local client, client and component to be set in the passed context;
+// see: Context.WithLocalClient(), Context.WithClient() and Context.WithComponent() in package pkg/component.
 type KustomizeGenerator struct {
 	kustomizer *krusty.Kustomizer
 	files      map[string][]byte
@@ -66,12 +66,11 @@ var _ manifests.Generator = &KustomizeGenerator{}
 // TODO: add a way to pass custom template functions
 
 // Create a new KustomizeGenerator.
-// The parameter client should be a client for the local cluster (i.e. the cluster where the component object resides);
-// it is used by the localLookup and mustLocalLookup template functions.
+// The client parameter is deprecated (ignored) and will be removed in a future release.
 // If fsys is nil, the local operating system filesystem will be used, and kustomizationPath can be an absolute or relative path (in the latter case it will be considered
 // relative to the current working directory). If fsys is non-nil, then kustomizationPath should be a relative path; if an absolute path is supplied, it will be turned
 // An empty kustomizationPath will be treated like ".".
-func NewKustomizeGenerator(fsys fs.FS, kustomizationPath string, clnt client.Client, options KustomizeGeneratorOptions) (*KustomizeGenerator, error) {
+func NewKustomizeGenerator(fsys fs.FS, kustomizationPath string, _ client.Client, options KustomizeGeneratorOptions) (*KustomizeGenerator, error) {
 	if options.TemplateSuffix == nil {
 		options.TemplateSuffix = ref("")
 	}
@@ -139,7 +138,7 @@ func NewKustomizeGenerator(fsys fs.FS, kustomizationPath string, clnt client.Cli
 					Funcs(sprig.TxtFuncMap()).
 					Funcs(templatex.FuncMap()).
 					Funcs(templatex.FuncMapForTemplate(nil)).
-					Funcs(templatex.FuncMapForLocalClient(clnt)).
+					Funcs(templatex.FuncMapForLocalClient(nil)).
 					Funcs(templatex.FuncMapForClient(nil)).
 					Funcs(funcMapForGenerateContext(nil, nil, "", ""))
 			} else {
@@ -190,6 +189,10 @@ func NewKustomizeGeneratorWithObjectTransformer(fsys fs.FS, kustomizationPath st
 func (g *KustomizeGenerator) Generate(ctx context.Context, namespace string, name string, parameters types.Unstructurable) ([]client.Object, error) {
 	var objects []client.Object
 
+	localClient, err := component.LocalClientFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
 	clnt, err := component.ClientFromContext(ctx)
 	if err != nil {
 		return nil, err
@@ -221,6 +224,7 @@ func (g *KustomizeGenerator) Generate(ctx context.Context, namespace string, nam
 			}
 			t0.Option("missingkey=zero").
 				Funcs(templatex.FuncMapForTemplate(t0)).
+				Funcs(templatex.FuncMapForLocalClient(localClient)).
 				Funcs(templatex.FuncMapForClient(clnt)).
 				Funcs(funcMapForGenerateContext(serverInfo, component, namespace, name))
 		}

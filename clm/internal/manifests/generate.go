@@ -74,12 +74,12 @@ func Generate(manifestSources []string, valuesSources []string, reconcilerName s
 
 		var generator manifests.Generator
 		if _, err = fs.Stat(fsys, "Chart.yaml"); err == nil {
-			generator, err = helm.NewHelmGenerator(fsys, "", clnt)
+			generator, err = helm.NewHelmGenerator(fsys, "", nil)
 			if err != nil {
 				return nil, err
 			}
 		} else if errors.Is(err, fs.ErrNotExist) {
-			generator, err = kustomize.NewKustomizeGenerator(fsys, "", clnt, kustomize.KustomizeGeneratorOptions{})
+			generator, err = kustomize.NewKustomizeGenerator(fsys, "", nil, kustomize.KustomizeGeneratorOptions{})
 			if err != nil {
 				return nil, err
 			}
@@ -91,6 +91,7 @@ func Generate(manifestSources []string, valuesSources []string, reconcilerName s
 		// TODO: what about component digest
 		generateCtx := component.NewContext(context.TODO()).
 			WithReconcilerName(reconcilerName).
+			WithLocalClient(clnt).
 			WithClient(clnt).
 			WithComponent(releaseComponent).
 			WithComponentName(releaseComponent.GetName()).
