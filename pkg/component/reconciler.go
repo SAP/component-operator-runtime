@@ -641,7 +641,7 @@ func (r *Reconciler[T]) getLocalClientForComponent(component T) (cluster.Client,
 			}
 		}
 	}
-	if impersonationUser == "" && len(impersonationGroups) == 0 && r.options.DefaultServiceAccount != nil {
+	if impersonationUser == "" && len(impersonationGroups) == 0 && r.options.DefaultServiceAccount != nil && *r.options.DefaultServiceAccount != "" {
 		impersonationUser = fmt.Sprintf("system:serviceaccount:%s:%s", component.GetNamespace(), *r.options.DefaultServiceAccount)
 	}
 	clnt, err := r.clients.Get(nil, impersonationUser, impersonationGroups)
@@ -688,7 +688,7 @@ func (r *Reconciler[T]) getClientForComponent(component T) (cluster.Client, erro
 			}
 		}
 	}
-	if len(kubeConfig) == 0 && impersonationUser == "" && len(impersonationGroups) == 0 && r.options.DefaultServiceAccount != nil {
+	if len(kubeConfig) == 0 && impersonationUser == "" && len(impersonationGroups) == 0 && r.options.DefaultServiceAccount != nil && *r.options.DefaultServiceAccount != "" {
 		impersonationUser = fmt.Sprintf("system:serviceaccount:%s:%s", component.GetNamespace(), *r.options.DefaultServiceAccount)
 	}
 	clnt, err := r.clients.Get(kubeConfig, impersonationUser, impersonationGroups)
