@@ -52,11 +52,7 @@ import (
 // TODO: emitting events to deployment target may fail if corresponding rbac privileges are missing; either this should be pre-discovered or we
 // should stop emitting events to remote targets at all; howerver pre-discovering is difficult (may vary from object to object); one option could
 // be to send events only if we are cluster-admin
-// TODO: allow to override namespace auto-creation and reconcile policy on a per-component level
-// that is: consider adding them to the PolicyConfiguration interface?
-// TODO: allow to override namespace auto-creation on a per-object level
-// TODO: allow some timeout feature, such that component will go into error state if not ready within the given timeout
-// (e.g. through a TimeoutConfiguration interface that components could optionally implement)
+// TODO: allow to override namespace auto-creation on a per-object level?
 // TODO: run admission webhooks (if present) in reconcile (e.g. as post-read hook)
 // TODO: improve overall log output
 // TODO: finalizer and fieldowner should be made more configurable (instead of just using the reconciler name)
@@ -90,9 +86,15 @@ type HookFunc[T Component] func(ctx context.Context, clnt client.Client, compone
 
 // ReconcilerOptions are creation options for a Reconciler.
 type ReconcilerOptions struct {
-	// Whether namespaces are auto-created if missing.
-	// If unspecified, true is assumed.
-	CreateMissingNamespaces *bool
+	// Which field manager to use in API calls.
+	// If unspecified, the reconciler name is used.
+	FieldOwner *string
+	// Which finalizer to use.
+	// If unspecified, the reconciler name is used.
+	Finalizer *string
+	// Default service account used for impersonation of clients.
+	// Of course, components can still customize impersonation by implementing the ImpersonationConfiguration interface.
+	DefaultServiceAccount *string
 	// How to react if a dependent object exists but has no or a different owner.
 	// If unspecified, AdoptionPolicyIfUnowned is assumed.
 	// Can be overridden by annotation on object level.
@@ -105,6 +107,9 @@ type ReconcilerOptions struct {
 	// If unspecified, DeletePolicyDelete is assumed.
 	// Can be overridden by annotation on object level.
 	DeletePolicy *reconciler.DeletePolicy
+	// Whether namespaces are auto-created if missing.
+	// If unspecified, MissingNamespacesPolicyCreate is assumed.
+	MissingNamespacesPolicy *reconciler.MissingNamespacesPolicy
 	// SchemeBuilder allows to define additional schemes to be made available in the
 	// target client.
 	SchemeBuilder types.SchemeBuilder
@@ -137,10 +142,14 @@ type Reconciler[T Component] struct {
 // resourceGenerator must be an implementation of the manifests.Generator interface.
 func NewReconciler[T Component](name string, resourceGenerator manifests.Generator, options ReconcilerOptions) *Reconciler[T] {
 	// TOOD: validate options
-	// TODO: currently, the defaulting of CreateMissingNamespaces and *Policy here is identical to the defaulting in the underlying reconciler.Reconciler;
-	// under the assumption that these attributes are not used here, we could skip the defaulting here, and let it happen in the underlying implementation only
-	if options.CreateMissingNamespaces == nil {
-		options.CreateMissingNamespaces = ref(true)
+	// TODO: currently, the defaulting here is identical to the defaulting in the underlying reconciler.Reconciler;
+	// under the assumption that these attributes are not used here, we could skip the defaulting here,
+	// and let it happen in the underlying implementation only
+	if options.FieldOwner == nil {
+		options.FieldOwner = &name
+	}
+	if options.Finalizer == nil {
+		options.Finalizer = &name
 	}
 	if options.AdoptionPolicy == nil {
 		options.AdoptionPolicy = ref(reconciler.AdoptionPolicyIfUnowned)
@@ -150,6 +159,9 @@ func NewReconciler[T Component](name string, resourceGenerator manifests.Generat
 	}
 	if options.DeletePolicy == nil {
 		options.DeletePolicy = ref(reconciler.DeletePolicyDelete)
+	}
+	if options.MissingNamespacesPolicy == nil {
+		options.MissingNamespacesPolicy = ref(reconciler.MissingNamespacesPolicyCreate)
 	}
 
 	return &Reconciler[T]{
@@ -311,7 +323,7 @@ func (r *Reconciler[T]) Reconcile(ctx context.Context, req ctrl.Request) (result
 				cond.LastTransitionTime = &now
 			}
 		}
-		if updateErr := r.client.Status().Update(ctx, component, client.FieldOwner(r.name)); updateErr != nil {
+		if updateErr := r.client.Status().Update(ctx, component, client.FieldOwner(*r.options.FieldOwner)); updateErr != nil {
 			err = utilerrors.NewAggregate([]error{err, updateErr})
 			result = ctrl.Result{}
 		}
@@ -335,22 +347,29 @@ func (r *Reconciler[T]) Reconcile(ctx context.Context, req ctrl.Request) (result
 	}
 
 	// setup target
+	localClient, err := r.getLocalClientForComponent(component)
+	if err != nil {
+		return ctrl.Result{}, errors.Wrap(err, "error getting local client for component")
+	}
 	targetClient, err := r.getClientForComponent(component)
 	if err != nil {
 		return ctrl.Result{}, errors.Wrap(err, "error getting client for component")
 	}
 	targetOptions := r.getOptionsForComponent(component)
-	target := newReconcileTarget[T](r.name, r.id, targetClient, r.resourceGenerator, targetOptions)
+	target := newReconcileTarget[T](r.name, r.id, localClient, targetClient, r.resourceGenerator, targetOptions)
 	// TODO: enhance ctx with tailored logger and event recorder
 	// TODO: enhance ctx  with the local client
-	hookCtx = NewContext(ctx).WithReconcilerName(r.name).WithClient(targetClient)
+	hookCtx = NewContext(ctx).
+		WithReconcilerName(r.name).
+		WithLocalClient(localClient).
+		WithClient(targetClient)
 
 	// do the reconciliation
 	if component.GetDeletionTimestamp().IsZero() {
 		// create/update case
 		// TODO: optionally (to be completely consistent) set finalizer through a mutating webhook
-		if added := controllerutil.AddFinalizer(component, r.name); added {
-			if err := r.client.Update(ctx, component, client.FieldOwner(r.name)); err != nil {
+		if added := controllerutil.AddFinalizer(component, *r.options.Finalizer); added {
+			if err := r.client.Update(ctx, component, client.FieldOwner(*r.options.FieldOwner)); err != nil {
 				return ctrl.Result{}, errors.Wrap(err, "error adding finalizer")
 			}
 			// trigger another round trip
@@ -415,7 +434,7 @@ func (r *Reconciler[T]) Reconcile(ctx context.Context, req ctrl.Request) (result
 			status.SetState(StateDeleting, readyConditionReasonDeletionBlocked, "Deletion blocked: "+msg)
 			return ctrl.Result{RequeueAfter: 1*time.Second + r.backoff.Next(req, readyConditionReasonDeletionBlocked)}, nil
 		}
-		if len(slices.Remove(component.GetFinalizers(), r.name)) > 0 {
+		if len(slices.Remove(component.GetFinalizers(), *r.options.Finalizer)) > 0 {
 			// deletion is blocked because of foreign finalizers
 			log.V(1).Info("deleted blocked due to existence of foreign finalizers")
 			// TODO: have an additional StateDeletionBlocked?
@@ -438,8 +457,8 @@ func (r *Reconciler[T]) Reconcile(ctx context.Context, req ctrl.Request) (result
 			}
 			// all dependent resources are already gone, so that's it
 			log.V(1).Info("all dependent resources are successfully deleted; removing finalizer")
-			if removed := controllerutil.RemoveFinalizer(component, r.name); removed {
-				if err := r.client.Update(ctx, component, client.FieldOwner(r.name)); err != nil {
+			if removed := controllerutil.RemoveFinalizer(component, *r.options.Finalizer); removed {
+				if err := r.client.Update(ctx, component, client.FieldOwner(*r.options.FieldOwner)); err != nil {
 					return ctrl.Result{}, errors.Wrap(err, "error removing finalizer")
 				}
 			}
@@ -536,6 +555,11 @@ func (r *Reconciler[T]) WithPostDeleteHook(hook HookFunc[T]) *Reconciler[T] {
 
 // Register the reconciler with a given controller-runtime Manager and Builder.
 // This will call For() and Complete() on the provided builder.
+// It populates the recnciler's client with an enhnanced client derived from mgr.GetClient() and mgr.GetConfig().
+// That client is used for three purposes:
+// - reading/updating the reconciled component, sending events for this component
+// - it is passed to hooks
+// - it is passed to the factory for target clients as a default local client
 func (r *Reconciler[T]) SetupWithManagerAndBuilder(mgr ctrl.Manager, blder *ctrl.Builder) error {
 	r.setupMutex.Lock()
 	defer r.setupMutex.Unlock()
@@ -602,8 +626,49 @@ func (r *Reconciler[T]) SetupWithManager(mgr ctrl.Manager) error {
 	)
 }
 
+func (r *Reconciler[T]) getLocalClientForComponent(component T) (cluster.Client, error) {
+	impersonationConfiguration, haveImpersonationConfiguration := assertImpersonationConfiguration(component)
+
+	var impersonationUser string
+	var impersonationGroups []string
+	if haveImpersonationConfiguration {
+		impersonationUser = impersonationConfiguration.GetImpersonationUser()
+		impersonationGroups = impersonationConfiguration.GetImpersonationGroups()
+		// note: the following is needed due to the implementation of ImpersonationSpec
+		if m := regexp.MustCompile(`^(system:serviceaccount):(.*):(.+)$`).FindStringSubmatch(impersonationUser); m != nil {
+			if m[2] == "" {
+				impersonationUser = fmt.Sprintf("%s:%s:%s", m[1], component.GetNamespace(), m[3])
+			}
+		}
+	}
+	if impersonationUser == "" && len(impersonationGroups) == 0 && r.options.DefaultServiceAccount != nil && *r.options.DefaultServiceAccount != "" {
+		impersonationUser = fmt.Sprintf("system:serviceaccount:%s:%s", component.GetNamespace(), *r.options.DefaultServiceAccount)
+	}
+	clnt, err := r.clients.Get(nil, impersonationUser, impersonationGroups)
+	if err != nil {
+		return nil, errors.Wrap(err, "error getting local client")
+	}
+	return clnt, nil
+}
+
 func (r *Reconciler[T]) getClientForComponent(component T) (cluster.Client, error) {
-	placementConfiguration, havePlacementConfiguration := assertPlacementConfiguration(component)
+	/*
+		// we could also write it like this:
+		clientConfiguration, haveClientConfiguration := assertClientConfiguration(component)
+
+		var kubeConfig []byte
+		if haveClientConfiguration {
+			kubeConfig = clientConfiguration.GetKubeConfig()
+		}
+		if len(kubeConfig) > 0 {
+			clnt, err := r.clients.Get(kubeConfig, "", nil)
+			if err != nil {
+				return nil, errors.Wrap(err, "error getting target client")
+			}
+			return clnt, nil
+		}
+		return r.getLocalClientForComponent(component)
+	*/
 	clientConfiguration, haveClientConfiguration := assertClientConfiguration(component)
 	impersonationConfiguration, haveImpersonationConfiguration := assertImpersonationConfiguration(component)
 
@@ -613,35 +678,34 @@ func (r *Reconciler[T]) getClientForComponent(component T) (cluster.Client, erro
 	if haveClientConfiguration {
 		kubeConfig = clientConfiguration.GetKubeConfig()
 	}
-	if haveImpersonationConfiguration {
+	if len(kubeConfig) == 0 && haveImpersonationConfiguration {
 		impersonationUser = impersonationConfiguration.GetImpersonationUser()
 		impersonationGroups = impersonationConfiguration.GetImpersonationGroups()
+		// note: the following is needed due to the implementation of ImpersonationSpec
 		if m := regexp.MustCompile(`^(system:serviceaccount):(.*):(.+)$`).FindStringSubmatch(impersonationUser); m != nil {
 			if m[2] == "" {
-				namespace := ""
-				if havePlacementConfiguration {
-					namespace = placementConfiguration.GetDeploymentNamespace()
-				}
-				if namespace == "" {
-					namespace = component.GetNamespace()
-				}
-				impersonationUser = fmt.Sprintf("%s:%s:%s", m[1], namespace, m[3])
+				impersonationUser = fmt.Sprintf("%s:%s:%s", m[1], component.GetNamespace(), m[3])
 			}
 		}
 	}
+	if len(kubeConfig) == 0 && impersonationUser == "" && len(impersonationGroups) == 0 && r.options.DefaultServiceAccount != nil && *r.options.DefaultServiceAccount != "" {
+		impersonationUser = fmt.Sprintf("system:serviceaccount:%s:%s", component.GetNamespace(), *r.options.DefaultServiceAccount)
+	}
 	clnt, err := r.clients.Get(kubeConfig, impersonationUser, impersonationGroups)
 	if err != nil {
-		return nil, errors.Wrap(err, "error getting remote or impersonated client")
+		return nil, errors.Wrap(err, "error getting target client")
 	}
 	return clnt, nil
 }
 
 func (r *Reconciler[T]) getOptionsForComponent(component T) reconciler.ReconcilerOptions {
 	options := reconciler.ReconcilerOptions{
-		CreateMissingNamespaces: r.options.CreateMissingNamespaces,
+		FieldOwner:              r.options.FieldOwner,
+		Finalizer:               r.options.Finalizer,
 		AdoptionPolicy:          r.options.AdoptionPolicy,
 		UpdatePolicy:            r.options.UpdatePolicy,
 		DeletePolicy:            r.options.DeletePolicy,
+		MissingNamespacesPolicy: r.options.MissingNamespacesPolicy,
 		StatusAnalyzer:          r.statusAnalyzer,
 		Metrics: reconciler.ReconcilerMetrics{
 			ReadCounter:   metrics.Operations.WithLabelValues(r.controllerName, "read"),
@@ -660,6 +724,9 @@ func (r *Reconciler[T]) getOptionsForComponent(component T) reconciler.Reconcile
 		}
 		if deletePolicy := policyConfiguration.GetDeletePolicy(); deletePolicy != "" {
 			options.DeletePolicy = &deletePolicy
+		}
+		if missingNamespacesPolicy := policyConfiguration.GetMissingNamespacesPolicy(); missingNamespacesPolicy != "" {
+			options.MissingNamespacesPolicy = &missingNamespacesPolicy
 		}
 	}
 	return options

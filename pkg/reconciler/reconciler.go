@@ -84,9 +84,12 @@ var deletePolicyByAnnotation = map[string]DeletePolicy{
 
 // ReconcilerOptions are creation options for a Reconciler.
 type ReconcilerOptions struct {
-	// Whether namespaces are auto-created if missing.
-	// If unspecified, true is assumed.
-	CreateMissingNamespaces *bool
+	// Which field manager to use in API calls.
+	// If unspecified, the reconciler name is used.
+	FieldOwner *string
+	// Which finalizer to use.
+	// If unspecified, the reconciler name is used.
+	Finalizer *string
 	// How to react if a dependent object exists but has no or a different owner.
 	// If unspecified, AdoptionPolicyIfUnowned is assumed.
 	// Can be overridden by annotation on object level.
@@ -99,6 +102,9 @@ type ReconcilerOptions struct {
 	// If unspecified, DeletePolicyDelete is assumed.
 	// Can be overridden by annotation on object level.
 	DeletePolicy *DeletePolicy
+	// Whether namespaces are auto-created if missing.
+	// If unspecified, MissingNamespacesPolicyCreate is assumed.
+	MissingNamespacesPolicy *MissingNamespacesPolicy
 	// How to analyze the state of the dependent objects.
 	// If unspecified, an optimized kstatus based implementation is used.
 	StatusAnalyzer status.StatusAnalyzer
@@ -117,15 +123,16 @@ type ReconcilerMetrics struct {
 
 // Reconciler manages specified objects in the given target cluster.
 type Reconciler struct {
-	name                         string
+	fieldOwner                   string
+	finalizer                    string
 	client                       cluster.Client
 	statusAnalyzer               status.StatusAnalyzer
 	metrics                      ReconcilerMetrics
-	createMissingNamespaces      bool
 	adoptionPolicy               AdoptionPolicy
 	reconcilePolicy              ReconcilePolicy
 	updatePolicy                 UpdatePolicy
 	deletePolicy                 DeletePolicy
+	missingNamespacesPolicy      MissingNamespacesPolicy
 	labelKeyOwnerId              string
 	annotationKeyOwnerId         string
 	annotationKeyDigest          string
@@ -143,8 +150,11 @@ type Reconciler struct {
 // The passed client's scheme must recognize at least the core group (v1) and apiextensions.k8s.io/v1 and apiregistration.k8s.io/v1.
 func NewReconciler(name string, clnt cluster.Client, options ReconcilerOptions) *Reconciler {
 	// TOOD: validate options
-	if options.CreateMissingNamespaces == nil {
-		options.CreateMissingNamespaces = ref(true)
+	if options.FieldOwner == nil {
+		options.FieldOwner = &name
+	}
+	if options.Finalizer == nil {
+		options.Finalizer = &name
 	}
 	if options.AdoptionPolicy == nil {
 		options.AdoptionPolicy = ref(AdoptionPolicyIfUnowned)
@@ -155,20 +165,24 @@ func NewReconciler(name string, clnt cluster.Client, options ReconcilerOptions) 
 	if options.DeletePolicy == nil {
 		options.DeletePolicy = ref(DeletePolicyDelete)
 	}
+	if options.MissingNamespacesPolicy == nil {
+		options.MissingNamespacesPolicy = ref(MissingNamespacesPolicyCreate)
+	}
 	if options.StatusAnalyzer == nil {
 		options.StatusAnalyzer = status.NewStatusAnalyzer(name)
 	}
 
 	return &Reconciler{
-		name:                         name,
+		fieldOwner:                   *options.FieldOwner,
+		finalizer:                    *options.Finalizer,
 		client:                       clnt,
 		statusAnalyzer:               options.StatusAnalyzer,
 		metrics:                      options.Metrics,
-		createMissingNamespaces:      *options.CreateMissingNamespaces,
 		adoptionPolicy:               *options.AdoptionPolicy,
 		reconcilePolicy:              ReconcilePolicyOnObjectChange,
 		updatePolicy:                 *options.UpdatePolicy,
 		deletePolicy:                 *options.DeletePolicy,
+		missingNamespacesPolicy:      *options.MissingNamespacesPolicy,
 		labelKeyOwnerId:              name + "/" + types.LabelKeySuffixOwnerId,
 		annotationKeyOwnerId:         name + "/" + types.AnnotationKeySuffixOwnerId,
 		annotationKeyDigest:          name + "/" + types.AnnotationKeySuffixDigest,
@@ -532,13 +546,13 @@ func (r *Reconciler) Apply(ctx context.Context, inventory *[]*InventoryItem, obj
 	//   - PhaseDeleting
 
 	// create missing namespaces
-	if r.createMissingNamespaces {
+	if r.missingNamespacesPolicy == MissingNamespacesPolicyCreate {
 		for _, namespace := range findMissingNamespaces(objects) {
 			if err := r.client.Get(ctx, apitypes.NamespacedName{Name: namespace}, &corev1.Namespace{}); err != nil {
 				if !apierrors.IsNotFound(err) {
 					return false, errors.Wrapf(err, "error reading namespace %s", namespace)
 				}
-				if err := r.client.Create(ctx, &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: namespace}}, client.FieldOwner(r.name)); err != nil {
+				if err := r.client.Create(ctx, &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: namespace}}, client.FieldOwner(r.fieldOwner)); err != nil {
 					return false, errors.Wrapf(err, "error creating namespace %s", namespace)
 				}
 			}
@@ -981,7 +995,7 @@ func (r *Reconciler) createObject(ctx context.Context, object client.Object, cre
 	}
 	object = &unstructured.Unstructured{Object: data}
 	if isCrd(object) || isApiService(object) {
-		controllerutil.AddFinalizer(object, r.name)
+		controllerutil.AddFinalizer(object, r.finalizer)
 	}
 	// note: clearing managedFields is anyway required for ssa; but also in the create (post) case it does not harm
 	object.SetManagedFields(nil)
@@ -991,9 +1005,9 @@ func (r *Reconciler) createObject(ctx context.Context, object client.Object, cre
 	case UpdatePolicySsaMerge, UpdatePolicySsaOverride:
 		// set the target resource version to an impossible value; this will produce a 409 conflict in case the object already exists
 		object.SetResourceVersion("1")
-		return r.client.Patch(ctx, object, client.Apply, client.FieldOwner(r.name))
+		return r.client.Patch(ctx, object, client.Apply, client.FieldOwner(r.fieldOwner))
 	default:
-		return r.client.Create(ctx, object, client.FieldOwner(r.name))
+		return r.client.Create(ctx, object, client.FieldOwner(r.fieldOwner))
 	}
 }
 
@@ -1036,7 +1050,7 @@ func (r *Reconciler) updateObject(ctx context.Context, object client.Object, exi
 	}
 	object = &unstructured.Unstructured{Object: data}
 	if isCrd(object) || isApiService(object) {
-		controllerutil.AddFinalizer(object, r.name)
+		controllerutil.AddFinalizer(object, r.finalizer)
 	}
 	// it is allowed that target object contains a resource version; otherwise, we set the resource version to the one of the existing object,
 	// in order to ensure that we do not unintentionally overwrite a state different from the one we have read;
@@ -1057,7 +1071,7 @@ func (r *Reconciler) updateObject(ctx context.Context, object client.Object, exi
 		}
 		// note: even if replacedFieldManagerPrefixes is empty, replaceFieldManager() will reclaim fields created by us through an Update operation,
 		// that is through a create or update call; this may be necessary, if the update policy for the object changed (globally or per-object)
-		if managedFields, changed, err := replaceFieldManager(existingObject.GetManagedFields(), replacedFieldManagerPrefixes, r.name); err != nil {
+		if managedFields, changed, err := replaceFieldManager(existingObject.GetManagedFields(), replacedFieldManagerPrefixes, r.fieldOwner); err != nil {
 			return err
 		} else if changed {
 			log.V(1).Info("adjusting field managers as preparation of ssa")
@@ -1078,17 +1092,17 @@ func (r *Reconciler) updateObject(ctx context.Context, object client.Object, exi
 				{"op": "replace", "path": "/metadata/resourceVersion", "value": object.GetResourceVersion()},
 			}
 			// note: this must() is ok because marshalling the patch should always work
-			if err := r.client.Patch(ctx, obj, client.RawPatch(apitypes.JSONPatchType, must(json.Marshal(preparePatch))), client.FieldOwner(r.name)); err != nil {
+			if err := r.client.Patch(ctx, obj, client.RawPatch(apitypes.JSONPatchType, must(json.Marshal(preparePatch))), client.FieldOwner(r.fieldOwner)); err != nil {
 				return err
 			}
 			object.SetResourceVersion(obj.GetResourceVersion())
 		}
-		return r.client.Patch(ctx, object, client.Apply, client.FieldOwner(r.name), client.ForceOwnership)
+		return r.client.Patch(ctx, object, client.Apply, client.FieldOwner(r.fieldOwner), client.ForceOwnership)
 	default:
 		for _, finalizer := range existingObject.GetFinalizers() {
 			controllerutil.AddFinalizer(object, finalizer)
 		}
-		return r.client.Update(ctx, object, client.FieldOwner(r.name))
+		return r.client.Update(ctx, object, client.FieldOwner(r.fieldOwner))
 	}
 }
 
@@ -1147,9 +1161,9 @@ func (r *Reconciler) deleteObject(ctx context.Context, key types.ObjectKey, exis
 			if used {
 				return fmt.Errorf("error deleting custom resource definition %s, existing instances found", types.ObjectKeyToString(key))
 			}
-			if ok := controllerutil.RemoveFinalizer(crd, r.name); ok {
+			if ok := controllerutil.RemoveFinalizer(crd, r.finalizer); ok {
 				// note: 409 error is very likely here (because of concurrent updates happening through the api server); this is why we retry once
-				if err := r.client.Update(ctx, crd, client.FieldOwner(r.name)); err != nil {
+				if err := r.client.Update(ctx, crd, client.FieldOwner(r.fieldOwner)); err != nil {
 					if i == 1 && apierrors.IsConflict(err) {
 						log.V(1).Info("error while updating CustomResourcedefinition (409 conflict); doing one retry", "error", err.Error())
 						continue
@@ -1172,9 +1186,9 @@ func (r *Reconciler) deleteObject(ctx context.Context, key types.ObjectKey, exis
 			if used {
 				return fmt.Errorf("error deleting api service %s, existing instances found", types.ObjectKeyToString(key))
 			}
-			if ok := controllerutil.RemoveFinalizer(apiService, r.name); ok {
+			if ok := controllerutil.RemoveFinalizer(apiService, r.finalizer); ok {
 				// note: 409 error is very likely here (because of concurrent updates happening through the api server); this is why we retry once
-				if err := r.client.Update(ctx, apiService, client.FieldOwner(r.name)); err != nil {
+				if err := r.client.Update(ctx, apiService, client.FieldOwner(r.fieldOwner)); err != nil {
 					if i == 1 && apierrors.IsConflict(err) {
 						log.V(1).Info("error while updating APIService (409 conflict); doing one retry", "error", err.Error())
 						continue

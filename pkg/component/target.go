@@ -19,15 +19,17 @@ type reconcileTarget[T Component] struct {
 	reconciler        *reconciler.Reconciler
 	reconcilerName    string
 	reconcilerId      string
+	localClient       cluster.Client
 	client            cluster.Client
 	resourceGenerator manifests.Generator
 }
 
-func newReconcileTarget[T Component](reconcilerName string, reconcilerId string, clnt cluster.Client, resourceGenerator manifests.Generator, options reconciler.ReconcilerOptions) *reconcileTarget[T] {
+func newReconcileTarget[T Component](reconcilerName string, reconcilerId string, localClient cluster.Client, clnt cluster.Client, resourceGenerator manifests.Generator, options reconciler.ReconcilerOptions) *reconcileTarget[T] {
 	return &reconcileTarget[T]{
 		reconcilerName:    reconcilerName,
 		reconcilerId:      reconcilerId,
 		reconciler:        reconciler.NewReconciler(reconcilerName, clnt, options),
+		localClient:       localClient,
 		client:            clnt,
 		resourceGenerator: resourceGenerator,
 	}
@@ -54,8 +56,11 @@ func (t *reconcileTarget[T]) Apply(ctx context.Context, component T) (bool, stri
 	// TODO: enhance ctx with local client
 	generateCtx := NewContext(ctx).
 		WithReconcilerName(t.reconcilerName).
+		WithLocalClient(t.localClient).
 		WithClient(t.client).
 		WithComponent(component).
+		WithComponentName(component.GetName()).
+		WithComponentNamespace(component.GetNamespace()).
 		WithComponentDigest(componentDigest)
 	objects, err := t.resourceGenerator.Generate(generateCtx, namespace, name, component.GetSpec())
 	if err != nil {

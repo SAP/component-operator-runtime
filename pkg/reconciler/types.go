@@ -79,6 +79,16 @@ const (
 	DeletePolicyOrphan DeletePolicy = "Orphan"
 )
 
+// MissingNamespacesPolicy defines what the reconciler does if namespaces of dependent objects are not existing.
+type MissingNamespacesPolicy string
+
+const (
+	// Do not create missing namespaces.
+	MissingNamespacesPolicyDoNotCreate MissingNamespacesPolicy = "DoNotCreate"
+	// Create missing namespaces.
+	MissingNamespacesPolicyCreate MissingNamespacesPolicy = "Create"
+)
+
 // +kubebuilder:object:generate=true
 
 // InventoryItem represents a dependent object managed by this operator.
