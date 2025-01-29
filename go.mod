@@ -14,7 +14,7 @@ require (
 	github.com/sap/go-generics v0.2.26
 	github.com/spf13/cast v1.7.1
 	github.com/spf13/cobra v1.8.1
-	github.com/spf13/pflag v1.0.5
+	github.com/spf13/pflag v1.0.6
 	golang.org/x/time v0.9.0
 	k8s.io/api v0.32.1
 	k8s.io/apiextensions-apiserver v0.32.1
