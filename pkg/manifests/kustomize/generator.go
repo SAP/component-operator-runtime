@@ -18,7 +18,9 @@ import (
 	"text/template"
 
 	"github.com/Masterminds/sprig/v3"
+	"github.com/sap/go-generics/slices"
 
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	utilyaml "k8s.io/apimachinery/pkg/util/yaml"
 	"k8s.io/apimachinery/pkg/version"
@@ -140,7 +142,7 @@ func NewKustomizeGenerator(fsys fs.FS, kustomizationPath string, _ client.Client
 					Funcs(templatex.FuncMapForTemplate(nil)).
 					Funcs(templatex.FuncMapForLocalClient(nil)).
 					Funcs(templatex.FuncMapForClient(nil)).
-					Funcs(funcMapForGenerateContext(nil, nil, "", ""))
+					Funcs(funcMapForGenerateContext(nil, nil, nil, "", ""))
 			} else {
 				t = t.New(name)
 			}
@@ -201,10 +203,15 @@ func (g *KustomizeGenerator) Generate(ctx context.Context, namespace string, nam
 	if err != nil {
 		return nil, err
 	}
-	serverInfo, err := clnt.DiscoveryClient().ServerVersion()
+	serverVersion, err := clnt.DiscoveryClient().ServerVersion()
 	if err != nil {
 		return nil, err
 	}
+	_, serverGroupsWithResources, err := clnt.DiscoveryClient().ServerGroupsAndResources()
+	if err != nil {
+		return nil, err
+	}
+	serverGroupsWithResources = normalizeServerGroupsWithResources(serverGroupsWithResources)
 
 	data := parameters.ToUnstructured()
 	fsys := kustfsys.MakeFsInMemory()
@@ -226,11 +233,11 @@ func (g *KustomizeGenerator) Generate(ctx context.Context, namespace string, nam
 				Funcs(templatex.FuncMapForTemplate(t0)).
 				Funcs(templatex.FuncMapForLocalClient(localClient)).
 				Funcs(templatex.FuncMapForClient(clnt)).
-				Funcs(funcMapForGenerateContext(serverInfo, component, namespace, name))
+				Funcs(funcMapForGenerateContext(serverVersion, serverGroupsWithResources, component, namespace, name))
 		}
 		var buf bytes.Buffer
 		// TODO: templates (accidentally or intentionally) could modify data, or even some of the objects supplied through builtin functions;
-		// such as serverInfo or component; this should be hardened, e.g. by deep-copying things upfront, or serializing them; see the comment in
+		// such as serverVersion or component; this should be hardened, e.g. by deep-copying things upfront, or serializing them; see the comment in
 		// funcMapForGenerateContext()
 		if err := t0.ExecuteTemplate(&buf, t.Name(), data); err != nil {
 			return nil, err
@@ -285,7 +292,7 @@ func (g *KustomizeGenerator) Generate(ctx context.Context, namespace string, nam
 	return objects, nil
 }
 
-func funcMapForGenerateContext(serverInfo *version.Info, component component.Component, namespace string, name string) template.FuncMap {
+func funcMapForGenerateContext(serverInfo *version.Info, serverGroupsWithResources []*metav1.APIResourceList, component component.Component, namespace string, name string) template.FuncMap {
 	return template.FuncMap{
 		// TODO: maybe it would it be better to convert component to unstructured;
 		// then calling methods would no longer be possible, and attributes would be in lowercase
@@ -293,6 +300,7 @@ func funcMapForGenerateContext(serverInfo *version.Info, component component.Com
 		"namespace":         func() string { return namespace },
 		"name":              func() string { return name },
 		"kubernetesVersion": func() *version.Info { return serverInfo },
+		"apiResources":      func() []*metav1.APIResourceList { return serverGroupsWithResources },
 	}
 }
 
@@ -354,4 +362,22 @@ func readOptions(fsys fs.FS, path string, options *KustomizeGeneratorOptions) er
 	}
 
 	return nil
+}
+
+func normalizeServerGroupsWithResources(serverGroupsWithResources []*metav1.APIResourceList) []*metav1.APIResourceList {
+	serverGroupsWithResources = slices.SortBy(serverGroupsWithResources, func(x, y *metav1.APIResourceList) bool { return x.GroupVersion > y.GroupVersion })
+	for _, serverGroupWithResources := range serverGroupsWithResources {
+		serverGroupWithResources.APIResources = normalizeApiResources(serverGroupWithResources.APIResources)
+	}
+	return serverGroupsWithResources
+}
+
+func normalizeApiResources(apiResources []metav1.APIResource) []metav1.APIResource {
+	apiResources = slices.SortBy(apiResources, func(x, y metav1.APIResource) bool { return x.Name > y.Name })
+	for i := 0; i < len(apiResources); i++ {
+		apiResources[i].Verbs = slices.Sort(apiResources[i].Verbs)
+		apiResources[i].ShortNames = slices.Sort(apiResources[i].ShortNames)
+		apiResources[i].Categories = slices.Sort(apiResources[i].Categories)
+	}
+	return apiResources
 }
