@@ -54,6 +54,8 @@ func newDeleteCmd() *cobra.Command {
 
 			releaseClient := release.NewClient(fullName, clnt)
 
+			ownerId := fullName + "/" + namespace + "/" + name
+
 			release, err := releaseClient.Get(context.TODO(), namespace, name)
 			if err != nil {
 				return err
@@ -94,7 +96,7 @@ func newDeleteCmd() *cobra.Command {
 
 			for {
 				release.State = component.StateDeleting
-				ok, err := reconciler.Delete(context.TODO(), &release.Inventory)
+				ok, err := reconciler.Delete(context.TODO(), &release.Inventory, ownerId)
 				if err != nil {
 					if !isEphmeralError(err) || errCount >= maxErrCount {
 						return err
