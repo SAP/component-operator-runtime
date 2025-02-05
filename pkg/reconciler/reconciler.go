@@ -577,7 +577,7 @@ func (r *Reconciler) Apply(ctx context.Context, inventory *[]*InventoryItem, obj
 
 			switch item.Phase {
 			case PhaseScheduledForCompletion:
-				if err := r.deleteObject(ctx, item, existingObject); err != nil {
+				if err := r.deleteObject(ctx, item, existingObject, hashedOwnerId); err != nil {
 					return false, errors.Wrapf(err, "error deleting object %s", item)
 				}
 				item.Phase = PhaseCompleting
@@ -662,7 +662,7 @@ func (r *Reconciler) Apply(ctx context.Context, inventory *[]*InventoryItem, obj
 					switch updatePolicy {
 					case UpdatePolicyRecreate:
 						// TODO: perform an additional owner id check
-						if err := r.deleteObject(ctx, object, existingObject); err != nil {
+						if err := r.deleteObject(ctx, object, existingObject, hashedOwnerId); err != nil {
 							return false, errors.Wrapf(err, "error deleting (while recreating) object %s", item)
 						}
 					default:
@@ -772,7 +772,7 @@ func (r *Reconciler) Apply(ctx context.Context, inventory *[]*InventoryItem, obj
 						// note: here is a theoretical risk that we delete an existing foreign object, because informers are not yet synced
 						// however not sending the delete request is also not an option, because this might lead to orphaned own dependents
 						// TODO: perform an additional owner id check
-						if err := r.deleteObject(ctx, item, existingObject); err != nil {
+						if err := r.deleteObject(ctx, item, existingObject, hashedOwnerId); err != nil {
 							return false, errors.Wrapf(err, "error deleting object %s", item)
 						}
 						item.Phase = PhaseDeleting
@@ -824,8 +824,10 @@ func (r *Reconciler) Apply(ctx context.Context, inventory *[]*InventoryItem, obj
 // This method will change the passed inventory (remove elements, change elements). If Delete() returns true, then all objects are gone; otherwise,
 // if it returns false, the caller should recall it timely, until it returns true. In any case, the passed inventory should match the state of the
 // inventory after the previous invocation of Delete(); usually, the caller saves the inventory after calling Delete(), and loads it before calling Delete().
-func (r *Reconciler) Delete(ctx context.Context, inventory *[]*InventoryItem) (bool, error) {
+func (r *Reconciler) Delete(ctx context.Context, inventory *[]*InventoryItem, ownerId string) (bool, error) {
 	log := log.FromContext(ctx)
+
+	hashedOwnerId := sha256base32([]byte(ownerId))
 
 	// delete objects and maintain inventory;
 	// objects are deleted in waves according to their delete order;
@@ -877,7 +879,7 @@ func (r *Reconciler) Delete(ctx context.Context, inventory *[]*InventoryItem) (b
 					// note: here is a theoretical risk that we delete an existing (foreign) object, because informers are not yet synced
 					// however not sending the delete request is also not an option, because this might lead to orphaned own dependents
 					// TODO: perform an additional owner id check
-					if err := r.deleteObject(ctx, item, existingObject); err != nil {
+					if err := r.deleteObject(ctx, item, existingObject, hashedOwnerId); err != nil {
 						return false, errors.Wrapf(err, "error deleting object %s", item)
 					}
 					item.Phase = PhaseDeleting
@@ -1111,7 +1113,7 @@ func (r *Reconciler) updateObject(ctx context.Context, object client.Object, exi
 // then an error will be returned after issuing the delete call; otherwise, if the crd or api service is not in use, then our
 // finalizer (i.e. the finalizer equal to the reconciler name) will be cleared, such that the object can be physically
 // removed (unless other finalizers prevent this)
-func (r *Reconciler) deleteObject(ctx context.Context, key types.ObjectKey, existingObject *unstructured.Unstructured) (err error) {
+func (r *Reconciler) deleteObject(ctx context.Context, key types.ObjectKey, existingObject *unstructured.Unstructured, ownerId string) (err error) {
 	if counter := r.metrics.DeleteCounter; counter != nil {
 		counter.Inc()
 	}
@@ -1130,6 +1132,10 @@ func (r *Reconciler) deleteObject(ctx context.Context, key types.ObjectKey, exis
 	log := log.FromContext(ctx).WithValues("object", types.ObjectKeyToString(key))
 
 	// TODO: validate (by panic) that existingObject (if present) fits to key
+
+	if existingObject != nil && existingObject.GetLabels()[r.labelKeyOwnerId] != ownerId {
+		return fmt.Errorf("owner conflict; object %s has no or different owner", types.ObjectKeyToString(key))
+	}
 
 	object := &unstructured.Unstructured{}
 	object.SetGroupVersionKind(key.GetObjectKind().GroupVersionKind())
