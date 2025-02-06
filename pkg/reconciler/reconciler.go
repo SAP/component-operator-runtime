@@ -658,10 +658,9 @@ func (r *Reconciler) Apply(ctx context.Context, inventory *[]*InventoryItem, obj
 					numUnready++
 				} else if existingObject.GetDeletionTimestamp().IsZero() &&
 					// TODO: make force-reconcile period (60 minutes as of now) configurable
-					(existingObject.GetAnnotations()[r.annotationKeyDigest] != item.Digest || item.LastAppliedAt != nil && item.LastAppliedAt.Time.Before(now.Add(-60*time.Minute))) {
+					(existingObject.GetAnnotations()[r.annotationKeyDigest] != item.Digest || item.LastAppliedAt == nil || item.LastAppliedAt.Time.Before(now.Add(-60*time.Minute))) {
 					switch updatePolicy {
 					case UpdatePolicyRecreate:
-						// TODO: perform an additional owner id check
 						if err := r.deleteObject(ctx, object, existingObject, hashedOwnerId); err != nil {
 							return false, errors.Wrapf(err, "error deleting (while recreating) object %s", item)
 						}
@@ -755,9 +754,9 @@ func (r *Reconciler) Apply(ctx context.Context, inventory *[]*InventoryItem, obj
 
 			// note: objects becoming obsolete during an apply are no longer honoring deletion policy (orphan)
 			// TODO: not sure if there is a case where someone would like to orphan such resources while applying;
-			// if so, then we probably should introduce a third deletion policy, OrphanApply or similar ...
+			// if so, then we probably should introduce a third deletion policy, OrphanAlsoOnApply or OrphanAlways or similar ...
+			// maybe even more values could be required, such as OrphanOnlyOnApply ...
 			// in any case, the following code should be revisited; cleaned up or adjusted
-			// orphan := item.DeletePolicy == DeletePolicyOrphan
 			orphan := false
 
 			switch item.Phase {
@@ -771,7 +770,6 @@ func (r *Reconciler) Apply(ctx context.Context, inventory *[]*InventoryItem, obj
 					} else {
 						// note: here is a theoretical risk that we delete an existing foreign object, because informers are not yet synced
 						// however not sending the delete request is also not an option, because this might lead to orphaned own dependents
-						// TODO: perform an additional owner id check
 						if err := r.deleteObject(ctx, item, existingObject, hashedOwnerId); err != nil {
 							return false, errors.Wrapf(err, "error deleting object %s", item)
 						}
@@ -878,7 +876,6 @@ func (r *Reconciler) Delete(ctx context.Context, inventory *[]*InventoryItem, ow
 					// delete the object
 					// note: here is a theoretical risk that we delete an existing (foreign) object, because informers are not yet synced
 					// however not sending the delete request is also not an option, because this might lead to orphaned own dependents
-					// TODO: perform an additional owner id check
 					if err := r.deleteObject(ctx, item, existingObject, hashedOwnerId); err != nil {
 						return false, errors.Wrapf(err, "error deleting object %s", item)
 					}
