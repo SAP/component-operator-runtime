@@ -58,6 +58,10 @@ const (
 	maxOrder = math.MaxInt16
 )
 
+const (
+	forceReapplyPeriod = 60 * time.Minute
+)
+
 var adoptionPolicyByAnnotation = map[string]AdoptionPolicy{
 	types.AdoptionPolicyNever:     AdoptionPolicyNever,
 	types.AdoptionPolicyIfUnowned: AdoptionPolicyIfUnowned,
@@ -78,8 +82,10 @@ var updatePolicyByAnnotation = map[string]UpdatePolicy{
 }
 
 var deletePolicyByAnnotation = map[string]DeletePolicy{
-	types.DeletePolicyDelete: DeletePolicyDelete,
-	types.DeletePolicyOrphan: DeletePolicyOrphan,
+	types.DeletePolicyDelete:         DeletePolicyDelete,
+	types.DeletePolicyOrphan:         DeletePolicyOrphan,
+	types.DeletePolicyOrphanOnApply:  DeletePolicyOrphanOnApply,
+	types.DeletePolicyOrphanOnDelete: DeletePolicyOrphanOnDelete,
 }
 
 // ReconcilerOptions are creation options for a Reconciler.
@@ -146,7 +152,7 @@ type Reconciler struct {
 }
 
 // Create new reconciler.
-// The passed name should be fully qualified; it will be used as field owner and finalizer.
+// The passed name should be fully qualified; by default it will be used as field owner and finalizer.
 // The passed client's scheme must recognize at least the core group (v1) and apiextensions.k8s.io/v1 and apiregistration.k8s.io/v1.
 func NewReconciler(name string, clnt cluster.Client, options ReconcilerOptions) *Reconciler {
 	// TOOD: validate options
@@ -209,7 +215,8 @@ func NewReconciler(name string, clnt cluster.Client, options ReconcilerOptions) 
 // Objects which are instances of namespaced types will be placed into the namespace passed to Apply(), if they have no namespace defined in their manifest.
 // An update of an existing object will be performed if it is considered to be out of sync; that means:
 //   - the object's manifest has changed, and the effective reconcile policy is ReconcilePolicyOnObjectChange or ReconcilePolicyOnObjectOrComponentChange or
-//   - the specified component revision has changed and the effective reconcile policy is ReconcilePolicyOnObjectOrComponentChange.
+//   - the specified component revision has changed and the effective reconcile policy is ReconcilePolicyOnObjectOrComponentChange or
+//   - periodically after forceReapplyPeriod.
 //
 // The update itself will be done as follows:
 //   - if the effective update policy is UpdatePolicyReplace, a http PUT request will be sent to the Kubernetes API
@@ -223,11 +230,10 @@ func NewReconciler(name string, clnt cluster.Client, options ReconcilerOptions) 
 // and it might be re-applied/re-purged in case it runs out of sync. Within a wave, objects are processed following a certain internal order;
 // in particular, instances of types which are part of the wave are processed only if all other objects in that wave have a ready state.
 //
-// Redundant objects will be removed; that means, a http DELETE request will be sent to the Kubernetes API; note that an effective Orphan deletion
-// policy will not prevent deletion here; the deletion policy will only be honored when the component as whole gets deleted.
+// Redundant objects will be removed; that means, a http DELETE request will be sent to the Kubernetes API.
 //
 // This method will change the passed inventory (add or remove elements, change elements). If Apply() returns true, then all objects are successfully reconciled;
-// otherwise, if it returns false, the caller should recall it timely, until it returns true. In any case, the passed inventory should match the state of the
+// otherwise, if it returns false, the caller should re-call it periodically, until it returns true. In any case, the passed inventory should match the state of the
 // inventory after the previous invocation of Apply(); usually, the caller saves the inventory after calling Apply(), and loads it before calling Apply().
 // The namespace and ownerId arguments should not be changed across subsequent invocations of Apply(); the componentRevision should be incremented only.
 func (r *Reconciler) Apply(ctx context.Context, inventory *[]*InventoryItem, objects []client.Object, namespace string, ownerId string, componentRevision int64) (bool, error) {
@@ -658,7 +664,7 @@ func (r *Reconciler) Apply(ctx context.Context, inventory *[]*InventoryItem, obj
 					numUnready++
 				} else if existingObject.GetDeletionTimestamp().IsZero() &&
 					// TODO: make force-reconcile period (60 minutes as of now) configurable
-					(existingObject.GetAnnotations()[r.annotationKeyDigest] != item.Digest || item.LastAppliedAt == nil || item.LastAppliedAt.Time.Before(now.Add(-60*time.Minute))) {
+					(existingObject.GetAnnotations()[r.annotationKeyDigest] != item.Digest || item.LastAppliedAt == nil || item.LastAppliedAt.Time.Before(now.Add(-forceReapplyPeriod))) {
 					switch updatePolicy {
 					case UpdatePolicyRecreate:
 						if err := r.deleteObject(ctx, object, existingObject, hashedOwnerId); err != nil {
@@ -712,6 +718,9 @@ func (r *Reconciler) Apply(ctx context.Context, inventory *[]*InventoryItem, obj
 				if numPurged > 0 {
 					return false, nil
 				}
+				// TODO: we should do deletion of redundant objects (in the current apply stage) here
+				// maybe it would even make sense to introduce something like a delete-on-apply-policy (Early,Regular,Late)
+				// and maybe even a delete-on-apply-order ...
 			} else {
 				return false, nil
 			}
@@ -752,12 +761,13 @@ func (r *Reconciler) Apply(ctx context.Context, inventory *[]*InventoryItem, obj
 				return false, errors.Wrapf(err, "error reading object %s", item)
 			}
 
-			// note: objects becoming obsolete during an apply are no longer honoring deletion policy (orphan)
-			// TODO: not sure if there is a case where someone would like to orphan such resources while applying;
-			// if so, then we probably should introduce a third deletion policy, OrphanAlsoOnApply or OrphanAlways or similar ...
-			// maybe even more values could be required, such as OrphanOnlyOnApply ...
-			// in any case, the following code should be revisited; cleaned up or adjusted
-			orphan := false
+			// note: the effective deletion policy is always the last known one of the dependent object,
+			// that is, the one determined when the object was contained in the manifests the last time;
+			// just-in-time changes of the default deletion policy on the component thus have no impact on the
+			// deletion policy of redundant objects; dependent objects are orphaned if they have an effective
+			// Orphan or OrphanOnApply deletion policy.
+
+			orphan := item.DeletePolicy == DeletePolicyOrphan || item.DeletePolicy == DeletePolicyOrphanOnApply
 
 			switch item.Phase {
 			case PhaseScheduledForDeletion:
@@ -817,7 +827,8 @@ func (r *Reconciler) Apply(ctx context.Context, inventory *[]*InventoryItem, obj
 // objects having a certain delete order will only start if all objects with lower delete order are gone. Within a wave, objects are
 // deleted following a certain internal ordering; in particular, if there are instances of types which are part of the wave, then these
 // instances will be deleted first; only if all such instances are gone, the remaining objects of the wave will be deleted.
-// Objects which have an effective Orphan deletion policy will not be touched (remain in the cluster), but will no longer appear in the inventory.
+// Objects which have an effective Orphan or OrphanOnDelete deletion policy will not be touched (remain in the cluster),
+// but will no longer appear in the inventory.
 //
 // This method will change the passed inventory (remove elements, change elements). If Delete() returns true, then all objects are gone; otherwise,
 // if it returns false, the caller should recall it timely, until it returns true. In any case, the passed inventory should match the state of the
@@ -855,7 +866,7 @@ func (r *Reconciler) Delete(ctx context.Context, inventory *[]*InventoryItem, ow
 			return false, errors.Wrapf(err, "error reading object %s", item)
 		}
 
-		orphan := item.DeletePolicy == DeletePolicyOrphan
+		orphan := item.DeletePolicy == DeletePolicyOrphan || item.DeletePolicy == DeletePolicyOrphanOnDelete
 
 		switch item.Phase {
 		case PhaseDeleting:
@@ -905,9 +916,11 @@ func (r *Reconciler) Delete(ctx context.Context, inventory *[]*InventoryItem, ow
 // Check if the object set defined by inventory is ready for deletion; that means: check if the inventory contains
 // types (as custom resource definition or from an api service), while there exist instances of these types in the cluster,
 // which are not contained in the inventory. There is one exception of this rule: if all objects in the inventory have their
-// delete policy set to DeletePolicyOrphan, then the deletion of the component is immediately allowed.
+// deletion policy set to Orphan or OrphanOnDelete, then the deletion of the component is immediately allowed.
 func (r *Reconciler) IsDeletionAllowed(ctx context.Context, inventory *[]*InventoryItem) (bool, string, error) {
-	if slices.All(*inventory, func(item *InventoryItem) bool { return item.DeletePolicy == DeletePolicyOrphan }) {
+	if slices.All(*inventory, func(item *InventoryItem) bool {
+		return item.DeletePolicy == DeletePolicyOrphan || item.DeletePolicy == DeletePolicyOrphanOnDelete
+	}) {
 		return true, "", nil
 	}
 	for _, item := range *inventory {
@@ -1246,7 +1259,7 @@ func (r *Reconciler) getDeletePolicy(object client.Object) (DeletePolicy, error)
 	switch deletePolicy {
 	case "", types.DeletePolicyDefault:
 		return r.deletePolicy, nil
-	case types.DeletePolicyDelete, types.DeletePolicyOrphan:
+	case types.DeletePolicyDelete, types.DeletePolicyOrphan, types.DeletePolicyOrphanOnApply, types.DeletePolicyOrphanOnDelete:
 		return deletePolicyByAnnotation[deletePolicy], nil
 	default:
 		return "", fmt.Errorf("invalid value for annotation %s: %s", r.annotationKeyDeletePolicy, deletePolicy)
