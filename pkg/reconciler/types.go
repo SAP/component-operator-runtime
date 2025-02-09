@@ -75,8 +75,13 @@ type DeletePolicy string
 const (
 	// Delete dependent objects.
 	DeletePolicyDelete DeletePolicy = "Delete"
-	// Orphan dependent objects.
+	// Orphan dependent objects; that is, always, both if they become redundant when the component is applied,
+	// and if the component is deleted.
 	DeletePolicyOrphan DeletePolicy = "Orphan"
+	// Orphan dependent objects if they become redundant when the compponent is applied.
+	DeletePolicyOrphanOnApply DeletePolicy = "OrphanOnApply"
+	// Orphan dependent objects if the component is deleted.
+	DeletePolicyOrphanOnDelete DeletePolicy = "OrphanOnDelete"
 )
 
 // MissingNamespacesPolicy defines what the reconciler does if namespaces of dependent objects are not existing.

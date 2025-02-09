@@ -40,9 +40,11 @@ const (
 )
 
 const (
-	DeletePolicyDefault = "default"
-	DeletePolicyDelete  = "delete"
-	DeletePolicyOrphan  = "orphan"
+	DeletePolicyDefault        = "default"
+	DeletePolicyDelete         = "delete"
+	DeletePolicyOrphan         = "orphan"
+	DeletePolicyOrphanOnApply  = "orphan-on-apply"
+	DeletePolicyOrphanOnDelete = "orphan-on-delete"
 )
 
 const (
