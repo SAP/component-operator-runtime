@@ -36,8 +36,10 @@ To support such cases, the `Generator` implementation can set the following anno
 - `mycomponent-operator.mydomain.io/delete-policy`: defines what happens to the object when the compoment is deleted; can be one of:
   - `default` (deprecated): equivalent to the annotation being unset (which means that the reconciler default will be used)
   - `delete` (which is the default): a delete call will be sent to the Kubernetes API server
-  - `orphan`: the object will not be deleted, and it will be no longer tracked
-  
+  - `orphan`: the object will not be deleted, and it will be no longer tracked; always, that is both if the object becomes redundant while applying the component, and if the component itself is deleted
+  - `orphan-on-apply`: the object will not be deleted, and it will be no longer tracked; but only if the object becomes redundant while applying the component
+  - `orphan-on-delete`: the object will not be deleted, and it will be no longer tracked; but only if the component itself is deleted
+
   note that the deletion policy has no effect in the case when objects are deleted because they become obsolete by applying a new version of the component manifests
 - `mycomponent-operator.mydomain.io/apply-order`: the wave in which this object will be reconciled; dependents will be reconciled wave by wave; that is, objects of the same wave will be deployed in a canonical order, and the reconciler will only proceed to the next wave if all objects of previous waves are ready; specified orders can be negative or positive numbers between -32768 and 32767, objects with no explicit order set are treated as if they would specify order 0
 - `mycomponent-operator.mydomain.io/purge-order` (optional): the wave by which this object will be purged; here, purged means that, while applying the dependents, the object will be deleted from the cluster at the end of the specified wave; the according record in `status.Inventory` will be set to phase `Completed`; setting purge orders is useful to spawn ad-hoc objects during the reconcilation, which are not permanently needed; so it's comparable to Helm hooks, in a certain sense
