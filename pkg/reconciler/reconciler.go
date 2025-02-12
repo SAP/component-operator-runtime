@@ -111,6 +111,11 @@ type ReconcilerOptions struct {
 	// Whether namespaces are auto-created if missing.
 	// If unspecified, MissingNamespacesPolicyCreate is assumed.
 	MissingNamespacesPolicy *MissingNamespacesPolicy
+	// Additional managed types. Instances of this type are handled differently during
+	// apply and delete; foreign instances of this type will block deletion of the component;
+	// a typical example of such additional managed types are CRDs which are implicitly created
+	// by the workloads of the component, but not part of the manifests.
+	AdditionalManagedTypes []TypeInfo
 	// How to analyze the state of the dependent objects.
 	// If unspecified, an optimized kstatus based implementation is used.
 	StatusAnalyzer status.StatusAnalyzer
@@ -139,6 +144,7 @@ type Reconciler struct {
 	updatePolicy                 UpdatePolicy
 	deletePolicy                 DeletePolicy
 	missingNamespacesPolicy      MissingNamespacesPolicy
+	additionalManagedTypes       []TypeInfo
 	labelKeyOwnerId              string
 	annotationKeyOwnerId         string
 	annotationKeyDigest          string
@@ -189,6 +195,7 @@ func NewReconciler(name string, clnt cluster.Client, options ReconcilerOptions) 
 		updatePolicy:                 *options.UpdatePolicy,
 		deletePolicy:                 *options.DeletePolicy,
 		missingNamespacesPolicy:      *options.MissingNamespacesPolicy,
+		additionalManagedTypes:       options.AdditionalManagedTypes,
 		labelKeyOwnerId:              name + "/" + types.LabelKeySuffixOwnerId,
 		annotationKeyOwnerId:         name + "/" + types.AnnotationKeySuffixOwnerId,
 		annotationKeyDigest:          name + "/" + types.AnnotationKeySuffixDigest,
@@ -492,7 +499,7 @@ func (r *Reconciler) Apply(ctx context.Context, inventory *[]*InventoryItem, obj
 	for _, item := range newInventory {
 		if isCrd(item) || isApiService(item) {
 			for _, _item := range newInventory {
-				if isManagedBy(item, _item) {
+				if isManagedBy(item.ManagedTypes, _item) {
 					if _item.ApplyOrder < item.ApplyOrder {
 						return false, fmt.Errorf("error valdidating object set (%s): managed instance must not have an apply order lesser than the one of its type", _item)
 					}
@@ -629,7 +636,7 @@ func (r *Reconciler) Apply(ctx context.Context, inventory *[]*InventoryItem, obj
 			for j := k; j < len(objects) && getApplyOrder(objects[j]) == applyOrder; j++ {
 				_object := objects[j]
 				_item := mustGetItem(*inventory, _object)
-				if _item.Phase != PhaseReady && _item.Phase != PhaseCompleted && !isInstanceOfManagedType(*inventory, _object) {
+				if _item.Phase != PhaseReady && _item.Phase != PhaseCompleted && !isInstanceOfManagedType(r.additionalManagedTypes, *inventory, _object) {
 					// that means: _item.Phase is one of PhaseScheduledForApplication, PhaseCreating, PhaseUpdating
 					numNotManagedToBeApplied++
 				}
@@ -641,7 +648,7 @@ func (r *Reconciler) Apply(ctx context.Context, inventory *[]*InventoryItem, obj
 			// reconcile all instances of managed types after remaining objects
 			// this ensures that everything is running what is needed for the reconciliation of the managed instances,
 			// such as webhook servers, api servers, ...
-			if numNotManagedToBeApplied == 0 || !isInstanceOfManagedType(*inventory, object) {
+			if numNotManagedToBeApplied == 0 || !isInstanceOfManagedType(r.additionalManagedTypes, *inventory, object) {
 				// fetch object (if existing)
 				existingObject, err := r.readObject(ctx, item)
 				if err != nil {
@@ -748,7 +755,7 @@ func (r *Reconciler) Apply(ctx context.Context, inventory *[]*InventoryItem, obj
 			numManagedToBeDeleted = 0
 			for j := k; j < len(*inventory) && (*inventory)[j].DeleteOrder == item.DeleteOrder; j++ {
 				_item := (*inventory)[j]
-				if (_item.Phase == PhaseScheduledForDeletion || _item.Phase == PhaseDeleting) && isInstanceOfManagedType(*inventory, _item) {
+				if (_item.Phase == PhaseScheduledForDeletion || _item.Phase == PhaseDeleting) && isInstanceOfManagedType(r.additionalManagedTypes, *inventory, _item) {
 					numManagedToBeDeleted++
 				}
 			}
@@ -774,7 +781,7 @@ func (r *Reconciler) Apply(ctx context.Context, inventory *[]*InventoryItem, obj
 				// delete namespaces after all contained inventory items
 				// delete all instances of managed types before remaining objects; this ensures that no objects are prematurely
 				// deleted which are needed for the deletion of the managed instances, such as webhook servers, api servers, ...
-				if (!isNamespace(item) || !isNamespaceUsed(*inventory, item.Name)) && (numManagedToBeDeleted == 0 || isInstanceOfManagedType(*inventory, item)) {
+				if (!isNamespace(item) || !isNamespaceUsed(*inventory, item.Name)) && (numManagedToBeDeleted == 0 || isInstanceOfManagedType(r.additionalManagedTypes, *inventory, item)) {
 					if orphan {
 						item.Phase = ""
 					} else {
@@ -854,7 +861,7 @@ func (r *Reconciler) Delete(ctx context.Context, inventory *[]*InventoryItem, ow
 			numManagedToBeDeleted = 0
 			for j := k; j < len(*inventory) && (*inventory)[j].DeleteOrder == item.DeleteOrder; j++ {
 				_item := (*inventory)[j]
-				if isInstanceOfManagedType(*inventory, _item) {
+				if isInstanceOfManagedType(r.additionalManagedTypes, *inventory, _item) {
 					numManagedToBeDeleted++
 				}
 			}
@@ -880,7 +887,7 @@ func (r *Reconciler) Delete(ctx context.Context, inventory *[]*InventoryItem, ow
 			// delete namespaces after all contained inventory items
 			// delete all instances of managed types before remaining objects; this ensures that no objects are prematurely
 			// deleted which are needed for the deletion of the managed instances, such as webhook servers, api servers, ...
-			if (!isNamespace(item) || !isNamespaceUsed(*inventory, item.Name)) && (numManagedToBeDeleted == 0 || isInstanceOfManagedType(*inventory, item)) {
+			if (!isNamespace(item) || !isNamespaceUsed(*inventory, item.Name)) && (numManagedToBeDeleted == 0 || isInstanceOfManagedType(r.additionalManagedTypes, *inventory, item)) {
 				if orphan {
 					item.Phase = ""
 				} else {

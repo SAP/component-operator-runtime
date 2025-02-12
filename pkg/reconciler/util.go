@@ -354,19 +354,22 @@ func isNamespaceUsed(inventory []*InventoryItem, namespace string) bool {
 	return false
 }
 
-func isInstanceOfManagedType(inventory []*InventoryItem, key types.TypeKey) bool {
+func isInstanceOfManagedType(types []TypeInfo, inventory []*InventoryItem, key types.TypeKey) bool {
 	// TODO: do not consider inventory items with certain Phases (e.g. Completed)?
+	if isManagedBy(types, key) {
+		return true
+	}
 	for _, item := range inventory {
-		if isManaged := isManagedBy(item, key); isManaged {
+		if isManagedBy(item.ManagedTypes, key) {
 			return true
 		}
 	}
 	return false
 }
 
-func isManagedBy(item *InventoryItem, key types.TypeKey) bool {
+func isManagedBy(types []TypeInfo, key types.TypeKey) bool {
 	gvk := key.GetObjectKind().GroupVersionKind()
-	for _, t := range item.ManagedTypes {
+	for _, t := range types {
 		if (t.Group == "*" || t.Group == gvk.Group) && (t.Version == "*" || t.Version == gvk.Version) && (t.Kind == "*" || t.Kind == gvk.Kind) {
 			return true
 		}
