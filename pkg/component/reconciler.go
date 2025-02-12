@@ -729,5 +729,8 @@ func (r *Reconciler[T]) getOptionsForComponent(component T) reconciler.Reconcile
 			options.MissingNamespacesPolicy = &missingNamespacesPolicy
 		}
 	}
+	if typeConfiguration, ok := assertTypeConfiguration(component); ok {
+		options.AdditionalManagedTypes = typeConfiguration.GetAdditionalManagedTypes()
+	}
 	return options
 }

@@ -111,8 +111,8 @@ type ReconcilerOptions struct {
 	// Whether namespaces are auto-created if missing.
 	// If unspecified, MissingNamespacesPolicyCreate is assumed.
 	MissingNamespacesPolicy *MissingNamespacesPolicy
-	// Additional managed types. Instances of this type are handled differently during
-	// apply and delete; foreign instances of this type will block deletion of the component;
+	// Additional managed types. Instances of these types are handled differently during
+	// apply and delete; foreign instances of these types will block deletion of the component;
 	// a typical example of such additional managed types are CRDs which are implicitly created
 	// by the workloads of the component, but not part of the manifests.
 	AdditionalManagedTypes []TypeInfo
