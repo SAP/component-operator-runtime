@@ -362,7 +362,7 @@ func (c *Chart) render(name string, t0 *template.Template, capabilities *Capabil
 				return nil, err
 			}
 
-			decoder := utilyaml.NewYAMLToJSONDecoder(&buf)
+			decoder := utilyaml.NewYAMLToJSONDecoder(bytes.NewBuffer(templatex.AdjustTemplateOutput(buf.Bytes())))
 			for {
 				object := &unstructured.Unstructured{}
 				if err := decoder.Decode(&object.Object); err != nil {

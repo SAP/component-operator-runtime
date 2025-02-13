@@ -242,7 +242,7 @@ func (g *KustomizeGenerator) Generate(ctx context.Context, namespace string, nam
 		if err := t0.ExecuteTemplate(&buf, t.Name(), data); err != nil {
 			return nil, err
 		}
-		if err := fsys.WriteFile(n, buf.Bytes()); err != nil {
+		if err := fsys.WriteFile(n, templatex.AdjustTemplateOutput(buf.Bytes())); err != nil {
 			return nil, err
 		}
 	}
