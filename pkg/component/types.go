@@ -209,6 +209,8 @@ type PolicySpec struct {
 
 var _ PolicyConfiguration = &PolicySpec{}
 
+// +kubebuilder:object:generate=true
+
 // TypeSpec allows to specify additional managed types, which are not explicitly part of the component's manifests.
 // Components providing TypeConfiguration may include this into their spec.
 type TypeSpec struct {
