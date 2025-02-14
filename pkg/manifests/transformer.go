@@ -65,7 +65,7 @@ func (t *TemplateParameterTransformer) TransformParameters(namespace string, nam
 		return nil, err
 	}
 	var transformedParameters types.UnstructurableMap
-	if err := kyaml.Unmarshal(buf.Bytes(), &transformedParameters); err != nil {
+	if err := kyaml.Unmarshal(templatex.AdjustTemplateOutput(buf.Bytes()), &transformedParameters); err != nil {
 		return nil, err
 	}
 	return transformedParameters, nil
