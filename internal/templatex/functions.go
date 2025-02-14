@@ -249,15 +249,15 @@ func formatIPv4Address(data any) (string, error) {
 
 func makeFuncInclude(t *template.Template) func(string, any) (string, error) {
 	return func(name string, data any) (string, error) {
-		var buf strings.Builder
+		var buf bytes.Buffer
 		err := t.ExecuteTemplate(&buf, name, data)
-		return buf.String(), err
+		return string(AdjustTemplateOutput(buf.Bytes())), err
 	}
 }
 
 func makeFuncTpl(t *template.Template) func(string, any) (string, error) {
 	return func(text string, data any) (string, error) {
-		var buf strings.Builder
+		var buf bytes.Buffer
 		_t, err := t.Clone()
 		if err != nil {
 			// Clone() should never produce an error
@@ -268,7 +268,7 @@ func makeFuncTpl(t *template.Template) func(string, any) (string, error) {
 			return "", err
 		}
 		err = _t.Execute(&buf, data)
-		return buf.String(), err
+		return string(AdjustTemplateOutput(buf.Bytes())), err
 	}
 }
 
