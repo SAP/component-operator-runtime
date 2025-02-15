@@ -18,12 +18,12 @@ func (i *InventoryItem) GetObjectKind() schema.ObjectKind {
 
 // Get inventory item's GroupVersionKind.
 func (i InventoryItem) GroupVersionKind() schema.GroupVersionKind {
-	return schema.GroupVersionKind(i.TypeInfo)
+	return schema.GroupVersionKind(i.TypeVersionInfo)
 }
 
 // Set inventory item's GroupVersionKind.
 func (i *InventoryItem) SetGroupVersionKind(gvk schema.GroupVersionKind) {
-	i.TypeInfo = TypeInfo(gvk)
+	i.TypeVersionInfo = TypeVersionInfo(gvk)
 }
 
 // Get inventory item's namespace.

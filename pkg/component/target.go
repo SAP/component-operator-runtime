@@ -82,7 +82,8 @@ func (t *reconcileTarget[T]) Delete(ctx context.Context, component T) (bool, err
 
 func (t *reconcileTarget[T]) IsDeletionAllowed(ctx context.Context, component T) (bool, string, error) {
 	// log := log.FromContext(ctx)
+	ownerId := t.reconcilerId + "/" + component.GetNamespace() + "/" + component.GetName()
 	status := component.GetStatus()
 
-	return t.reconciler.IsDeletionAllowed(ctx, &status.Inventory)
+	return t.reconciler.IsDeletionAllowed(ctx, &status.Inventory, ownerId)
 }

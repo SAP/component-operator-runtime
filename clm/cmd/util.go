@@ -67,7 +67,7 @@ func isEphmeralError(err error) bool {
 }
 
 func formatTimestamp(t time.Time) string {
-	d := time.Now().Sub(t)
+	d := time.Since(t)
 	if d > 24*time.Hour {
 		return fmt.Sprintf("%dd", d/24*time.Hour)
 	} else if d > time.Hour {

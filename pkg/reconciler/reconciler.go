@@ -499,7 +499,7 @@ func (r *Reconciler) Apply(ctx context.Context, inventory *[]*InventoryItem, obj
 	for _, item := range newInventory {
 		if isCrd(item) || isApiService(item) {
 			for _, _item := range newInventory {
-				if isManagedBy(item.ManagedTypes, _item) {
+				if isManagedByTypeVersions(item.ManagedTypes, _item) {
 					if _item.ApplyOrder < item.ApplyOrder {
 						return false, fmt.Errorf("error valdidating object set (%s): managed instance must not have an apply order lesser than the one of its type", _item)
 					}
@@ -636,7 +636,7 @@ func (r *Reconciler) Apply(ctx context.Context, inventory *[]*InventoryItem, obj
 			for j := k; j < len(objects) && getApplyOrder(objects[j]) == applyOrder; j++ {
 				_object := objects[j]
 				_item := mustGetItem(*inventory, _object)
-				if _item.Phase != PhaseReady && _item.Phase != PhaseCompleted && !isInstanceOfManagedType(r.additionalManagedTypes, *inventory, _object) {
+				if _item.Phase != PhaseReady && _item.Phase != PhaseCompleted && !isManagedInstance(r.additionalManagedTypes, *inventory, _object) {
 					// that means: _item.Phase is one of PhaseScheduledForApplication, PhaseCreating, PhaseUpdating
 					numNotManagedToBeApplied++
 				}
@@ -648,7 +648,7 @@ func (r *Reconciler) Apply(ctx context.Context, inventory *[]*InventoryItem, obj
 			// reconcile all instances of managed types after remaining objects
 			// this ensures that everything is running what is needed for the reconciliation of the managed instances,
 			// such as webhook servers, api servers, ...
-			if numNotManagedToBeApplied == 0 || !isInstanceOfManagedType(r.additionalManagedTypes, *inventory, object) {
+			if numNotManagedToBeApplied == 0 || !isManagedInstance(r.additionalManagedTypes, *inventory, object) {
 				// fetch object (if existing)
 				existingObject, err := r.readObject(ctx, item)
 				if err != nil {
@@ -755,7 +755,7 @@ func (r *Reconciler) Apply(ctx context.Context, inventory *[]*InventoryItem, obj
 			numManagedToBeDeleted = 0
 			for j := k; j < len(*inventory) && (*inventory)[j].DeleteOrder == item.DeleteOrder; j++ {
 				_item := (*inventory)[j]
-				if (_item.Phase == PhaseScheduledForDeletion || _item.Phase == PhaseDeleting) && isInstanceOfManagedType(r.additionalManagedTypes, *inventory, _item) {
+				if (_item.Phase == PhaseScheduledForDeletion || _item.Phase == PhaseDeleting) && isManagedInstance(r.additionalManagedTypes, *inventory, _item) {
 					numManagedToBeDeleted++
 				}
 			}
@@ -781,7 +781,7 @@ func (r *Reconciler) Apply(ctx context.Context, inventory *[]*InventoryItem, obj
 				// delete namespaces after all contained inventory items
 				// delete all instances of managed types before remaining objects; this ensures that no objects are prematurely
 				// deleted which are needed for the deletion of the managed instances, such as webhook servers, api servers, ...
-				if (!isNamespace(item) || !isNamespaceUsed(*inventory, item.Name)) && (numManagedToBeDeleted == 0 || isInstanceOfManagedType(r.additionalManagedTypes, *inventory, item)) {
+				if (!isNamespace(item) || !isNamespaceUsed(*inventory, item.Name)) && (numManagedToBeDeleted == 0 || isManagedInstance(r.additionalManagedTypes, *inventory, item)) {
 					if orphan {
 						item.Phase = ""
 					} else {
@@ -861,7 +861,7 @@ func (r *Reconciler) Delete(ctx context.Context, inventory *[]*InventoryItem, ow
 			numManagedToBeDeleted = 0
 			for j := k; j < len(*inventory) && (*inventory)[j].DeleteOrder == item.DeleteOrder; j++ {
 				_item := (*inventory)[j]
-				if isInstanceOfManagedType(r.additionalManagedTypes, *inventory, _item) {
+				if isManagedInstance(r.additionalManagedTypes, *inventory, _item) {
 					numManagedToBeDeleted++
 				}
 			}
@@ -887,7 +887,7 @@ func (r *Reconciler) Delete(ctx context.Context, inventory *[]*InventoryItem, ow
 			// delete namespaces after all contained inventory items
 			// delete all instances of managed types before remaining objects; this ensures that no objects are prematurely
 			// deleted which are needed for the deletion of the managed instances, such as webhook servers, api servers, ...
-			if (!isNamespace(item) || !isNamespaceUsed(*inventory, item.Name)) && (numManagedToBeDeleted == 0 || isInstanceOfManagedType(r.additionalManagedTypes, *inventory, item)) {
+			if (!isNamespace(item) || !isNamespaceUsed(*inventory, item.Name)) && (numManagedToBeDeleted == 0 || isManagedInstance(r.additionalManagedTypes, *inventory, item)) {
 				if orphan {
 					item.Phase = ""
 				} else {
@@ -924,12 +924,26 @@ func (r *Reconciler) Delete(ctx context.Context, inventory *[]*InventoryItem, ow
 // types (as custom resource definition or from an api service), while there exist instances of these types in the cluster,
 // which are not contained in the inventory. There is one exception of this rule: if all objects in the inventory have their
 // deletion policy set to Orphan or OrphanOnDelete, then the deletion of the component is immediately allowed.
-func (r *Reconciler) IsDeletionAllowed(ctx context.Context, inventory *[]*InventoryItem) (bool, string, error) {
+func (r *Reconciler) IsDeletionAllowed(ctx context.Context, inventory *[]*InventoryItem, ownerId string) (bool, string, error) {
+	hashedOwnerId := sha256base32([]byte(ownerId))
+
+	for _, t := range r.additionalManagedTypes {
+		gk := schema.GroupKind(t)
+		used, err := r.isTypeUsed(ctx, gk, hashedOwnerId, true)
+		if err != nil {
+			return false, "", errors.Wrapf(err, "error checking usage of type %s", gk)
+		}
+		if used {
+			return false, fmt.Sprintf("type %s is still in use (instances exist)", gk), nil
+		}
+	}
+
 	if slices.All(*inventory, func(item *InventoryItem) bool {
 		return item.DeletePolicy == DeletePolicyOrphan || item.DeletePolicy == DeletePolicyOrphanOnDelete
 	}) {
 		return true, "", nil
 	}
+
 	for _, item := range *inventory {
 		switch {
 		case isCrd(item):
@@ -941,7 +955,7 @@ func (r *Reconciler) IsDeletionAllowed(ctx context.Context, inventory *[]*Invent
 					return false, "", errors.Wrapf(err, "error retrieving crd %s", item.GetName())
 				}
 			}
-			used, err := r.isCrdUsed(ctx, crd, true)
+			used, err := r.isCrdUsed(ctx, crd, hashedOwnerId, true)
 			if err != nil {
 				return false, "", errors.Wrapf(err, "error checking usage of crd %s", item.GetName())
 			}
@@ -957,7 +971,7 @@ func (r *Reconciler) IsDeletionAllowed(ctx context.Context, inventory *[]*Invent
 					return false, "", errors.Wrapf(err, "error retrieving api service %s", item.GetName())
 				}
 			}
-			used, err := r.isApiServiceUsed(ctx, apiService, true)
+			used, err := r.isApiServiceUsed(ctx, apiService, hashedOwnerId, true)
 			if err != nil {
 				return false, "", errors.Wrapf(err, "error checking usage of api service %s", item.GetName())
 			}
@@ -968,6 +982,7 @@ func (r *Reconciler) IsDeletionAllowed(ctx context.Context, inventory *[]*Invent
 			}
 		}
 	}
+
 	return true, "", nil
 }
 
@@ -1130,7 +1145,7 @@ func (r *Reconciler) updateObject(ctx context.Context, object client.Object, exi
 // then an error will be returned after issuing the delete call; otherwise, if the crd or api service is not in use, then our
 // finalizer (i.e. the finalizer equal to the reconciler name) will be cleared, such that the object can be physically
 // removed (unless other finalizers prevent this)
-func (r *Reconciler) deleteObject(ctx context.Context, key types.ObjectKey, existingObject *unstructured.Unstructured, ownerId string) (err error) {
+func (r *Reconciler) deleteObject(ctx context.Context, key types.ObjectKey, existingObject *unstructured.Unstructured, hashedOwnerId string) (err error) {
 	if counter := r.metrics.DeleteCounter; counter != nil {
 		counter.Inc()
 	}
@@ -1150,7 +1165,7 @@ func (r *Reconciler) deleteObject(ctx context.Context, key types.ObjectKey, exis
 
 	// TODO: validate (by panic) that existingObject (if present) fits to key
 
-	if existingObject != nil && existingObject.GetLabels()[r.labelKeyOwnerId] != ownerId {
+	if existingObject != nil && existingObject.GetLabels()[r.labelKeyOwnerId] != hashedOwnerId {
 		return fmt.Errorf("owner conflict; object %s has no or different owner", types.ObjectKeyToString(key))
 	}
 
@@ -1177,7 +1192,7 @@ func (r *Reconciler) deleteObject(ctx context.Context, key types.ObjectKey, exis
 			if err := r.client.Get(ctx, apitypes.NamespacedName{Name: key.GetName()}, crd); err != nil {
 				return client.IgnoreNotFound(err)
 			}
-			used, err := r.isCrdUsed(ctx, crd, false)
+			used, err := r.isCrdUsed(ctx, crd, hashedOwnerId, false)
 			if err != nil {
 				return err
 			}
@@ -1202,7 +1217,7 @@ func (r *Reconciler) deleteObject(ctx context.Context, key types.ObjectKey, exis
 			if err := r.client.Get(ctx, apitypes.NamespacedName{Name: key.GetName()}, apiService); err != nil {
 				return client.IgnoreNotFound(err)
 			}
-			used, err := r.isApiServiceUsed(ctx, apiService, false)
+			used, err := r.isApiServiceUsed(ctx, apiService, hashedOwnerId, false)
 			if err != nil {
 				return err
 			}
@@ -1318,19 +1333,17 @@ func (r *Reconciler) getDeleteOrder(object client.Object) (int, error) {
 	return deleteOrder, nil
 }
 
-func (r *Reconciler) isCrdUsed(ctx context.Context, crd *apiextensionsv1.CustomResourceDefinition, onlyForeign bool) (bool, error) {
-	gvk := schema.GroupVersionKind{
-		Group:   crd.Spec.Group,
-		Version: crd.Spec.Versions[0].Name,
-		Kind:    crd.Spec.Names.Kind,
+func (r *Reconciler) isTypeUsed(ctx context.Context, gk schema.GroupKind, hashedOwnerId string, onlyForeign bool) (bool, error) {
+	restMapping, err := r.client.RESTMapper().RESTMapping(gk)
+	if err != nil {
+		return false, err
 	}
-	// TODO: better use metav1.PartialObjectMetadataList?
 	list := &unstructured.UnstructuredList{}
-	list.SetGroupVersionKind(gvk)
+	list.SetGroupVersionKind(restMapping.GroupVersionKind)
 	labelSelector := labels.Everything()
 	if onlyForeign {
 		// note: this must() is ok because the label selector string is static, and correct
-		labelSelector = must(labels.Parse(r.labelKeyOwnerId + "!=" + crd.Labels[r.labelKeyOwnerId]))
+		labelSelector = must(labels.Parse(r.labelKeyOwnerId + "!=" + hashedOwnerId))
 	}
 	if err := r.client.List(ctx, list, &client.ListOptions{LabelSelector: labelSelector, Limit: 1}); err != nil {
 		return false, err
@@ -1338,7 +1351,26 @@ func (r *Reconciler) isCrdUsed(ctx context.Context, crd *apiextensionsv1.CustomR
 	return len(list.Items) > 0, nil
 }
 
-func (r *Reconciler) isApiServiceUsed(ctx context.Context, apiService *apiregistrationv1.APIService, onlyForeign bool) (bool, error) {
+func (r *Reconciler) isCrdUsed(ctx context.Context, crd *apiextensionsv1.CustomResourceDefinition, hashedOwnerId string, onlyForeign bool) (bool, error) {
+	gvk := schema.GroupVersionKind{
+		Group:   crd.Spec.Group,
+		Version: crd.Spec.Versions[0].Name,
+		Kind:    crd.Spec.Names.Kind,
+	}
+	list := &unstructured.UnstructuredList{}
+	list.SetGroupVersionKind(gvk)
+	labelSelector := labels.Everything()
+	if onlyForeign {
+		// note: this must() is ok because the label selector string is static, and correct
+		labelSelector = must(labels.Parse(r.labelKeyOwnerId + "!=" + hashedOwnerId))
+	}
+	if err := r.client.List(ctx, list, &client.ListOptions{LabelSelector: labelSelector, Limit: 1}); err != nil {
+		return false, err
+	}
+	return len(list.Items) > 0, nil
+}
+
+func (r *Reconciler) isApiServiceUsed(ctx context.Context, apiService *apiregistrationv1.APIService, hashedOwnerId string, onlyForeign bool) (bool, error) {
 	gv := schema.GroupVersion{Group: apiService.Spec.Group, Version: apiService.Spec.Version}
 	resList, err := r.client.DiscoveryClient().ServerResourcesForGroupVersion(gv.String())
 	if err != nil {
@@ -1353,7 +1385,7 @@ func (r *Reconciler) isApiServiceUsed(ctx context.Context, apiService *apiregist
 	labelSelector := labels.Everything()
 	if onlyForeign {
 		// note: this must() is ok because the label selector string is static, and correct
-		labelSelector = must(labels.Parse(r.labelKeyOwnerId + "!=" + apiService.Labels[r.labelKeyOwnerId]))
+		labelSelector = must(labels.Parse(r.labelKeyOwnerId + "!=" + hashedOwnerId))
 	}
 	for _, kind := range kinds {
 		gvk := schema.GroupVersionKind{
@@ -1361,7 +1393,6 @@ func (r *Reconciler) isApiServiceUsed(ctx context.Context, apiService *apiregist
 			Version: apiService.Spec.Version,
 			Kind:    kind,
 		}
-		// TODO: better use metav1.PartialObjectMetadataList?
 		list := &unstructured.UnstructuredList{}
 		list.SetGroupVersionKind(gvk)
 		if err := r.client.List(ctx, list, &client.ListOptions{LabelSelector: labelSelector, Limit: 1}); err != nil {

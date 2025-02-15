@@ -11,12 +11,20 @@ import (
 	"github.com/sap/component-operator-runtime/pkg/status"
 )
 
-// TypeInfo represents a Kubernetes type.
-type TypeInfo struct {
+// TypeVersionInfo represents a Kubernetes type version.
+type TypeVersionInfo struct {
 	// API group.
 	Group string `json:"group"`
 	// API group version.
 	Version string `json:"version"`
+	// API kind.
+	Kind string `json:"kind"`
+}
+
+// TypeInfo represents a Kubernetes type.
+type TypeInfo struct {
+	// API group.
+	Group string `json:"group"`
 	// API kind.
 	Kind string `json:"kind"`
 }
@@ -99,7 +107,7 @@ const (
 // InventoryItem represents a dependent object managed by this operator.
 type InventoryItem struct {
 	// Type of the dependent object.
-	TypeInfo `json:",inline"`
+	TypeVersionInfo `json:",inline"`
 	// Namespace and name of the dependent object.
 	NameInfo `json:",inline"`
 	// Adoption policy.
@@ -115,7 +123,7 @@ type InventoryItem struct {
 	// Delete order.
 	DeleteOrder int `json:"deleteOrder"`
 	// Managed types.
-	ManagedTypes []TypeInfo `json:"managedTypes,omitempty"`
+	ManagedTypes []TypeVersionInfo `json:"managedTypes,omitempty"`
 	// Digest of the descriptor of the dependent object.
 	Digest string `json:"digest"`
 	// Phase of the dependent object.

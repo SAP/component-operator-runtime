@@ -61,7 +61,7 @@ func newDeleteCmd() *cobra.Command {
 				return err
 			}
 
-			if ok, msg, err := reconciler.IsDeletionAllowed(context.TODO(), &release.Inventory); err != nil {
+			if ok, msg, err := reconciler.IsDeletionAllowed(context.TODO(), &release.Inventory, ownerId); err != nil {
 				return err
 			} else if !ok {
 				return fmt.Errorf(msg)

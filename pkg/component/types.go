@@ -106,7 +106,7 @@ type PolicyConfiguration interface {
 type TypeConfiguration interface {
 	// Get additional managed types; instances of these types are handled differently during
 	// apply and delete; foreign instances of these types will block deletion of the component.
-	// The fields of the returned TypeInfo structs can be concrete api groups, versions, kinds,
+	// The fields of the returned TypeInfo structs can be concrete api groups, kinds,
 	// or wildcards ("*"); patterns are not possible.
 	GetAdditionalManagedTypes() []reconciler.TypeInfo
 }
