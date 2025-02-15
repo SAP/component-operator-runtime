@@ -370,7 +370,7 @@ func isManagedInstance(types []TypeInfo, inventory []*InventoryItem, key types.T
 func isManagedByTypeVersions(types []TypeVersionInfo, key types.TypeKey) bool {
 	gvk := key.GetObjectKind().GroupVersionKind()
 	for _, t := range types {
-		if (t.Group == "*" || t.Group == gvk.Group) && (t.Version == "*" || t.Version == gvk.Version) && (t.Kind == "*" || t.Kind == gvk.Kind) {
+		if matches(gvk.Group, t.Group) && (t.Version == "*" || t.Version == gvk.Version) && (t.Kind == "*" || t.Kind == gvk.Kind) {
 			return true
 		}
 	}
@@ -380,9 +380,21 @@ func isManagedByTypeVersions(types []TypeVersionInfo, key types.TypeKey) bool {
 func isManagedByTypes(types []TypeInfo, key types.TypeKey) bool {
 	gvk := key.GetObjectKind().GroupVersionKind()
 	for _, t := range types {
-		if (t.Group == "*" || t.Group == gvk.Group) && (t.Kind == "*" || t.Kind == gvk.Kind) {
+		if matches(gvk.Group, t.Group) && (t.Kind == "*" || t.Kind == gvk.Kind) {
 			return true
 		}
 	}
 	return false
+}
+
+func matches(s string, pattern string) bool {
+	if pattern == "*" {
+		return true
+	} else if strings.HasPrefix(pattern, "*.") {
+		return strings.HasSuffix(s, pattern[1:])
+	} else if strings.ContainsRune(pattern, '*') {
+		return false
+	} else {
+		return s == pattern
+	}
 }

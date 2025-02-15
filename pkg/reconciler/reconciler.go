@@ -1334,21 +1334,44 @@ func (r *Reconciler) getDeleteOrder(object client.Object) (int, error) {
 }
 
 func (r *Reconciler) isTypeUsed(ctx context.Context, gk schema.GroupKind, hashedOwnerId string, onlyForeign bool) (bool, error) {
-	restMapping, err := r.client.RESTMapper().RESTMapping(gk)
+	resLists, err := r.client.DiscoveryClient().ServerPreferredResources()
 	if err != nil {
 		return false, err
 	}
-	list := &unstructured.UnstructuredList{}
-	list.SetGroupVersionKind(restMapping.GroupVersionKind)
-	labelSelector := labels.Everything()
-	if onlyForeign {
-		// note: this must() is ok because the label selector string is static, and correct
-		labelSelector = must(labels.Parse(r.labelKeyOwnerId + "!=" + hashedOwnerId))
+	var gvks []schema.GroupVersionKind
+	for _, resList := range resLists {
+		gv, err := schema.ParseGroupVersion(resList.GroupVersion)
+		if err != nil {
+			return false, err
+		}
+		if matches(gv.Group, gk.Group) {
+			for _, res := range resList.APIResources {
+				if gk.Kind == "*" || gk.Kind == res.Kind {
+					gvks = append(gvks, schema.GroupVersionKind{
+						Group:   gv.Group,
+						Version: gv.Version,
+						Kind:    res.Kind,
+					})
+				}
+			}
+		}
 	}
-	if err := r.client.List(ctx, list, &client.ListOptions{LabelSelector: labelSelector, Limit: 1}); err != nil {
-		return false, err
+	for _, gvk := range gvks {
+		list := &unstructured.UnstructuredList{}
+		list.SetGroupVersionKind(gvk)
+		labelSelector := labels.Everything()
+		if onlyForeign {
+			// note: this must() is ok because the label selector string is static, and correct
+			labelSelector = must(labels.Parse(r.labelKeyOwnerId + "!=" + hashedOwnerId))
+		}
+		if err := r.client.List(ctx, list, &client.ListOptions{LabelSelector: labelSelector, Limit: 1}); err != nil {
+			return false, err
+		}
+		if len(list.Items) > 0 {
+			return true, nil
+		}
 	}
-	return len(list.Items) > 0, nil
+	return false, nil
 }
 
 func (r *Reconciler) isCrdUsed(ctx context.Context, crd *apiextensionsv1.CustomResourceDefinition, hashedOwnerId string, onlyForeign bool) (bool, error) {
