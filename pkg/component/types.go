@@ -107,7 +107,8 @@ type TypeConfiguration interface {
 	// Get additional managed types; instances of these types are handled differently during
 	// apply and delete; foreign instances of these types will block deletion of the component.
 	// The fields of the returned TypeInfo structs can be concrete api groups, kinds,
-	// or wildcards ("*"); patterns are not possible.
+	// or wildcards ("*"); in addition, groups can be specified as a pattern of the form "*.<suffix>"",
+	// where the wildcard matches one or multiple dns labels.
 	GetAdditionalManagedTypes() []reconciler.TypeInfo
 }
 
