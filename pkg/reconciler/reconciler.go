@@ -612,6 +612,8 @@ func (r *Reconciler) Apply(ctx context.Context, inventory *[]*InventoryItem, obj
 	// that means, only if all objects of a wave are ready or completed, the next wave
 	// will be procesed; within each wave, objects which are instances of managed types
 	// will be applied after all other objects
+	// TODO: it would be good to have a special handling of APIService objects; probably, APIService objects
+	// should be applied after all regular (aka unmanaged until now) and before all managed objects
 	numNotManagedToBeApplied := 0
 	numUnready := 0
 	for k, object := range objects {
