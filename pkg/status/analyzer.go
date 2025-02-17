@@ -45,6 +45,7 @@ func NewStatusAnalyzer(reconcilerName string) StatusAnalyzer {
 func (s *statusAnalyzer) ComputeStatus(object *unstructured.Unstructured) (Status, error) {
 	var extraConditions []string
 
+	// parse hints from annotations
 	if hint, ok := object.GetAnnotations()[s.reconcilerName+"/"+types.AnnotationKeySuffixStatusHint]; ok {
 		object = object.DeepCopy()
 		for _, hint := range strings.Split(hint, ",") {
@@ -59,6 +60,7 @@ func (s *statusAnalyzer) ComputeStatus(object *unstructured.Unstructured) (Statu
 			}
 			switch strcase.ToKebab(key) {
 			case types.StatusHintHasObservedGeneration:
+				// add an impossible status.observedGeneration if there is none, but the hint says there will be one
 				if hasValue {
 					return UnknownStatus, fmt.Errorf("status hint %s does not take a value", types.StatusHintHasObservedGeneration)
 				}
@@ -72,6 +74,7 @@ func (s *statusAnalyzer) ComputeStatus(object *unstructured.Unstructured) (Statu
 					}
 				}
 			case types.StatusHintHasReadyCondition:
+				// add an Unknown Ready condition if there is none, but the hint says there will be one
 				if hasValue {
 					return UnknownStatus, fmt.Errorf("status hint %s does not take a value", types.StatusHintHasReadyCondition)
 				}
@@ -115,12 +118,22 @@ func (s *statusAnalyzer) ComputeStatus(object *unstructured.Unstructured) (Statu
 		}
 	}
 
+	// add some well known extra conditions; note this might lead to duplicate checks, but that's ok
+	switch object.GroupVersionKind() {
+	case schema.GroupVersionKind{Group: "apiextensions.k8s.io", Version: "v1", Kind: "CustomResourceDefinition"}:
+		extraConditions = append(extraConditions, "Established", "NamesAccepted")
+	case schema.GroupVersionKind{Group: "apiregistration.k8s.io", Version: "v1", Kind: "APIService"}:
+		extraConditions = append(extraConditions, "Available")
+	}
+
+	// retrieve status from upstream kstatus
 	res, err := kstatus.Compute(object)
 	if err != nil {
 		return UnknownStatus, err
 	}
 	status := Status(res.Status)
 
+	// check extra conditions
 	if status == CurrentStatus && len(extraConditions) > 0 {
 		objc, err := kstatus.GetObjectWithConditions(object.UnstructuredContent())
 		if err != nil {
@@ -142,6 +155,7 @@ func (s *statusAnalyzer) ComputeStatus(object *unstructured.Unstructured) (Statu
 		}
 	}
 
+	// special processing for some types
 	switch object.GroupVersionKind() {
 	case schema.GroupVersionKind{Group: "batch", Version: "v1", Kind: "Job"}:
 		// other than kstatus we want to consider jobs as InProgress if its pods are still running, resp. did not (yet) finish successfully
