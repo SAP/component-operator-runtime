@@ -59,6 +59,7 @@ import (
 // TODO: finalizer should have the standard format prefix/finalizer
 // TODO: currently, the reconciler always claims/owns dependent objects entirely; but due to server-side-apply it can happen that
 // only parts of an object are managed: other parts/fiels might be managed by other actors (or even other components); how to handle such cases?
+// TODO: we maybe should incorporate metadata.uid into the inventory to better detect foreign (recreations) of objects that were already managed by us
 
 const (
 	readyConditionReasonNew                = "FirstSeen"
