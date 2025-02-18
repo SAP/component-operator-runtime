@@ -601,6 +601,8 @@ func (r *Reconciler) Apply(ctx context.Context, inventory *[]*InventoryItem, obj
 					item.Phase = PhaseCompleted
 					item.Status = ""
 				} else {
+					// TODO: should we (similar to the delete cases) check deletion timestamp and ownership to void deadlocks if object
+					// was recreated by someone else
 					numToBeCompleted++
 				}
 			}
@@ -800,11 +802,20 @@ func (r *Reconciler) Apply(ctx context.Context, inventory *[]*InventoryItem, obj
 					numToBeDeleted++
 				}
 			case PhaseDeleting:
-				// if object is gone, we can remove it from inventory
 				if existingObject == nil {
+					// if object is gone, we can remove it from inventory
+					item.Phase = ""
+				} else if !existingObject.GetDeletionTimestamp().IsZero() {
+					// object is still there and deleting, waiting until it goes away
+					numToBeDeleted++
+				} else if existingObject.GetLabels()[r.labelKeyOwnerId] != hashedOwnerId {
+					// object is there but not deleting; if we are not owning it that means that somebody else has
+					// recreated it in the meantime; so we consider this as not our problem and remove it from inventory
+					log.V(1).Info("orphaning resurrected object (probably it was recreated by someone else)", "key", types.ObjectKeyToString(item))
 					item.Phase = ""
 				} else {
-					numToBeDeleted++
+					// object is there, not deleting, but we own it; that is really strange and should actually not happen
+					return false, fmt.Errorf("object %s was already deleted but has no deletion timestamp", types.ObjectKeyToString(item))
 				}
 			default:
 				// note: any other phase value would indicate a severe code problem, so we want to see the panic in that case
@@ -879,11 +890,20 @@ func (r *Reconciler) Delete(ctx context.Context, inventory *[]*InventoryItem, ow
 
 		switch item.Phase {
 		case PhaseDeleting:
-			// if object is gone, we can remove it from inventory
 			if existingObject == nil {
+				// if object is gone, we can remove it from inventory
+				item.Phase = ""
+			} else if !existingObject.GetDeletionTimestamp().IsZero() {
+				// object is still there and deleting, waiting until it goes away
+				numToBeDeleted++
+			} else if existingObject.GetLabels()[r.labelKeyOwnerId] != hashedOwnerId {
+				// object is there but not deleting; if we are not owning it that means that somebody else has
+				// recreated it in the meantime; so we consider this as not our problem and remove it from inventory
+				log.V(1).Info("orphaning resurrected object (probably it was recreated by someone else)", "key", types.ObjectKeyToString(item))
 				item.Phase = ""
 			} else {
-				numToBeDeleted++
+				// object is there, not deleting, but we own it; that is really strange and should actually not happen
+				return false, fmt.Errorf("object %s was already deleted but has no deletion timestamp", types.ObjectKeyToString(item))
 			}
 		default:
 			// delete namespaces after all contained inventory items
