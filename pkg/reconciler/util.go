@@ -159,12 +159,12 @@ func getApiServices(objects []client.Object) []*apiregistrationv1.APIService {
 	return apiServices
 }
 
-func getManagedTypes(object client.Object) []TypeInfo {
+func getManagedTypes(object client.Object) []TypeVersionInfo {
 	switch {
 	case isCrd(object):
 		switch crd := object.(type) {
 		case *apiextensionsv1.CustomResourceDefinition:
-			return []TypeInfo{{Group: crd.Spec.Group, Version: "*", Kind: crd.Spec.Names.Kind}}
+			return []TypeVersionInfo{{Group: crd.Spec.Group, Version: "*", Kind: crd.Spec.Names.Kind}}
 		default:
 			// note: this panic relies on v1 being the only version in which apiextensions.k8s.io/CustomResourceDefinition is available in the cluster
 			panic("this cannot happen")
@@ -172,7 +172,7 @@ func getManagedTypes(object client.Object) []TypeInfo {
 	case isApiService(object):
 		switch apiService := object.(type) {
 		case *apiregistrationv1.APIService:
-			return []TypeInfo{{Group: apiService.Spec.Group, Version: apiService.Spec.Version, Kind: "*"}}
+			return []TypeVersionInfo{{Group: apiService.Spec.Group, Version: apiService.Spec.Version, Kind: "*"}}
 		default:
 			// note: this panic relies on v1 being the only version in which apiregistration.k8s.io/APIService is available in the cluster
 			panic("this cannot happen")
@@ -354,22 +354,47 @@ func isNamespaceUsed(inventory []*InventoryItem, namespace string) bool {
 	return false
 }
 
-func isInstanceOfManagedType(inventory []*InventoryItem, key types.TypeKey) bool {
+func isManagedInstance(types []TypeInfo, inventory []*InventoryItem, key types.TypeKey) bool {
 	// TODO: do not consider inventory items with certain Phases (e.g. Completed)?
+	if isManagedByTypes(types, key) {
+		return true
+	}
 	for _, item := range inventory {
-		if isManaged := isManagedBy(item, key); isManaged {
+		if isManagedByTypeVersions(item.ManagedTypes, key) {
 			return true
 		}
 	}
 	return false
 }
 
-func isManagedBy(item *InventoryItem, key types.TypeKey) bool {
+func isManagedByTypeVersions(types []TypeVersionInfo, key types.TypeKey) bool {
 	gvk := key.GetObjectKind().GroupVersionKind()
-	for _, t := range item.ManagedTypes {
-		if (t.Group == "*" || t.Group == gvk.Group) && (t.Version == "*" || t.Version == gvk.Version) && (t.Kind == "*" || t.Kind == gvk.Kind) {
+	for _, t := range types {
+		if matches(gvk.Group, t.Group) && (t.Version == "*" || t.Version == gvk.Version) && (t.Kind == "*" || t.Kind == gvk.Kind) {
 			return true
 		}
 	}
 	return false
+}
+
+func isManagedByTypes(types []TypeInfo, key types.TypeKey) bool {
+	gvk := key.GetObjectKind().GroupVersionKind()
+	for _, t := range types {
+		if matches(gvk.Group, t.Group) && (t.Kind == "*" || t.Kind == gvk.Kind) {
+			return true
+		}
+	}
+	return false
+}
+
+func matches(s string, pattern string) bool {
+	if pattern == "*" {
+		return true
+	} else if strings.HasPrefix(pattern, "*.") {
+		return strings.HasSuffix(s, pattern[1:])
+	} else if strings.ContainsRune(pattern, '*') {
+		return false
+	} else {
+		return s == pattern
+	}
 }

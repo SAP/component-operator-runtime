@@ -101,6 +101,17 @@ type PolicyConfiguration interface {
 	GetMissingNamespacesPolicy() reconciler.MissingNamespacesPolicy
 }
 
+// The TypeConfiguration interface is meant to be implemented by compoments (or their spec) which allow
+// to specify additional managed types.
+type TypeConfiguration interface {
+	// Get additional managed types; instances of these types are handled differently during
+	// apply and delete; foreign instances of these types will block deletion of the component.
+	// The fields of the returned TypeInfo structs can be concrete api groups, kinds,
+	// or wildcards ("*"); in addition, groups can be specified as a pattern of the form "*.<suffix>"",
+	// where the wildcard matches one or multiple dns labels.
+	GetAdditionalManagedTypes() []reconciler.TypeInfo
+}
+
 // +kubebuilder:object:generate=true
 
 // Legacy placement spec. Components may include this into their spec.
@@ -198,6 +209,16 @@ type PolicySpec struct {
 }
 
 var _ PolicyConfiguration = &PolicySpec{}
+
+// +kubebuilder:object:generate=true
+
+// TypeSpec allows to specify additional managed types, which are not explicitly part of the component's manifests.
+// Components providing TypeConfiguration may include this into their spec.
+type TypeSpec struct {
+	AdditionalManagedTypes []reconciler.TypeInfo `json:"additionalManagedTypes,omitempty"`
+}
+
+var _ TypeConfiguration = &TypeSpec{}
 
 // +kubebuilder:object:generate=true
 

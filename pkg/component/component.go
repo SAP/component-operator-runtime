@@ -109,6 +109,17 @@ func assertPolicyConfiguration[T Component](component T) (PolicyConfiguration, b
 	return nil, false
 }
 
+// Check if given component or its spec implements TypeConfiguration (and return it).
+func assertTypeConfiguration[T Component](component T) (TypeConfiguration, bool) {
+	if typeConfiguration, ok := Component(component).(TypeConfiguration); ok {
+		return typeConfiguration, true
+	}
+	if typeConfiguration, ok := getSpec(component).(TypeConfiguration); ok {
+		return typeConfiguration, true
+	}
+	return nil, false
+}
+
 // Calculate digest of given component, honoring annotations, spec, and references.
 func calculateComponentDigest[T Component](component T) string {
 	digestData := make(map[string]any)
@@ -216,6 +227,11 @@ func (s *PolicySpec) GetDeletePolicy() reconciler.DeletePolicy {
 
 func (s *PolicySpec) GetMissingNamespacesPolicy() reconciler.MissingNamespacesPolicy {
 	return s.MissingNamespacesPolicy
+}
+
+// Implement the TypeConfiguration interface.
+func (s *TypeSpec) GetAdditionalManagedTypes() []reconciler.TypeInfo {
+	return s.AdditionalManagedTypes
 }
 
 // Check if state is Ready.

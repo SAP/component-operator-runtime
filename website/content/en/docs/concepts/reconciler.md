@@ -230,3 +230,41 @@ type PolicyConfiguration interface {
 ```
 
 interface. Note that most of the above policies can be overridden on a per-object level by setting certain annotations, as described [here](../dependents).
+
+## Declaring additional (implicit) managed types
+
+One of component-operator-runtime's core features is the special handling of instances of managed types.
+Managed types are API extension types (such as custom resource definitions or types added by federation of an aggregated API server). Instances of these types which are part of the component (so-called managed instances) are treated differently. For example, the framework tries to process these instances as late as possible when applying the component, and as early as possible when the component is deleted. Other instances of these types which are not part of the component (so-called foreign instances) block the deletion of the whole component.
+
+Sometimes, components are implicitly adding extension types. That means that the type definition is not part of the component manifest, but the types are just created at runtime by controllers or operators contained in the component. A typical example are crossplane providers. These types are of course not recognized by the framework as managed types. However it is probably desired that (both managed and foreign) instances of these types experience the same special handling like instances of real managed types.
+
+To make this possible, components can implement the
+
+```go
+// The TypeConfiguration interface is meant to be implemented by compoments (or their spec) which allow
+// to specify additional managed types.
+type TypeConfiguration interface {
+  // Get additional managed types; instances of these types are handled differently during
+  // apply and delete; foreign instances of these types will block deletion of the component.
+  // The fields of the returned TypeInfo structs can be concrete api groups, kinds,
+  // or wildcards ("*"); in addition, groups can be specified as a pattern of the form "*.<suffix>"",
+  // where the wildcard matches one or multiple dns labels.
+  GetAdditionalManagedTypes() []reconciler.TypeInfo
+}
+```
+
+interface. The types returned by `GetAdditionalManagedTypes()` contain a group and a kind, such as
+
+```go
+// TypeInfo represents a Kubernetes type.
+type TypeInfo struct {
+	// API group.
+	Group string `json:"group"`
+	// API kind.
+	Kind string `json:"kind"`
+}
+```
+
+To match multiple types, the following pattern syntax is supported:
+- the `Group` can be just `*` or have the form `*.domain.suffix`; note that the second case, the asterisk matches one or multiple DNS labels
+- the `Kind` can be just `*`, which matches any kind.
