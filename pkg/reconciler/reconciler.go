@@ -621,9 +621,20 @@ func (r *Reconciler) Apply(ctx context.Context, inventory *[]*InventoryItem, obj
 	// that means, only if all objects of a wave are ready or completed, the next wave
 	// will be procesed; within each wave, objects which are instances of managed types
 	// will be applied after all other objects
-	// TODO: it would be good to have a special handling of APIService objects; probably, APIService objects
-	// should be applied after all regular (aka unmanaged until now) and before all managed objects
-	numNotManagedToBeApplied := 0
+	isManaged := func(key types.ObjectKey) bool {
+		return isManagedInstance(r.additionalManagedTypes, *inventory, key)
+	}
+	isLate := func(key types.ObjectKey) bool {
+		return isApiService(key)
+	}
+	isRegular := func(key types.ObjectKey) bool {
+		return !isLate(key) && !isManaged(key)
+	}
+	isUsedNamespace := func(key types.ObjectKey) bool {
+		return isNamespace(key) && isNamespaceUsed(*inventory, key.GetName())
+	}
+	numRegularToBeApplied := 0
+	numLateToBeApplied := 0
 	numUnready := 0
 	for k, object := range objects {
 		// retrieve inventory item corresponding to this object
@@ -632,17 +643,29 @@ func (r *Reconciler) Apply(ctx context.Context, inventory *[]*InventoryItem, obj
 		// retrieve object order
 		applyOrder := getApplyOrder(object)
 
+		// within each apply order, objects are deployed to readiness in three sub stages
+		// - regular objects (all 'normal' objects)
+		// - late objects (currently, this is only APIService objects)
+		// - instances of managed types (that is instances of types which are added in this component as CRD or through an APIService)
+		// within each of these sub groups, the static ordering defined in sortObjectsForApply() is effective
+
 		// if this is the first object of an order, then
 		// count instances of managed types in this order which are about to be applied
 		if k == 0 || getApplyOrder(objects[k-1]) < applyOrder {
 			log.V(2).Info("begin of apply wave", "order", applyOrder)
-			numNotManagedToBeApplied = 0
+			numRegularToBeApplied = 0
+			numLateToBeApplied = 0
 			for j := k; j < len(objects) && getApplyOrder(objects[j]) == applyOrder; j++ {
 				_object := objects[j]
 				_item := mustGetItem(*inventory, _object)
-				if _item.Phase != PhaseReady && _item.Phase != PhaseCompleted && !isManagedInstance(r.additionalManagedTypes, *inventory, _object) {
+				if _item.Phase != PhaseReady && _item.Phase != PhaseCompleted {
 					// that means: _item.Phase is one of PhaseScheduledForApplication, PhaseCreating, PhaseUpdating
-					numNotManagedToBeApplied++
+					if isRegular(_object) {
+						numRegularToBeApplied++
+					} // (same as) else (because isRegular() and isLate() are mutually exclusive)
+					if isLate(_object) {
+						numLateToBeApplied++
+					}
 				}
 			}
 		}
@@ -652,7 +675,8 @@ func (r *Reconciler) Apply(ctx context.Context, inventory *[]*InventoryItem, obj
 			// reconcile all instances of managed types after remaining objects
 			// this ensures that everything is running what is needed for the reconciliation of the managed instances,
 			// such as webhook servers, api servers, ...
-			if numNotManagedToBeApplied == 0 || !isManagedInstance(r.additionalManagedTypes, *inventory, object) {
+			// note: here, phase is one of PhaseScheduledForApplication, PhaseCreating, PhaseUpdating, PhaseReady
+			if isRegular(object) || isLate(object) && numRegularToBeApplied == 0 || isManaged(object) && numRegularToBeApplied == 0 && numLateToBeApplied == 0 {
 				// fetch object (if existing)
 				existingObject, err := r.readObject(ctx, item)
 				if err != nil {
@@ -759,7 +783,7 @@ func (r *Reconciler) Apply(ctx context.Context, inventory *[]*InventoryItem, obj
 			numManagedToBeDeleted = 0
 			for j := k; j < len(*inventory) && (*inventory)[j].DeleteOrder == item.DeleteOrder; j++ {
 				_item := (*inventory)[j]
-				if (_item.Phase == PhaseScheduledForDeletion || _item.Phase == PhaseDeleting) && isManagedInstance(r.additionalManagedTypes, *inventory, _item) {
+				if (_item.Phase == PhaseScheduledForDeletion || _item.Phase == PhaseDeleting) && isManaged(_item) {
 					numManagedToBeDeleted++
 				}
 			}
@@ -785,7 +809,7 @@ func (r *Reconciler) Apply(ctx context.Context, inventory *[]*InventoryItem, obj
 				// delete namespaces after all contained inventory items
 				// delete all instances of managed types before remaining objects; this ensures that no objects are prematurely
 				// deleted which are needed for the deletion of the managed instances, such as webhook servers, api servers, ...
-				if (!isNamespace(item) || !isNamespaceUsed(*inventory, item.Name)) && (numManagedToBeDeleted == 0 || isManagedInstance(r.additionalManagedTypes, *inventory, item)) {
+				if !isUsedNamespace(item) && (numManagedToBeDeleted == 0 || isManaged(item)) {
 					if orphan {
 						item.Phase = ""
 					} else {
