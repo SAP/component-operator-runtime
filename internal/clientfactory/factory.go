@@ -3,7 +3,7 @@ SPDX-FileCopyrightText: 2024 SAP SE or an SAP affiliate company and component-op
 SPDX-License-Identifier: Apache-2.0
 */
 
-package cluster
+package clientfactory
 
 import (
 	"crypto/sha256"
@@ -31,7 +31,7 @@ type ClientFactory struct {
 	controllerName string
 	config         *rest.Config
 	scheme         *runtime.Scheme
-	clients        map[string]*clientImpl
+	clients        map[string]*Client
 }
 
 const validity = 15 * time.Minute
@@ -58,7 +58,7 @@ func NewClientFactory(name string, controllerName string, config *rest.Config, s
 		controllerName: controllerName,
 		config:         config,
 		scheme:         scheme,
-		clients:        make(map[string]*clientImpl),
+		clients:        make(map[string]*Client),
 	}
 
 	go func() {
@@ -82,7 +82,7 @@ func NewClientFactory(name string, controllerName string, config *rest.Config, s
 	return factory, nil
 }
 
-func (f *ClientFactory) Get(kubeConfig []byte, impersonationUser string, impersonationGroups []string) (Client, error) {
+func (f *ClientFactory) Get(kubeConfig []byte, impersonationUser string, impersonationGroups []string) (*Client, error) {
 	f.mutex.Lock()
 	defer f.mutex.Unlock()
 
@@ -127,7 +127,7 @@ func (f *ClientFactory) Get(kubeConfig []byte, impersonationUser string, imperso
 			return rt.RoundTrip(r)
 		})
 	})
-	clnt, err := newClientFor(config, f.scheme, f.name)
+	clnt, err := NewClientFor(config, f.scheme, f.name)
 	if err != nil {
 		return nil, err
 	}

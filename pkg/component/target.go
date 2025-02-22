@@ -10,7 +10,7 @@ import (
 
 	"github.com/pkg/errors"
 
-	"github.com/sap/component-operator-runtime/internal/cluster"
+	"github.com/sap/component-operator-runtime/pkg/cluster"
 	"github.com/sap/component-operator-runtime/pkg/manifests"
 	"github.com/sap/component-operator-runtime/pkg/reconciler"
 )

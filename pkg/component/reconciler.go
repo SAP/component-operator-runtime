@@ -40,8 +40,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	"github.com/sap/component-operator-runtime/internal/backoff"
-	"github.com/sap/component-operator-runtime/internal/cluster"
+	"github.com/sap/component-operator-runtime/internal/clientfactory"
 	"github.com/sap/component-operator-runtime/internal/metrics"
+	"github.com/sap/component-operator-runtime/pkg/cluster"
 	"github.com/sap/component-operator-runtime/pkg/manifests"
 	"github.com/sap/component-operator-runtime/pkg/reconciler"
 	"github.com/sap/component-operator-runtime/pkg/status"
@@ -85,6 +86,10 @@ const (
 // has been successful.
 type HookFunc[T Component] func(ctx context.Context, clnt client.Client, component T) error
 
+// NewClientFunc is the function signature that can be used to modify or replace the default
+// client used by the reconciler.
+type NewClientFunc func(clnt cluster.Client) (cluster.Client, error)
+
 // ReconcilerOptions are creation options for a Reconciler.
 type ReconcilerOptions struct {
 	// Which field manager to use in API calls.
@@ -114,6 +119,8 @@ type ReconcilerOptions struct {
 	// SchemeBuilder allows to define additional schemes to be made available in the
 	// target client.
 	SchemeBuilder types.SchemeBuilder
+	// NewClientFunc allows to mofify or replace the default client used by the reconciler.
+	NewClientFunc NewClientFunc
 }
 
 // Reconciler provides the implementation of controller-runtime's Reconciler interface, for a given Component type T.
@@ -126,7 +133,7 @@ type Reconciler[T Component] struct {
 	resourceGenerator  manifests.Generator
 	statusAnalyzer     status.StatusAnalyzer
 	options            ReconcilerOptions
-	clients            *cluster.ClientFactory
+	clients            *clientfactory.ClientFactory
 	backoff            *backoff.Backoff
 	postReadHooks      []HookFunc[T]
 	preReconcileHooks  []HookFunc[T]
@@ -300,10 +307,15 @@ func (r *Reconciler[T]) Reconcile(ctx context.Context, req ctrl.Request) (result
 		// TODO: should we move this behind the DeepEqual check below to avoid noise?
 		// also note: it seems that no events will be written if the component's namespace is in deletion
 		state, reason, message := status.GetState()
+		var eventAnnotations map[string]string
+		// TODO: formalize this into a real published interface
+		if eventAnnotationProvider, ok := Component(component).(interface{ GetEventAnnotations() map[string]string }); ok {
+			eventAnnotations = eventAnnotationProvider.GetEventAnnotations()
+		}
 		if state == StateError {
-			r.client.EventRecorder().Event(component, corev1.EventTypeWarning, reason, message)
+			r.client.EventRecorder().AnnotatedEventf(component, eventAnnotations, corev1.EventTypeWarning, reason, message)
 		} else {
-			r.client.EventRecorder().Event(component, corev1.EventTypeNormal, reason, message)
+			r.client.EventRecorder().AnnotatedEventf(component, eventAnnotations, corev1.EventTypeNormal, reason, message)
 		}
 
 		if skipStatusUpdate {
@@ -431,7 +443,6 @@ func (r *Reconciler[T]) Reconcile(ctx context.Context, req ctrl.Request) (result
 			log.V(1).Info("deletion not allowed")
 			// TODO: have an additional StateDeletionBlocked?
 			// TODO: eliminate this msg logic
-			r.client.EventRecorder().Event(component, corev1.EventTypeNormal, readyConditionReasonDeletionBlocked, "Deletion blocked: "+msg)
 			status.SetState(StateDeleting, readyConditionReasonDeletionBlocked, "Deletion blocked: "+msg)
 			return ctrl.Result{RequeueAfter: 1*time.Second + r.backoff.Next(req, readyConditionReasonDeletionBlocked)}, nil
 		}
@@ -439,7 +450,6 @@ func (r *Reconciler[T]) Reconcile(ctx context.Context, req ctrl.Request) (result
 			// deletion is blocked because of foreign finalizers
 			log.V(1).Info("deleted blocked due to existence of foreign finalizers")
 			// TODO: have an additional StateDeletionBlocked?
-			r.client.EventRecorder().Event(component, corev1.EventTypeNormal, readyConditionReasonDeletionBlocked, "Deletion blocked due to existing foreign finalizers")
 			status.SetState(StateDeleting, readyConditionReasonDeletionBlocked, "Deletion blocked due to existing foreign finalizers")
 			return ctrl.Result{RequeueAfter: 1*time.Second + r.backoff.Next(req, readyConditionReasonDeletionBlocked)}, nil
 		}
@@ -578,7 +588,14 @@ func (r *Reconciler[T]) SetupWithManagerAndBuilder(mgr ctrl.Manager, blder *ctrl
 	if err != nil {
 		return errors.Wrap(err, "error creating discovery client")
 	}
-	r.client = cluster.NewClient(mgr.GetClient(), discoveryClient, mgr.GetEventRecorderFor(r.name))
+	r.client = cluster.NewClient(mgr.GetClient(), discoveryClient, mgr.GetEventRecorderFor(r.name), mgr.GetConfig(), mgr.GetHTTPClient())
+	if r.options.NewClientFunc != nil {
+		clnt, err := r.options.NewClientFunc(r.client)
+		if err != nil {
+			return errors.Wrap(err, "error calling custom client constructor")
+		}
+		r.client = clnt
+	}
 
 	component := newComponent[T]()
 	r.groupVersionKind, err = apiutil.GVKForObject(component, r.client.Scheme())
@@ -596,7 +613,7 @@ func (r *Reconciler[T]) SetupWithManagerAndBuilder(mgr ctrl.Manager, blder *ctrl
 	if r.options.SchemeBuilder != nil {
 		schemeBuilders = append(schemeBuilders, r.options.SchemeBuilder)
 	}
-	r.clients, err = cluster.NewClientFactory(r.name, r.controllerName, mgr.GetConfig(), schemeBuilders)
+	r.clients, err = clientfactory.NewClientFactory(r.name, r.controllerName, mgr.GetConfig(), schemeBuilders)
 	if err != nil {
 		return errors.Wrap(err, "error creating client factory")
 	}
