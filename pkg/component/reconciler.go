@@ -119,7 +119,9 @@ type ReconcilerOptions struct {
 	// SchemeBuilder allows to define additional schemes to be made available in the
 	// target client.
 	SchemeBuilder types.SchemeBuilder
-	// NewClientFunc allows to mofify or replace the default client used by the reconciler.
+	// NewClientFunc allows to modify or replace the default client used by the reconciler.
+	// The returned client is used by the reconciler to manage the component instances, and passed to hooks.
+	// Its scheme therefore must recognize the component type.
 	NewClientFunc NewClientFunc
 }
 
