@@ -122,7 +122,7 @@ type ReconcilerOptions struct {
 	// NewClientFunc allows to modify or replace the default client used by the reconciler.
 	// The returned client is used by the reconciler to manage the component instances, and passed to hooks.
 	// Its scheme therefore must recognize the component type.
-	NewClientFunc NewClientFunc
+	NewClient NewClientFunc
 }
 
 // Reconciler provides the implementation of controller-runtime's Reconciler interface, for a given Component type T.
@@ -591,8 +591,8 @@ func (r *Reconciler[T]) SetupWithManagerAndBuilder(mgr ctrl.Manager, blder *ctrl
 		return errors.Wrap(err, "error creating discovery client")
 	}
 	r.client = cluster.NewClient(mgr.GetClient(), discoveryClient, mgr.GetEventRecorderFor(r.name), mgr.GetConfig(), mgr.GetHTTPClient())
-	if r.options.NewClientFunc != nil {
-		clnt, err := r.options.NewClientFunc(r.client)
+	if r.options.NewClient != nil {
+		clnt, err := r.options.NewClient(r.client)
 		if err != nil {
 			return errors.Wrap(err, "error calling custom client constructor")
 		}
