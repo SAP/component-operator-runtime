@@ -243,6 +243,8 @@ func NewReconciler(name string, clnt cluster.Client, options ReconcilerOptions) 
 // otherwise, if it returns false, the caller should re-call it periodically, until it returns true. In any case, the passed inventory should match the state of the
 // inventory after the previous invocation of Apply(); usually, the caller saves the inventory after calling Apply(), and loads it before calling Apply().
 // The namespace and ownerId arguments should not be changed across subsequent invocations of Apply(); the componentRevision should be incremented only.
+//
+// Also note: it is absolutely crucial that this method returns (true, nil) immediately (on the first call) if everything is already in the right state.
 func (r *Reconciler) Apply(ctx context.Context, inventory *[]*InventoryItem, objects []client.Object, namespace string, ownerId string, componentRevision int64) (bool, error) {
 	var err error
 	log := log.FromContext(ctx)

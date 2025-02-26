@@ -7,6 +7,7 @@ package component
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"reflect"
 	"strings"
@@ -66,6 +67,7 @@ func (r *ConfigMapReference) load(ctx context.Context, clnt client.Client, names
 
 func (r *ConfigMapReference) digest() string {
 	if !r.loaded {
+		// TODO: shouldn't we panic here?
 		return ""
 	}
 	return calculateDigest(r.data)
@@ -128,6 +130,7 @@ func (r *ConfigMapKeyReference) load(ctx context.Context, clnt client.Client, na
 
 func (r *ConfigMapKeyReference) digest() string {
 	if !r.loaded {
+		// TODO: shouldn't we panic here?
 		return ""
 	}
 	return sha256hex([]byte(r.value))
@@ -172,6 +175,7 @@ func (r *SecretReference) load(ctx context.Context, clnt client.Client, namespac
 
 func (r *SecretReference) digest() string {
 	if !r.loaded {
+		// TODO: shouldn't we panic here?
 		return ""
 	}
 	return calculateDigest(r.data)
@@ -234,6 +238,7 @@ func (r *SecretKeyReference) load(ctx context.Context, clnt client.Client, names
 
 func (r *SecretKeyReference) digest() string {
 	if !r.loaded {
+		// TODO: shouldn't we panic here?
 		return ""
 	}
 	return sha256hex(r.value)
@@ -248,15 +253,26 @@ func (r *SecretKeyReference) Value() []byte {
 	return r.value
 }
 
-func resolveReferences[T Component](ctx context.Context, clnt client.Client, component T) error {
-	return walk.Walk(getSpec(component), func(x any, path []string, tag reflect.StructTag) error {
+func resolveReferences[T Component](ctx context.Context, clnt client.Client, component T) (string, error) {
+	digestData := make(map[string]any)
+	spec := getSpec(component)
+	digestData["generation"] = component.GetGeneration()
+	digestData["annotations"] = component.GetAnnotations()
+	digestData["spec"] = spec
+	if err := walk.Walk(spec, func(x any, path []string, tag reflect.StructTag) error {
+		// note: this must() is ok because marshalling []string should always work
+		rawPath := must(json.Marshal(path))
+		// TODO: allow arbitrary loadable types (with an interface LoadableReference or similar)
 		switch r := x.(type) {
 		case *ConfigMapReference:
 			if r == nil {
 				return nil
 			}
 			ignoreNotFound := !component.GetDeletionTimestamp().IsZero() && tag.Get(tagNotFoundPolicy) == notFoundPolicyIgnoreOnDeletion
-			return r.load(ctx, clnt, component.GetNamespace(), ignoreNotFound)
+			if err := r.load(ctx, clnt, component.GetNamespace(), ignoreNotFound); err != nil {
+				return err
+			}
+			digestData["refs:"+string(rawPath)] = r.digest()
 		case *ConfigMapKeyReference:
 			if r == nil {
 				return nil
@@ -266,13 +282,19 @@ func resolveReferences[T Component](ctx context.Context, clnt client.Client, com
 			if s := tag.Get(tagFallbackKeys); s != "" {
 				fallbackKeys = strings.Split(s, ",")
 			}
-			return r.load(ctx, clnt, component.GetNamespace(), ignoreNotFound, fallbackKeys...)
+			if err := r.load(ctx, clnt, component.GetNamespace(), ignoreNotFound, fallbackKeys...); err != nil {
+				return err
+			}
+			digestData["refs:"+string(rawPath)] = r.digest()
 		case *SecretReference:
 			if r == nil {
 				return nil
 			}
 			ignoreNotFound := !component.GetDeletionTimestamp().IsZero() && tag.Get(tagNotFoundPolicy) == notFoundPolicyIgnoreOnDeletion
-			return r.load(ctx, clnt, component.GetNamespace(), ignoreNotFound)
+			if err := r.load(ctx, clnt, component.GetNamespace(), ignoreNotFound); err != nil {
+				return err
+			}
+			digestData["refs:"+string(rawPath)] = r.digest()
 		case *SecretKeyReference:
 			if r == nil {
 				return nil
@@ -282,8 +304,14 @@ func resolveReferences[T Component](ctx context.Context, clnt client.Client, com
 			if s := tag.Get(tagFallbackKeys); s != "" {
 				fallbackKeys = strings.Split(s, ",")
 			}
-			return r.load(ctx, clnt, component.GetNamespace(), ignoreNotFound, fallbackKeys...)
+			if err := r.load(ctx, clnt, component.GetNamespace(), ignoreNotFound, fallbackKeys...); err != nil {
+				return err
+			}
+			digestData["refs:"+string(rawPath)] = r.digest()
 		}
 		return nil
-	})
+	}); err != nil {
+		return "", err
+	}
+	return calculateDigest(digestData), nil
 }
