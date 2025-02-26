@@ -6,12 +6,10 @@ SPDX-License-Identifier: Apache-2.0
 package component
 
 import (
-	"encoding/json"
 	"fmt"
 	"reflect"
 	"time"
 
-	"github.com/sap/component-operator-runtime/internal/walk"
 	"github.com/sap/component-operator-runtime/pkg/reconciler"
 )
 
@@ -118,41 +116,6 @@ func assertTypeConfiguration[T Component](component T) (TypeConfiguration, bool)
 		return typeConfiguration, true
 	}
 	return nil, false
-}
-
-// Calculate digest of given component, honoring annotations, spec, and references.
-func calculateComponentDigest[T Component](component T) string {
-	digestData := make(map[string]any)
-	spec := getSpec(component)
-	digestData["annotations"] = component.GetAnnotations()
-	digestData["spec"] = spec
-	if err := walk.Walk(getSpec(component), func(x any, path []string, _ reflect.StructTag) error {
-		// note: this must() is ok because marshalling []string should always work
-		rawPath := must(json.Marshal(path))
-		switch r := x.(type) {
-		case *ConfigMapReference:
-			if r != nil {
-				digestData["refs:"+string(rawPath)] = r.digest()
-			}
-		case *ConfigMapKeyReference:
-			if r != nil {
-				digestData["refs:"+string(rawPath)] = r.digest()
-			}
-		case *SecretReference:
-			if r != nil {
-				digestData["refs:"+string(rawPath)] = r.digest()
-			}
-		case *SecretKeyReference:
-			if r != nil {
-				digestData["refs:"+string(rawPath)] = r.digest()
-			}
-		}
-		return nil
-	}); err != nil {
-		// note: this panic is ok because walk.Walk() only produces errors if the given walker function raises any (which ours here does not do)
-		panic("this cannot happen")
-	}
-	return calculateDigest(digestData)
 }
 
 // Implement the PlacementConfiguration interface.

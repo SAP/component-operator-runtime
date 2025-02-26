@@ -35,7 +35,7 @@ func newReconcileTarget[T Component](reconcilerName string, reconcilerId string,
 	}
 }
 
-func (t *reconcileTarget[T]) Apply(ctx context.Context, component T) (bool, string, error) {
+func (t *reconcileTarget[T]) Apply(ctx context.Context, component T, componentDigest string) (bool, string, error) {
 	//log := log.FromContext(ctx)
 	namespace := ""
 	name := ""
@@ -51,7 +51,6 @@ func (t *reconcileTarget[T]) Apply(ctx context.Context, component T) (bool, stri
 	}
 	ownerId := t.reconcilerId + "/" + component.GetNamespace() + "/" + component.GetName()
 	status := component.GetStatus()
-	componentDigest := calculateComponentDigest(component)
 
 	// TODO: enhance ctx with local client
 	generateCtx := NewContext(ctx).

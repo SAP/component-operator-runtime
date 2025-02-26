@@ -84,6 +84,8 @@ const (
 // manager), and the current (potentially unsaved) state of the component.
 // Post-hooks will only be called if the according operation (read, reconcile, delete)
 // has been successful.
+// Note: hooks may change the status of the component, but must not alter the metadata or spec,
+// since changes might be persisted by the framework (e.g. when updating finalizers).
 type HookFunc[T Component] func(ctx context.Context, clnt client.Client, component T) error
 
 // NewClientFunc is the function signature that can be used to modify or replace the default
@@ -181,9 +183,8 @@ func NewReconciler[T Component](name string, resourceGenerator manifests.Generat
 		statusAnalyzer: status.NewStatusAnalyzer(name),
 		options:        options,
 		// TODO: make backoff configurable via options?
-		backoff:       backoff.NewBackoff(10 * time.Second),
-		postReadHooks: []HookFunc[T]{resolveReferences[T]},
-		triggerCh:     make(chan event.TypedGenericEvent[apitypes.NamespacedName], triggerBufferSize),
+		backoff:   backoff.NewBackoff(10 * time.Second),
+		triggerCh: make(chan event.TypedGenericEvent[apitypes.NamespacedName], triggerBufferSize),
 	}
 }
 
@@ -203,7 +204,7 @@ func (r *Reconciler[T]) Reconcile(ctx context.Context, req ctrl.Request) (result
 
 	now := metav1.Now()
 
-	// fetch reconciled object
+	// fetch reconciled component
 	component := newComponent[T]()
 	if err := r.client.Get(ctx, req.NamespacedName, component); err != nil {
 		if apierrors.IsNotFound(err) {
@@ -213,6 +214,8 @@ func (r *Reconciler[T]) Reconcile(ctx context.Context, req ctrl.Request) (result
 		return ctrl.Result{}, errors.Wrap(err, "unexpected get error")
 	}
 	component.GetObjectKind().SetGroupVersionKind(r.groupVersionKind)
+	// componentDigest is populated after post-read hook phase
+	componentDigest := ""
 
 	// fetch requeue interval, retry interval and timeout
 	requeueInterval := time.Duration(0)
@@ -306,14 +309,24 @@ func (r *Reconciler[T]) Reconcile(ctx context.Context, req ctrl.Request) (result
 			}
 		}
 
-		// TODO: should we move this behind the DeepEqual check below to avoid noise?
+		// TODO: should we move this behind the DeepEqual check below to reduce noise?
 		// also note: it seems that no events will be written if the component's namespace is in deletion
 		state, reason, message := status.GetState()
 		var eventAnnotations map[string]string
 		// TODO: formalize this into a real published interface
-		if eventAnnotationProvider, ok := Component(component).(interface{ GetEventAnnotations() map[string]string }); ok {
-			eventAnnotations = eventAnnotationProvider.GetEventAnnotations()
+		// TODO: pass previousState, and especially componentDigest in a better way;
+		// maybe we could even make the component aware of its own digest ...
+		// another option could be to model this as a hook-like function (instead of a component method) ...
+		// note: the passed component digest might be empty (that is, if we return before the post-read phase)
+		// note: this interface is not released for usage; it may change without announcement
+		if eventAnnotationProvider, ok := Component(component).(interface {
+			GetEventAnnotations(previousState State, componentDigest string) map[string]string
+		}); ok {
+			eventAnnotations = eventAnnotationProvider.GetEventAnnotations(savedStatus.State, componentDigest)
 		}
+		// TODO: sending events may block a little while (some seconds), in particular if enhanced recorders are installed through options.NewClient(),
+		// such as the flux notfication recorder; should we therefore send the events asynchronously, or start synchronously and continue asynchronous
+		// after a little while?
 		if state == StateError {
 			r.client.EventRecorder().AnnotatedEventf(component, eventAnnotations, corev1.EventTypeWarning, reason, message)
 		} else {
@@ -348,6 +361,12 @@ func (r *Reconciler[T]) Reconcile(ctx context.Context, req ctrl.Request) (result
 	if status.ObservedGeneration <= 0 {
 		status.SetState(StatePending, readyConditionReasonNew, "First seen")
 		return ctrl.Result{Requeue: true}, nil
+	}
+
+	// resolve references
+	componentDigest, err = resolveReferences(ctx, r.client, component)
+	if err != nil {
+		return ctrl.Result{}, errors.Wrap(err, "error resolving references")
 	}
 
 	// run post-read hooks
@@ -400,7 +419,7 @@ func (r *Reconciler[T]) Reconcile(ctx context.Context, req ctrl.Request) (result
 				return ctrl.Result{}, errors.Wrapf(err, "error running pre-reconcile hook (%d)", hookOrder)
 			}
 		}
-		ok, digest, err := target.Apply(ctx, component)
+		ok, processingDigest, err := target.Apply(ctx, component, componentDigest)
 		if err != nil {
 			log.V(1).Info("error while reconciling dependent resources")
 			return ctrl.Result{}, errors.Wrap(err, "error reconciling dependent resources")
@@ -418,8 +437,8 @@ func (r *Reconciler[T]) Reconcile(ctx context.Context, req ctrl.Request) (result
 			return ctrl.Result{RequeueAfter: requeueInterval}, nil
 		} else {
 			log.V(1).Info("not all dependent resources successfully reconciled")
-			if digest != status.ProcessingDigest {
-				status.ProcessingDigest = digest
+			if processingDigest != status.ProcessingDigest {
+				status.ProcessingDigest = processingDigest
 				status.ProcessingSince = &now
 				r.backoff.Forget(req)
 			}
