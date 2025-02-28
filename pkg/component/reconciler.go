@@ -41,6 +41,7 @@ import (
 
 	"github.com/sap/component-operator-runtime/internal/backoff"
 	"github.com/sap/component-operator-runtime/internal/clientfactory"
+	"github.com/sap/component-operator-runtime/internal/events"
 	"github.com/sap/component-operator-runtime/internal/metrics"
 	"github.com/sap/component-operator-runtime/pkg/cluster"
 	"github.com/sap/component-operator-runtime/pkg/manifests"
@@ -134,6 +135,7 @@ type Reconciler[T Component] struct {
 	groupVersionKind   schema.GroupVersionKind
 	controllerName     string
 	client             cluster.Client
+	eventRecorder      events.DeduplicatingRecorder
 	resourceGenerator  manifests.Generator
 	statusAnalyzer     status.StatusAnalyzer
 	options            ReconcilerOptions
@@ -328,9 +330,9 @@ func (r *Reconciler[T]) Reconcile(ctx context.Context, req ctrl.Request) (result
 		// such as the flux notfication recorder; should we therefore send the events asynchronously, or start synchronously and continue asynchronous
 		// after a little while?
 		if state == StateError {
-			r.client.EventRecorder().AnnotatedEventf(component, eventAnnotations, corev1.EventTypeWarning, reason, message)
+			r.eventRecorder.AnnotatedEventf(component, eventAnnotations, corev1.EventTypeWarning, reason, "%s", message)
 		} else {
-			r.client.EventRecorder().AnnotatedEventf(component, eventAnnotations, corev1.EventTypeNormal, reason, message)
+			r.eventRecorder.AnnotatedEventf(component, eventAnnotations, corev1.EventTypeNormal, reason, "%s", message)
 		}
 
 		if skipStatusUpdate {
@@ -617,6 +619,7 @@ func (r *Reconciler[T]) SetupWithManagerAndBuilder(mgr ctrl.Manager, blder *ctrl
 		}
 		r.client = clnt
 	}
+	r.eventRecorder = *events.NewDeduplicatingRecorder(r.client.EventRecorder())
 
 	component := newComponent[T]()
 	r.groupVersionKind, err = apiutil.GVKForObject(component, r.client.Scheme())
