@@ -417,7 +417,6 @@ func (r *Reconciler[T]) Reconcile(ctx context.Context, req ctrl.Request) (result
 	// run post-read hooks
 	// note: it's important that this happens after deferring the status handler
 	// TODO: enhance ctx with tailored logger and event recorder
-	// TODO: enhance ctx  with the local client
 	// TODO: should ctx enhanced with componentDigest?
 	hookCtx := NewContext(ctx).
 		WithReconcilerName(r.name)
@@ -439,7 +438,6 @@ func (r *Reconciler[T]) Reconcile(ctx context.Context, req ctrl.Request) (result
 	targetOptions := r.getOptionsForComponent(component)
 	target := newReconcileTarget[T](r.name, r.id, localClient, targetClient, r.resourceGenerator, targetOptions)
 	// TODO: enhance ctx with tailored logger and event recorder
-	// TODO: enhance ctx  with the local client
 	// TODO: should ctx enhanced with componentDigest?
 	hookCtx = NewContext(ctx).
 		WithReconcilerName(r.name).
@@ -467,8 +465,7 @@ func (r *Reconciler[T]) Reconcile(ctx context.Context, req ctrl.Request) (result
 				return ctrl.Result{}, errors.Wrapf(err, "error running pre-reconcile hook (%d)", hookOrder)
 			}
 		}
-		// TODO: the returned processingDigest is no longer needed; can be cleaned up
-		ok, _, err := target.Apply(ctx, component, componentDigest)
+		ok, err := target.Apply(ctx, component, componentDigest)
 		if err != nil {
 			log.V(1).Info("error while reconciling dependent resources")
 			return ctrl.Result{}, errors.Wrap(err, "error reconciling dependent resources")
