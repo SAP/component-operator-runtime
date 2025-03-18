@@ -79,6 +79,7 @@ func calculateObjectDigest(obj client.Object, componentDigest string, reconcileP
 	digest := sha256hex(raw)
 
 	if reconcilePolicy == ReconcilePolicyOnObjectOrComponentChange {
+		// TODO: this becomes rather long; should we hash it once more?
 		digest = fmt.Sprintf("%s@%s", digest, componentDigest)
 	}
 

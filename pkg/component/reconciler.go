@@ -418,9 +418,9 @@ func (r *Reconciler[T]) Reconcile(ctx context.Context, req ctrl.Request) (result
 	// note: it's important that this happens after deferring the status handler
 	// TODO: enhance ctx with tailored logger and event recorder
 	// TODO: enhance ctx  with the local client
+	// TODO: should ctx enhanced with componentDigest?
 	hookCtx := NewContext(ctx).
-		WithReconcilerName(r.name).
-		WithComponentDigest(componentDigest)
+		WithReconcilerName(r.name)
 	for hookOrder, hook := range r.postReadHooks {
 		if err := hook(hookCtx, r.client, component); err != nil {
 			return ctrl.Result{}, errors.Wrapf(err, "error running post-read hook (%d)", hookOrder)
@@ -440,11 +440,11 @@ func (r *Reconciler[T]) Reconcile(ctx context.Context, req ctrl.Request) (result
 	target := newReconcileTarget[T](r.name, r.id, localClient, targetClient, r.resourceGenerator, targetOptions)
 	// TODO: enhance ctx with tailored logger and event recorder
 	// TODO: enhance ctx  with the local client
+	// TODO: should ctx enhanced with componentDigest?
 	hookCtx = NewContext(ctx).
 		WithReconcilerName(r.name).
 		WithLocalClient(localClient).
-		WithClient(targetClient).
-		WithComponentDigest(componentDigest)
+		WithClient(targetClient)
 
 	// do the reconciliation
 	if component.GetDeletionTimestamp().IsZero() {
