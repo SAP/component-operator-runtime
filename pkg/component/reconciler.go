@@ -291,7 +291,7 @@ func (r *Reconciler[T]) Reconcile(ctx context.Context, req ctrl.Request) (result
 				status.ProcessingDigest = ""
 				status.ProcessingSince = nil
 			case StateProcessing:
-				// preserve processing state
+				// preserve processing state but set state to error (with timeout reason) if timeout is over
 				if status.ProcessingSince != nil && now.Sub(status.ProcessingSince.Time) >= timeout {
 					status.SetState(StateError, ReadyConditionReasonTimeout, "Reconcilation of dependent resources timed out")
 				}
