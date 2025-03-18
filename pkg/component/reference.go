@@ -49,6 +49,7 @@ type ConfigMapReference struct {
 }
 
 func (r *ConfigMapReference) load(ctx context.Context, clnt client.Client, namespace string, ignoreNotFound bool) error {
+	// TODO: shouldn't we panic if already loaded?
 	configMap := &corev1.ConfigMap{}
 	if err := clnt.Get(ctx, apitypes.NamespacedName{Namespace: namespace, Name: r.Name}, configMap); err != nil {
 		if apierrors.IsNotFound(err) {
@@ -67,7 +68,7 @@ func (r *ConfigMapReference) load(ctx context.Context, clnt client.Client, names
 
 func (r *ConfigMapReference) digest() string {
 	if !r.loaded {
-		// TODO: shouldn't we panic here?
+		// note: we can't panic here because this might be called in case of not-found situations
 		return ""
 	}
 	return calculateDigest(r.data)
@@ -97,6 +98,7 @@ type ConfigMapKeyReference struct {
 }
 
 func (r *ConfigMapKeyReference) load(ctx context.Context, clnt client.Client, namespace string, ignoreNotFound bool, fallbackKeys ...string) error {
+	// TODO: shouldn't we panic if already loaded?
 	configMap := &corev1.ConfigMap{}
 	if err := clnt.Get(ctx, apitypes.NamespacedName{Namespace: namespace, Name: r.Name}, configMap); err != nil {
 		if apierrors.IsNotFound(err) {
@@ -130,7 +132,7 @@ func (r *ConfigMapKeyReference) load(ctx context.Context, clnt client.Client, na
 
 func (r *ConfigMapKeyReference) digest() string {
 	if !r.loaded {
-		// TODO: shouldn't we panic here?
+		// note: we can't panic here because this might be called in case of not-found situations
 		return ""
 	}
 	return sha256hex([]byte(r.value))
@@ -157,6 +159,7 @@ type SecretReference struct {
 }
 
 func (r *SecretReference) load(ctx context.Context, clnt client.Client, namespace string, ignoreNotFound bool) error {
+	// TODO: shouldn't we panic if already loaded?
 	secret := &corev1.Secret{}
 	if err := clnt.Get(ctx, apitypes.NamespacedName{Namespace: namespace, Name: r.Name}, secret); err != nil {
 		if apierrors.IsNotFound(err) {
@@ -175,7 +178,7 @@ func (r *SecretReference) load(ctx context.Context, clnt client.Client, namespac
 
 func (r *SecretReference) digest() string {
 	if !r.loaded {
-		// TODO: shouldn't we panic here?
+		// note: we can't panic here because this might be called in case of not-found situations
 		return ""
 	}
 	return calculateDigest(r.data)
@@ -205,6 +208,7 @@ type SecretKeyReference struct {
 }
 
 func (r *SecretKeyReference) load(ctx context.Context, clnt client.Client, namespace string, ignoreNotFound bool, fallbackKeys ...string) error {
+	// TODO: shouldn't we panic if already loaded?
 	secret := &corev1.Secret{}
 	if err := clnt.Get(ctx, apitypes.NamespacedName{Namespace: namespace, Name: r.Name}, secret); err != nil {
 		if apierrors.IsNotFound(err) {
@@ -238,7 +242,7 @@ func (r *SecretKeyReference) load(ctx context.Context, clnt client.Client, names
 
 func (r *SecretKeyReference) digest() string {
 	if !r.loaded {
-		// TODO: shouldn't we panic here?
+		// note: we can't panic here because this might be called in case of not-found situations
 		return ""
 	}
 	return sha256hex(r.value)
@@ -253,16 +257,31 @@ func (r *SecretKeyReference) Value() []byte {
 	return r.value
 }
 
+// Generic reference. All occurrences in the component's spec of types implementing this interface are automatically resolved
+// by the framework during reconcile by calling the Load() method. The digest returned by the Digest() method are
+// mangled into the component's digest.
+type Reference[T Component] interface {
+	// Load the referenced content. The framework calls this at most once. So it is ok if implementation
+	// errors out or even panics if invoked more than once. The implementation may skip loading in certain cases,
+	// for example if deletion is ongoing.
+	Load(ctx context.Context, clnt client.Client, component T) error
+	// Return a digest of the referenced content. This digest is incorporated into the component digest which
+	// is passed to generators and hooks (per context) and which decides when the processing timer is reset,
+	// and therefore influences the timeout behavior of the compoment. In case the reference is not loaded,
+	// the implementation should return the empty string.
+	Digest() string
+}
+
 func resolveReferences[T Component](ctx context.Context, clnt client.Client, component T) (string, error) {
 	digestData := make(map[string]any)
 	spec := getSpec(component)
 	digestData["generation"] = component.GetGeneration()
 	digestData["annotations"] = component.GetAnnotations()
+	// TODO: including spec into the digest is actually not required (since generation is included)
 	digestData["spec"] = spec
 	if err := walk.Walk(spec, func(x any, path []string, tag reflect.StructTag) error {
 		// note: this must() is ok because marshalling []string should always work
 		rawPath := must(json.Marshal(path))
-		// TODO: allow arbitrary loadable types (with an interface LoadableReference or similar)
 		switch r := x.(type) {
 		case *ConfigMapReference:
 			if r == nil {
@@ -308,6 +327,14 @@ func resolveReferences[T Component](ctx context.Context, clnt client.Client, com
 				return err
 			}
 			digestData["refs:"+string(rawPath)] = r.digest()
+		case Reference[T]:
+			if v := reflect.ValueOf(r); r == nil || v.Kind() == reflect.Pointer && v.IsNil() {
+				return nil
+			}
+			if err := r.Load(ctx, clnt, component); err != nil {
+				return err
+			}
+			digestData["refs:"+string(rawPath)] = r.Digest()
 		}
 		return nil
 	}); err != nil {

@@ -66,7 +66,7 @@ func (t *reconcileTarget[T]) Apply(ctx context.Context, component T, componentDi
 		return false, "", errors.Wrap(err, "error rendering manifests")
 	}
 
-	ok, err := t.reconciler.Apply(ctx, &status.Inventory, objects, namespace, ownerId, component.GetGeneration())
+	ok, err := t.reconciler.Apply(ctx, &status.Inventory, objects, namespace, ownerId, componentDigest)
 
 	return ok, calculateDigest(componentDigest, objects), err
 }

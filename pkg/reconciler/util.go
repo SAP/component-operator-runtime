@@ -58,7 +58,7 @@ func checkRange(x int, min int, max int) error {
 	return nil
 }
 
-func calculateObjectDigest(obj client.Object, revision int64, reconcilePolicy ReconcilePolicy) (string, error) {
+func calculateObjectDigest(obj client.Object, componentDigest string, reconcilePolicy ReconcilePolicy) (string, error) {
 	if reconcilePolicy == ReconcilePolicyOnce {
 		return "__once__", nil
 	}
@@ -79,7 +79,7 @@ func calculateObjectDigest(obj client.Object, revision int64, reconcilePolicy Re
 	digest := sha256hex(raw)
 
 	if reconcilePolicy == ReconcilePolicyOnObjectOrComponentChange {
-		digest = fmt.Sprintf("%s@%d", digest, revision)
+		digest = fmt.Sprintf("%s@%s", digest, componentDigest)
 	}
 
 	return digest, nil
