@@ -370,9 +370,6 @@ func (r *Reconciler[T]) Reconcile(ctx context.Context, req ctrl.Request) (result
 		if skipStatusUpdate {
 			return
 		}
-		if reflect.DeepEqual(status, savedStatus) && status.LastObservedAt != nil && status.LastObservedAt.After(now.Add(-10*time.Second)) {
-			return
-		}
 
 		// note: it's crucial to set the following timestamps late (otherwise the DeepEqual() check above would always be false);
 		// due to the above logic, if nothing changes in the status, the LastObservedAt timestamp might be updated with a delay
