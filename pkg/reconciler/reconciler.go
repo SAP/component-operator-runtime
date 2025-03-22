@@ -222,7 +222,7 @@ func NewReconciler(name string, clnt cluster.Client, options ReconcilerOptions) 
 // Objects which are instances of namespaced types will be placed into the namespace passed to Apply(), if they have no namespace defined in their manifest.
 // An update of an existing object will be performed if it is considered to be out of sync; that means:
 //   - the object's manifest has changed, and the effective reconcile policy is ReconcilePolicyOnObjectChange or ReconcilePolicyOnObjectOrComponentChange or
-//   - the specified component revision has changed and the effective reconcile policy is ReconcilePolicyOnObjectOrComponentChange or
+//   - the specified component has changed and the effective reconcile policy is ReconcilePolicyOnObjectOrComponentChange or
 //   - periodically after forceReapplyPeriod.
 //
 // The update itself will be done as follows:
@@ -242,10 +242,12 @@ func NewReconciler(name string, clnt cluster.Client, options ReconcilerOptions) 
 // This method will change the passed inventory (add or remove elements, change elements). If Apply() returns true, then all objects are successfully reconciled;
 // otherwise, if it returns false, the caller should re-call it periodically, until it returns true. In any case, the passed inventory should match the state of the
 // inventory after the previous invocation of Apply(); usually, the caller saves the inventory after calling Apply(), and loads it before calling Apply().
-// The namespace and ownerId arguments should not be changed across subsequent invocations of Apply(); the componentRevision should be incremented only.
+// The namespace and ownerId arguments should not be changed across subsequent invocations of Apply(); the supplied componentDigest is included into the
+// digest of dependent objects if the effective reconcile policy is ReconcilePolicyOnObjectOrComponentChange (such that in this case, a change of componentDigest
+// triggers an immediate reconciliation of all dependent objects).
 //
 // Also note: it is absolutely crucial that this method returns (true, nil) immediately (on the first call) if everything is already in the right state.
-func (r *Reconciler) Apply(ctx context.Context, inventory *[]*InventoryItem, objects []client.Object, namespace string, ownerId string, componentRevision int64) (bool, error) {
+func (r *Reconciler) Apply(ctx context.Context, inventory *[]*InventoryItem, objects []client.Object, namespace string, ownerId string, componentDigest string) (bool, error) {
 	var err error
 	log := log.FromContext(ctx)
 
@@ -417,7 +419,7 @@ func (r *Reconciler) Apply(ctx context.Context, inventory *[]*InventoryItem, obj
 		// calculate object digest
 		// note: if the effective reconcile policy of an object changes, it will always be reconciled at least one more time;
 		// this is in particular the case if the policy changes from or to ReconcilePolicyOnce.
-		digest, err := calculateObjectDigest(object, componentRevision, getReconcilePolicy(object))
+		digest, err := calculateObjectDigest(object, componentDigest, getReconcilePolicy(object))
 		if err != nil {
 			return false, errors.Wrapf(err, "error calculating digest for object %s", types.ObjectKeyToString(object))
 		}
