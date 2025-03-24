@@ -64,6 +64,8 @@ import (
 // TODO: we maybe should incorporate metadata.uid into the inventory to better detect (foreign) recreations of objects that were already managed by us
 // TODO: maybe it would be better to have a dedicated StateTimeout?
 
+// Note: ready conditions are always bound to one single state; that is, the same ready condition is never used by two or
+// more states.
 const (
 	ReadyConditionReasonNew                = "FirstSeen"
 	ReadyConditionReasonRetrying           = "Reytrying"
@@ -268,27 +270,18 @@ func (r *Reconciler[T]) Reconcile(ctx context.Context, req ctrl.Request) (result
 			r.backoff.Forget(req)
 		}
 
-		if !component.GetDeletionTimestamp().IsZero() {
-			// clear processing state
-			status.ProcessingDigest = ""
-			status.ProcessingSince = nil
-		} else if err != nil {
-			// preserve processing state until timeout, then clear it
-			if status.ProcessingSince != nil && now.Sub(status.ProcessingSince.Time) >= timeout {
-				status.ProcessingDigest = ""
-				status.ProcessingSince = nil
-			}
-		} else {
+		if component.GetDeletionTimestamp().IsZero() && err == nil {
 			switch status.State {
 			case StateReady:
 				// if getting here from processing state, then trigger one additional immediate reconcile iteration;
 				// that helps certain implementing operators to check once  more (in non-processing state) if something
 				// remains to be done
 				if status.ProcessingSince != nil {
-					result = ctrl.Result{Requeue: true}
+					result = ctrl.Result{RequeueAfter: 1 * time.Millisecond}
 				}
-				// clear processing state
-				status.ProcessingDigest = ""
+				// clear processing state; note that processing will be off until the next component digest change;
+				// if (for whatever reason) the state would again flip to Processing, or an error would occur, then
+				// this would not start a new processing timeout cycle
 				status.ProcessingSince = nil
 			case StateProcessing:
 				// preserve processing state but set state to error (with timeout reason) if timeout is over
@@ -371,11 +364,6 @@ func (r *Reconciler[T]) Reconcile(ctx context.Context, req ctrl.Request) (result
 			return
 		}
 
-		// note: it's crucial to set the following timestamps late (otherwise the DeepEqual() check above would always be false);
-		// due to the above logic, if nothing changes in the status, the LastObservedAt timestamp might be updated with a delay
-		// of 10s;  for the conditions' LastTransitionTime timestamps that's not the case; if they change, then the status
-		// obviously must have changed as well
-		// TODO: maybe we should remove this optimization, and always do the Update() call
 		status.LastObservedAt = &now
 		for i := 0; i < len(status.Conditions); i++ {
 			cond := &status.Conditions[i]
@@ -392,7 +380,7 @@ func (r *Reconciler[T]) Reconcile(ctx context.Context, req ctrl.Request) (result
 	// set a first status (and requeue, because the status update itself will not trigger another reconciliation because of the event filter set)
 	if status.ObservedGeneration <= 0 {
 		status.SetState(StatePending, ReadyConditionReasonNew, "First seen")
-		return ctrl.Result{Requeue: true}, nil
+		return ctrl.Result{RequeueAfter: 1 * time.Millisecond}, nil
 	}
 
 	// resolve references
@@ -401,14 +389,19 @@ func (r *Reconciler[T]) Reconcile(ctx context.Context, req ctrl.Request) (result
 		return ctrl.Result{}, errors.Wrap(err, "error resolving references")
 	}
 
-	// clear processing state and requeue with state Pending, if processing is active but processingDigest does not
-	// match componentDigest; this signals implementations of the Reference interface to perform a full (uncached)
-	// reload
-	if status.ProcessingSince != nil && status.ProcessingDigest != componentDigest {
-		status.ProcessingDigest = ""
+	if component.GetDeletionTimestamp().IsZero() {
+		if componentDigest != status.ProcessingDigest {
+			// start a new processing timeout cycle if the component digest changes; note that (other than status.ProcessingSince)
+			// status.ProcessingDigest is never cleared
+			status.ProcessingSince = &now
+			status.ProcessingDigest = componentDigest
+			r.backoff.Forget(req)
+			status.SetState(StateProcessing, ReadyConditionReasonRestarting, "Restarting processing due to component changes")
+			return ctrl.Result{RequeueAfter: 1 * time.Millisecond}, nil
+		}
+	} else {
 		status.ProcessingSince = nil
-		status.SetState(StatePending, ReadyConditionReasonRestarting, "Restarting processing due to component changes")
-		return ctrl.Result{Requeue: true}, nil
+		status.ProcessingDigest = ""
 	}
 
 	// run post-read hooks
@@ -453,7 +446,7 @@ func (r *Reconciler[T]) Reconcile(ctx context.Context, req ctrl.Request) (result
 			// this is necessary because the update call invalidates potential changes done to the component by the post-read
 			// hook above; this means, not to the object itself, but for example to loaded secrets or config maps;
 			// in the following round trip, the finalizer will already be there, and the update will not happen again
-			return ctrl.Result{Requeue: true}, nil
+			return ctrl.Result{RequeueAfter: 1 * time.Millisecond}, nil
 		}
 
 		log.V(2).Info("reconciling dependent resources")
@@ -480,11 +473,6 @@ func (r *Reconciler[T]) Reconcile(ctx context.Context, req ctrl.Request) (result
 			return ctrl.Result{RequeueAfter: requeueInterval}, nil
 		} else {
 			log.V(1).Info("not all dependent resources successfully reconciled")
-			if status.ProcessingDigest != componentDigest {
-				status.ProcessingDigest = componentDigest
-				status.ProcessingSince = &now
-				r.backoff.Forget(req)
-			}
 			if !reflect.DeepEqual(status.Inventory, savedStatus.Inventory) {
 				r.backoff.Forget(req)
 			}
