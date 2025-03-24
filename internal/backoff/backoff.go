@@ -22,8 +22,8 @@ type Backoff struct {
 func NewBackoff(maxDelay time.Duration) *Backoff {
 	return &Backoff{
 		activities: make(map[any]any),
-		// resulting per-item backoff is the maximum of a 100-times-200ms-then-maxDelay per-item limiter,
-		// and an overall 1-per-second-burst-20 bucket limiter;
+		// resulting per-item backoff is the maximum of a 120-times-100ms-then-maxDelay per-item limiter,
+		// and an overall 1-per-second-burst-50 bucket limiter;
 		// as a consequence, we have
 		// - a phase of 10 retries per second for the first 5 seconds
 		// - then a phase of 1 retry per second for the next 60 seconds
