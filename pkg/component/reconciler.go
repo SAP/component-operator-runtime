@@ -64,8 +64,6 @@ import (
 // TODO: we maybe should incorporate metadata.uid into the inventory to better detect (foreign) recreations of objects that were already managed by us
 // TODO: maybe it would be better to have a dedicated StateTimeout?
 
-// Note: ready conditions are always bound to one single state; that is, the same ready condition is never used by two or
-// more states.
 const (
 	ReadyConditionReasonNew                = "FirstSeen"
 	ReadyConditionReasonRetrying           = "Reytrying"
