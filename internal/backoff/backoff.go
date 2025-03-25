@@ -22,16 +22,15 @@ type Backoff struct {
 func NewBackoff(maxDelay time.Duration) *Backoff {
 	return &Backoff{
 		activities: make(map[any]any),
-		// resulting per-item backoff is the maximum of a 200-times-50ms-then-maxDelay per-item limiter,
-		// and an overall 5-per-second-burst-20 bucket limiter;
-		// as a consequence, we have up to
-		// - up to 20 almost immediate retries
-		// - then then a phase of 5 guaranteed retries per seconnd (could be more if burst capacity is refilled
-		//   because of the duration of the reconcile logic execution itself)
-		// - finally (after 200 iterations) slow retries at the rate given by maxDelay
+		// resulting per-item backoff is the maximum of a 120-times-100ms-then-maxDelay per-item limiter,
+		// and an overall 1-per-second-burst-50 bucket limiter;
+		// as a consequence, we have
+		// - a phase of 10 retries per second for the first 5 seconds
+		// - then a phase of 1 retry per second for the next 60 seconds
+		// - finally slow retries at the rate given by maxDelay
 		limiter: workqueue.NewMaxOfRateLimiter(
-			workqueue.NewItemFastSlowRateLimiter(50*time.Millisecond, maxDelay, 200),
-			&workqueue.BucketRateLimiter{Limiter: rate.NewLimiter(rate.Limit(5), 20)},
+			workqueue.NewItemFastSlowRateLimiter(100*time.Millisecond, maxDelay, 120),
+			&workqueue.BucketRateLimiter{Limiter: rate.NewLimiter(rate.Limit(1), 50)},
 		),
 	}
 }

@@ -117,7 +117,7 @@ func newApplyCmd() *cobra.Command {
 
 			for {
 				release.State = component.StateProcessing
-				ok, err := reconciler.Apply(context.TODO(), &release.Inventory, objects, namespace, ownerId, release.Revision)
+				ok, err := reconciler.Apply(context.TODO(), &release.Inventory, objects, namespace, ownerId, fmt.Sprintf("%d", release.Revision))
 				if err != nil {
 					if !isEphmeralError(err) || errCount >= maxErrCount {
 						return err

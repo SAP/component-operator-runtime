@@ -56,7 +56,7 @@ const (
 	// Reconcile the dependent object if its manifest, as produced by the generator, changes.
 	ReconcilePolicyOnObjectChange ReconcilePolicy = "OnObjectChange"
 	// Reconcile the dependent object if its manifest, as produced by the generator, changes, or if the owning
-	// component changes (identified by a change of its metadata.generation).
+	// component changes (identified by a change of its digest, including references).
 	ReconcilePolicyOnObjectOrComponentChange ReconcilePolicy = "OnObjectOrComponentChange"
 	// Reconcile the dependent object only once; afterwards it will never be touched again by the reconciler.
 	ReconcilePolicyOnce ReconcilePolicy = "Once"
