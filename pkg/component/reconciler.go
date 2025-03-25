@@ -317,16 +317,12 @@ func (r *Reconciler[T]) Reconcile(ctx context.Context, req ctrl.Request) (result
 						status.SetState(StatePending, ReadyConditionReasonRetrying, capitalize(retriableError.Error()))
 					}
 				} else {
-					if haveTimeout {
-						status.SetState(StateDeletionPending, ReadyConditionReasonTimeout, capitalize(retriableError.Error()))
-					} else {
-						status.SetState(StateDeletionPending, ReadyConditionReasonDeletionRetrying, capitalize(retriableError.Error()))
-					}
+					status.SetState(StateDeletionPending, ReadyConditionReasonDeletionRetrying, capitalize(retriableError.Error()))
 				}
 				result = ctrl.Result{RequeueAfter: *retryAfter}
 				err = nil
 			} else {
-				if haveTimeout {
+				if component.GetDeletionTimestamp().IsZero() && haveTimeout {
 					status.SetState(StateError, ReadyConditionReasonTimeout, err.Error())
 				} else {
 					status.SetState(StateError, ReadyConditionReasonError, err.Error())

@@ -258,8 +258,8 @@ func (r *SecretKeyReference) Value() []byte {
 }
 
 // Generic reference. All occurrences in the component's spec of types implementing this interface are automatically resolved
-// by the framework during reconcile by calling the Load() method. The digests returned by the Digest() method are
-// mangled into the component's digest.
+// by the framework during reconcile by calling the Load() method. The digests returned by the Digest() methods are
+// incorporated into the component's digest.
 type Reference[T Component] interface {
 	// Load the referenced content. The framework calls this at most once. So it is ok if implementation
 	// errors out or even panics if invoked more than once. The implementation may skip loading in certain cases,
