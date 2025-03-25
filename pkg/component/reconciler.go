@@ -270,6 +270,8 @@ func (r *Reconciler[T]) Reconcile(ctx context.Context, req ctrl.Request) (result
 			r.backoff.Forget(req)
 		}
 
+		haveTimeout := status.ProcessingSince != nil && now.Sub(status.ProcessingSince.Time) >= timeout
+
 		if component.GetDeletionTimestamp().IsZero() && err == nil {
 			switch status.State {
 			case StateReady:
@@ -285,11 +287,11 @@ func (r *Reconciler[T]) Reconcile(ctx context.Context, req ctrl.Request) (result
 				status.ProcessingSince = nil
 			case StateProcessing:
 				// preserve processing state but set state to error (with timeout reason) if timeout is over
-				if status.ProcessingSince != nil && now.Sub(status.ProcessingSince.Time) >= timeout {
+				if haveTimeout {
 					status.SetState(StateError, ReadyConditionReasonTimeout, "Reconcilation of dependent resources timed out")
 				}
 			case StatePending, StateError:
-				// preserve processing state
+				// nothing to be done
 			case StateDeletionPending, StateDeleting:
 				// because these states can only occur if deletionTimestamp is not zero
 				panic("this cannot happen")
@@ -309,14 +311,26 @@ func (r *Reconciler[T]) Reconcile(ctx context.Context, req ctrl.Request) (result
 				}
 				// TODO: allow RetriableError to provide custom reason and message
 				if component.GetDeletionTimestamp().IsZero() {
-					status.SetState(StatePending, ReadyConditionReasonRetrying, capitalize(retriableError.Error()))
+					if haveTimeout {
+						status.SetState(StatePending, ReadyConditionReasonTimeout, capitalize(retriableError.Error()))
+					} else {
+						status.SetState(StatePending, ReadyConditionReasonRetrying, capitalize(retriableError.Error()))
+					}
 				} else {
-					status.SetState(StateDeletionPending, ReadyConditionReasonDeletionRetrying, capitalize(retriableError.Error()))
+					if haveTimeout {
+						status.SetState(StateDeletionPending, ReadyConditionReasonTimeout, capitalize(retriableError.Error()))
+					} else {
+						status.SetState(StateDeletionPending, ReadyConditionReasonDeletionRetrying, capitalize(retriableError.Error()))
+					}
 				}
 				result = ctrl.Result{RequeueAfter: *retryAfter}
 				err = nil
 			} else {
-				status.SetState(StateError, ReadyConditionReasonError, err.Error())
+				if haveTimeout {
+					status.SetState(StateError, ReadyConditionReasonTimeout, err.Error())
+				} else {
+					status.SetState(StateError, ReadyConditionReasonError, err.Error())
+				}
 			}
 		}
 
