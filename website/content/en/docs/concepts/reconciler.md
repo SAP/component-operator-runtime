@@ -185,8 +185,12 @@ interface.
 
 ## Tuning the timeout behavior
 
-If the dependent objects of a component do not reach a ready state after a certain time, the component state will switch from `Processing` to `Error`.
-This timeout restarts counting whenever something changed in the component, or in the manifests of the dependent objects, and by default has the value
+If the dependent objects of a component do not reach a ready state after a certain period, the component enters a timeout state. That means:
+- if the component was in `Processing` state, then the state switches to `Error`, and the reason of the `Ready` condition is set to `Timeout`
+- if the reconciler encounters a retriable error, then the state is `Pending`, and the reason of the `Ready` condition is set to `Timeout`
+- if the reconciler encounters a non-retriable error, then the state is `Error`, and the reason of the `Ready` condition is set to `Timeout`.
+
+This timeout restarts counting down whenever something changed in the component or its references, and by default has the value
 of the effective requeue interval, which in turn defaults to 10 minutes.
 The timeout may be overridden by the component by implementing the 
 
