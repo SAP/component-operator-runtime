@@ -271,6 +271,11 @@ func (r *Reconciler[T]) Reconcile(ctx context.Context, req ctrl.Request) (result
 		haveTimeout := status.ProcessingSince != nil && now.Sub(status.ProcessingSince.Time) >= timeout
 
 		if component.GetDeletionTimestamp().IsZero() && err == nil {
+			// note: if getting here, then state was set before to a non-Pending, non-Error state in almost
+			// all cases; the only exceptions are:
+			// - at the beginning, the state is set to Pending with condition FirstSeen
+			// - when the finalizer is set, the current state is preserved, and a requeue is triggered
+			// - at the end, after the finalizer is cleared, the state is preserved as well
 			switch status.State {
 			case StateReady:
 				// if getting here from processing state, then trigger one additional immediate reconcile iteration;
@@ -398,9 +403,12 @@ func (r *Reconciler[T]) Reconcile(ctx context.Context, req ctrl.Request) (result
 	}
 
 	if component.GetDeletionTimestamp().IsZero() {
-		if componentDigest != status.ProcessingDigest {
-			// start a new processing timeout cycle if the component digest changes; note that (other than status.ProcessingSince)
-			// status.ProcessingDigest is never cleared
+		// start a new processing timeout cycle if the component digest changes; note that (other than status.ProcessingSince)
+		// status.ProcessingDigest is never cleared
+		if status.ProcessingDigest == "" {
+			status.ProcessingSince = &now
+			status.ProcessingDigest = componentDigest
+		} else if componentDigest != status.ProcessingDigest {
 			status.ProcessingSince = &now
 			status.ProcessingDigest = componentDigest
 			r.backoff.Forget(req)
