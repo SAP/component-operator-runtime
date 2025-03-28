@@ -275,7 +275,6 @@ func (r *Reconciler[T]) Reconcile(ctx context.Context, req ctrl.Request) (result
 			// all cases; the only exceptions are:
 			// - at the beginning, the state is set to Pending with condition FirstSeen
 			// - when the finalizer is set, the current state is preserved, and a requeue is triggered
-			// - at the end, after the finalizer is cleared, the state is preserved as well
 			switch status.State {
 			case StateReady:
 				// if getting here from processing state, then trigger one additional immediate reconcile iteration;
@@ -294,7 +293,7 @@ func (r *Reconciler[T]) Reconcile(ctx context.Context, req ctrl.Request) (result
 					status.SetState(StateError, ReadyConditionReasonTimeout, "Reconcilation of dependent resources timed out")
 				}
 			case StatePending, StateError:
-				// nothing to be done
+				// nothing to be done (see the remark before the switch above)
 			case StateDeletionPending, StateDeleting:
 				// because these states can only occur if deletionTimestamp is not zero
 				panic("this cannot happen")
