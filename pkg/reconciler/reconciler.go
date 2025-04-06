@@ -229,7 +229,7 @@ func NewReconciler(name string, clnt cluster.Client, options ReconcilerOptions) 
 //   - if the effective update policy is UpdatePolicyReplace, a http PUT request will be sent to the Kubernetes API
 //   - if the effective update policy is UpdatePolicySsaMerge or UpdatePolicySsaOverride, a server-side-apply http PATCH request will be sent;
 //     while UpdatePolicySsaMerge just implements the Kubernetes standard behavior (leaving foreign non-conflicting fields untouched), UpdatePolicySsaOverride
-//     will re-claim (and therefore potentially drop) fields owned by certain field managers, such as kubectl and helm
+//     will re-claim (and therefore potentially drop) fields owned by certain field managers, such as kubectl
 //   - if the effective update policy is UpdatePolicyRecreate, the object will be deleted and recreated.
 //
 // Objects will be applied and deleted in waves, according to their apply/delete order. Objects which specify a purge order will be deleted from the cluster at the
@@ -1104,7 +1104,7 @@ func (r *Reconciler) createObject(ctx context.Context, object client.Object, cre
 // if updatePolicy equals UpdatePolicyReplace, an update (put) will be performed; finalizers of existingObject will be copied;
 // if updatePolicy equals UpdatePolicySsaMerge, a conflict-forcing server-side-apply patch will be performed;
 // if updatePolicy equals UpdatePolicySsaOverride, then in addition, a preparation patch request will be performed before doing the conflict-forcing
-// server-side-apply patch; this preparation patch will adjust managedFields, reclaiming fields/values previously owned by kubectl or helm
+// server-side-apply patch; this preparation patch will adjust managedFields, reclaiming fields/values previously owned by kubectl
 func (r *Reconciler) updateObject(ctx context.Context, object client.Object, existingObject *unstructured.Unstructured, updatedObject any, updatePolicy UpdatePolicy) (err error) {
 	if counter := r.metrics.UpdateCounter; counter != nil {
 		counter.Inc()
@@ -1152,7 +1152,7 @@ func (r *Reconciler) updateObject(ctx context.Context, object client.Object, exi
 		var replacedFieldManagerPrefixes []string
 		if updatePolicy == UpdatePolicySsaOverride {
 			// TODO: add ways (per reconciler, per component, per object) to configure the list of field manager (prefixes) which are reclaimed
-			replacedFieldManagerPrefixes = []string{"kubectl", "helm"}
+			replacedFieldManagerPrefixes = []string{"kubectl"}
 		}
 		// note: even if replacedFieldManagerPrefixes is empty, replaceFieldManager() will reclaim fields created by us through an Update operation,
 		// that is through a create or update call; this may be necessary, if the update policy for the object changed (globally or per-object)
