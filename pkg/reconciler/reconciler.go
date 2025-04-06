@@ -1056,7 +1056,7 @@ func (r *Reconciler) readObject(ctx context.Context, key types.ObjectKey) (*unst
 
 // create object; object may be a concrete type or unstructured; in any case, type meta must be populated;
 // createdObject is optional; if non-nil, it will be populated with the created object; the same variable can be supplied as object and createObject;
-// if object is a crd or an api services, the reconciler's name will be added as finalizer
+// if object is a crd or an api services, the reconciler's finalizer will be added
 func (r *Reconciler) createObject(ctx context.Context, object client.Object, createdObject any, updatePolicy UpdatePolicy) (err error) {
 	if counter := r.metrics.CreateCounter; counter != nil {
 		counter.Inc()
@@ -1098,7 +1098,8 @@ func (r *Reconciler) createObject(ctx context.Context, object client.Object, cre
 // update object; object may be a concrete type or unstructured; in any case, type meta must be populated;
 // existingObject is required, and should represent the last-read state of the object; it must not have a deletionTimestamp set;
 // updatedObject is optional; if non-nil, it will be populated with the updated object; the same variable can be supplied as object and updatedObject;
-// if object is a crd or an api services, the reconciler's name will be added as finalizer;
+// if object is a crd or an api services, the reconciler's finalizer will be added;
+// in addition, if the existing object has our finalizer already, then it will be preserved;
 // object may have a resourceVersion; if it does not, the resourceVersion of existingObject will be used for conflict checks during put/patch;
 // if updatePolicy equals UpdatePolicyReplace, an update (put) will be performed; finalizers of existingObject will be copied;
 // if updatePolicy equals UpdatePolicySsaMerge, a conflict-forcing server-side-apply patch will be performed;
@@ -1133,7 +1134,7 @@ func (r *Reconciler) updateObject(ctx context.Context, object client.Object, exi
 		return err
 	}
 	object = &unstructured.Unstructured{Object: data}
-	if isCrd(object) || isApiService(object) {
+	if isCrd(object) || isApiService(object) || slices.Contains(existingObject.GetFinalizers(), r.finalizer) {
 		controllerutil.AddFinalizer(object, r.finalizer)
 	}
 	// it is allowed that target object contains a resource version; otherwise, we set the resource version to the one of the existing object,
@@ -1183,6 +1184,10 @@ func (r *Reconciler) updateObject(ctx context.Context, object client.Object, exi
 		}
 		return r.client.Patch(ctx, object, client.Apply, client.FieldOwner(r.fieldOwner), client.ForceOwnership)
 	default:
+		// add finalizers of existing object; this is maybe not fully correct, but it should be what is intended in most cases;
+		// under the assumption, that the submitted target state of the object does not contain any finalizers,
+		// the assumption is correct; and this is reasonable, because in the majority of cases, finalizers are added
+		// by the responsible controller only; respectively, they are at least not intended to be removed by the client
 		for _, finalizer := range existingObject.GetFinalizers() {
 			controllerutil.AddFinalizer(object, finalizer)
 		}
