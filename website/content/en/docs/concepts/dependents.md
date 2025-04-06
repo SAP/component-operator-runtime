@@ -31,7 +31,7 @@ To support such cases, the `Generator` implementation can set the following anno
   - `default` (deprecated): equivalent to the annotation being unset (which means that the reconciler default will be used)
   - `replace` (which is the default): a regular update (i.e. PUT) call will be made to the Kubernetes API server
   - `ssa-merge`: use server side apply to update existing dependents
-  - `ssa-override`: use server side apply to update existing dependents and, in addition, reclaim fields owned by certain field owners, such as kubectl or Helm 
+  - `ssa-override`: use server side apply to update existing dependents and, in addition, reclaim fields owned by certain field owners, such as kubectl 
   - `recreate`: if the object would be updated, it will be deleted and recreated instead
 - `mycomponent-operator.mydomain.io/delete-policy`: defines what happens to the object when the compoment is deleted; can be one of:
   - `default` (deprecated): equivalent to the annotation being unset (which means that the reconciler default will be used)
