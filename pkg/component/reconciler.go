@@ -280,7 +280,8 @@ func (r *Reconciler[T]) Reconcile(ctx context.Context, req ctrl.Request) (result
 			case StateReady:
 				// if getting here from processing state, then trigger one additional immediate reconcile iteration;
 				// that helps certain implementing operators to check once  more (in non-processing state) if something
-				// remains to be done
+				// remains to be done; note: it may happen (if the apply runs successfully through on the first iteration)
+				// that status.processingSince is never set, and this additional trigger does not happen
 				if status.ProcessingSince != nil {
 					result = ctrl.Result{RequeueAfter: 1 * time.Millisecond}
 				}
