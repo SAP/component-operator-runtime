@@ -63,6 +63,7 @@ import (
 // only parts of an object are managed: other parts/fiels might be managed by other actors (or even other components); how to handle such cases?
 // TODO: we maybe should incorporate metadata.uid into the inventory to better detect (foreign) recreations of objects that were already managed by us
 // TODO: maybe it would be better to have a dedicated StateTimeout?
+// TODO: when calling backoff.Next() we could use something more specific than 'req' as key (maybe req+componentDigest or req+processingSince)
 
 const (
 	ReadyConditionReasonNew                = "FirstSeen"
@@ -346,8 +347,7 @@ func (r *Reconciler[T]) Reconcile(ctx context.Context, req ctrl.Request) (result
 			}
 		}
 
-		// TODO: should we move this behind the DeepEqual check below to reduce noise?
-		// also note: it seems that no events will be written if the component's namespace is in deletion
+		// TODO: it seems that no events will be written if the component's namespace is in deletion
 		// TODO: do not use GetState(); but accessing the condition directly is not safe (see caveat remark on the
 		// getCondition() and getOrAddCondition() methods)
 		state, reason, message := status.GetState()
@@ -405,10 +405,10 @@ func (r *Reconciler[T]) Reconcile(ctx context.Context, req ctrl.Request) (result
 		// start a new processing timeout cycle if the component digest changes; note that (other than status.ProcessingSince)
 		// status.ProcessingDigest is never cleared
 		if status.ProcessingDigest == "" {
-			status.ProcessingSince = &now
+			status.ProcessingSince = nil
 			status.ProcessingDigest = componentDigest
 		} else if componentDigest != status.ProcessingDigest {
-			status.ProcessingSince = &now
+			status.ProcessingSince = nil
 			status.ProcessingDigest = componentDigest
 			r.backoff.Forget(req)
 			status.SetState(StateProcessing, ReadyConditionReasonRestarting, "Restarting processing due to component changes")
@@ -490,6 +490,9 @@ func (r *Reconciler[T]) Reconcile(ctx context.Context, req ctrl.Request) (result
 			log.V(1).Info("not all dependent resources successfully reconciled")
 			if !reflect.DeepEqual(status.Inventory, savedStatus.Inventory) {
 				r.backoff.Forget(req)
+			}
+			if status.ProcessingSince == nil {
+				status.ProcessingSince = &now
 			}
 			status.SetState(StateProcessing, ReadyConditionReasonProcessing, "Reconcilation of dependent resources triggered; waiting until all dependent resources are ready")
 			return ctrl.Result{RequeueAfter: r.backoff.Next(req, ReadyConditionReasonProcessing)}, nil
