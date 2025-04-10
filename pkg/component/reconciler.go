@@ -470,13 +470,6 @@ func (r *Reconciler[T]) Reconcile(ctx context.Context, req ctrl.Request) (result
 				return ctrl.Result{}, errors.Wrapf(err, "error running pre-reconcile hook (%d)", hookOrder)
 			}
 		}
-
-		// set start processing timeout countdown; note, it is important to do this after pre-reconcile hooks (because
-		// that might produce retriable errors), and before applying
-		if status.ProcessingSince == nil {
-			status.ProcessingSince = &now
-		}
-
 		ok, err := target.Apply(ctx, component, componentDigest)
 		if err != nil {
 			log.V(1).Info("error while reconciling dependent resources")
@@ -497,6 +490,9 @@ func (r *Reconciler[T]) Reconcile(ctx context.Context, req ctrl.Request) (result
 			log.V(1).Info("not all dependent resources successfully reconciled")
 			if !reflect.DeepEqual(status.Inventory, savedStatus.Inventory) {
 				r.backoff.Forget(req)
+			}
+			if status.ProcessingSince == nil {
+				status.ProcessingSince = &now
 			}
 			status.SetState(StateProcessing, ReadyConditionReasonProcessing, "Reconcilation of dependent resources triggered; waiting until all dependent resources are ready")
 			return ctrl.Result{RequeueAfter: r.backoff.Next(req, ReadyConditionReasonProcessing)}, nil
