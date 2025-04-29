@@ -31,6 +31,7 @@ import (
 )
 
 // TODO: give errors more context
+// TODO: double-check symlink handling
 
 type RenderContext struct {
 	LocalClient     client.Client
@@ -48,6 +49,7 @@ type Chart struct {
 	crds      [][]byte
 	t0        *template.Template
 	templates []string
+	files     Files
 }
 
 func ParseChart(fsys fs.FS, chartPath string, parent *Chart) (*Chart, error) {
@@ -71,6 +73,8 @@ func ParseChart(fsys fs.FS, chartPath string, parent *Chart) (*Chart, error) {
 	}
 	chartPath = filepath.Clean(chartPath)
 
+	// TODO: we should filter out according to .helmignore
+
 	chartRaw, err := fs.ReadFile(fsys, filepath.Clean(chartPath+"/Chart.yaml"))
 	if err != nil {
 		return nil, err
@@ -87,7 +91,7 @@ func ParseChart(fsys fs.FS, chartPath string, parent *Chart) (*Chart, error) {
 	}
 
 	if chart.metadata.Type == ChartTypeApplication {
-		crds, err := fileutils.Find(fsys, filepath.Clean(chartPath+"/crds"), "*.yaml", fileutils.FileTypeRegular, 0)
+		crds, err := fileutils.Find(fsys, filepath.Clean(chartPath+"/crds"), "*.yaml", fileutils.FileTypeRegular|fileutils.FileTypeSymlink, 0)
 		if err != nil {
 			return nil, err
 		}
@@ -99,7 +103,7 @@ func ParseChart(fsys fs.FS, chartPath string, parent *Chart) (*Chart, error) {
 			chart.crds = append(chart.crds, raw)
 		}
 
-		manifests, err := fileutils.Find(fsys, filepath.Clean(chartPath+"/templates"), "[^_]*.yaml", fileutils.FileTypeRegular, 0)
+		manifests, err := fileutils.Find(fsys, filepath.Clean(chartPath+"/templates"), "[^_]*.yaml", fileutils.FileTypeRegular|fileutils.FileTypeSymlink, 0)
 		if err != nil {
 			return nil, err
 		}
@@ -110,7 +114,7 @@ func ParseChart(fsys fs.FS, chartPath string, parent *Chart) (*Chart, error) {
 		}
 	}
 
-	includes, err := fileutils.Find(fsys, filepath.Clean(chartPath+"/templates"), "_*", fileutils.FileTypeRegular, 0)
+	includes, err := fileutils.Find(fsys, filepath.Clean(chartPath+"/templates"), "_*", fileutils.FileTypeRegular|fileutils.FileTypeSymlink, 0)
 	if err != nil {
 		return nil, err
 	}
@@ -118,6 +122,19 @@ func ParseChart(fsys fs.FS, chartPath string, parent *Chart) (*Chart, error) {
 		if err := chart.parseTemplate(fsys, include, true); err != nil {
 			return nil, err
 		}
+	}
+
+	chart.files = Files{}
+	files, err := fileutils.Find(fsys, "", "", fileutils.FileTypeRegular|fileutils.FileTypeSymlink, 0)
+	if err != nil {
+		return nil, err
+	}
+	for _, file := range files {
+		raw, err := fs.ReadFile(fsys, file)
+		if err != nil {
+			return nil, err
+		}
+		chart.files.add(file, raw)
 	}
 
 	valuesRaw, err := fs.ReadFile(fsys, filepath.Clean(chartPath+"/values.yaml"))
@@ -246,6 +263,7 @@ func (c *Chart) render(name string, t0 *template.Template, capabilities *Capabil
 	data["Capabilities"] = capabilities
 	data["Release"] = release
 	data["Values"] = values
+	data["Files"] = c.files
 
 	for _, dep := range c.metadata.Dependencies {
 		enabled := true

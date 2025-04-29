@@ -65,6 +65,7 @@ func fileTypeFromMode(mode fs.FileMode) uint {
 // in this file; passing any other values will lead to a panic; supplying fileType as zero is the same as passing fileTypeAny.
 // The parameter maxDepth can be any integer between 0 and 10000 (where 0 is interpreted as 10000).
 // The returned paths will be relative (to the provided fsys), and filepath.Clean() will be run on each entry.
+// Note that Find() does not follow symlinks.
 func Find(fsys fs.FS, dir string, namePattern string, fileType uint, maxDepth uint) ([]string, error) {
 	if dir == "" {
 		dir = "."
