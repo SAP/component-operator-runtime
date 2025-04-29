@@ -70,6 +70,13 @@ func getArray(data map[string]any, key string) ([]any, bool, bool) {
 }
 */
 
+func must[T any](x T, err error) T {
+	if err != nil {
+		panic(err)
+	}
+	return x
+}
+
 func getMap(data map[string]any, key string) (map[string]any, bool, bool) {
 	if v, ok := data[key]; ok {
 		if v, ok := v.(map[string]any); ok {

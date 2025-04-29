@@ -18,6 +18,8 @@ import (
 	"text/template"
 
 	"github.com/Masterminds/sprig/v3"
+	"github.com/gobwas/glob"
+	"github.com/sap/go-generics/maps"
 	"github.com/sap/go-generics/slices"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -39,6 +41,7 @@ import (
 )
 
 // TODO: carve out logic into an internal Kustomization type (similar to the helm Chart case)
+// TODO: double-check symlink handling
 
 const (
 	componentConfigFilename = ".component-config.yaml"
@@ -58,9 +61,10 @@ type KustomizeGeneratorOptions struct {
 // Note: KustomizeGenerator's Generate() method expects local client, client and component to be set in the passed context;
 // see: Context.WithLocalClient(), Context.WithClient() and Context.WithComponent() in package pkg/component.
 type KustomizeGenerator struct {
-	kustomizer *krusty.Kustomizer
-	files      map[string][]byte
-	templates  map[string]*template.Template
+	kustomizer   *krusty.Kustomizer
+	files        map[string][]byte
+	nonTemplates map[string][]byte
+	templates    map[string]*template.Template
 }
 
 var _ manifests.Generator = &KustomizeGenerator{}
@@ -71,7 +75,8 @@ var _ manifests.Generator = &KustomizeGenerator{}
 // The client parameter is deprecated (ignored) and will be removed in a future release.
 // If fsys is nil, the local operating system filesystem will be used, and kustomizationPath can be an absolute or relative path (in the latter case it will be considered
 // relative to the current working directory). If fsys is non-nil, then kustomizationPath should be a relative path; if an absolute path is supplied, it will be turned
-// An empty kustomizationPath will be treated like ".".
+// into a relative path by stripping the leading slash. If fsys is specified as a real filesystem, it is recommended to use os.Root.FS() instead of os.DirFS(), in order
+// to fence symbolic links. An empty kustomizationPath will be treated like ".".
 func NewKustomizeGenerator(fsys fs.FS, kustomizationPath string, _ client.Client, options KustomizeGeneratorOptions) (*KustomizeGenerator, error) {
 	if options.TemplateSuffix == nil {
 		options.TemplateSuffix = ref("")
@@ -84,8 +89,9 @@ func NewKustomizeGenerator(fsys fs.FS, kustomizationPath string, _ client.Client
 	}
 
 	g := KustomizeGenerator{
-		files:     make(map[string][]byte),
-		templates: make(map[string]*template.Template),
+		files:        make(map[string][]byte),
+		nonTemplates: make(map[string][]byte),
+		templates:    make(map[string]*template.Template),
 	}
 
 	if fsys == nil {
@@ -116,7 +122,7 @@ func NewKustomizeGenerator(fsys fs.FS, kustomizationPath string, _ client.Client
 	// (which is probably a common usecase); however it has to be clarified how to handle template scopes;
 	// for example it might be desired that subtrees with a kustomization.yaml file are processed in an own
 	// template context
-	files, err := fileutils.Find(fsys, kustomizationPath, "*", fileutils.FileTypeRegular, 0)
+	files, err := fileutils.Find(fsys, kustomizationPath, "*", fileutils.FileTypeRegular|fileutils.FileTypeSymlink, 0)
 	if err != nil {
 		return nil, err
 	}
@@ -128,6 +134,7 @@ func NewKustomizeGenerator(fsys fs.FS, kustomizationPath string, _ client.Client
 		// Note: we use relative paths as templates names to make it easier to copy the kustomization
 		// content into the ephemeral in-memory filesystem used by krusty in Generate()
 		name, err := filepath.Rel(kustomizationPath, file)
+		g.files[name] = raw
 		if err != nil {
 			// TODO: is it ok to panic here in case of error ?
 			panic("this cannot happen")
@@ -142,7 +149,7 @@ func NewKustomizeGenerator(fsys fs.FS, kustomizationPath string, _ client.Client
 					Funcs(templatex.FuncMapForTemplate(nil)).
 					Funcs(templatex.FuncMapForLocalClient(nil)).
 					Funcs(templatex.FuncMapForClient(nil)).
-					Funcs(funcMapForGenerateContext(nil, nil, nil, "", ""))
+					Funcs(funcMapForGenerateContext(nil, nil, nil, nil, "", ""))
 			} else {
 				t = t.New(name)
 			}
@@ -151,11 +158,11 @@ func NewKustomizeGenerator(fsys fs.FS, kustomizationPath string, _ client.Client
 			}
 			g.templates[strings.TrimSuffix(name, *options.TemplateSuffix)] = t
 		} else {
-			g.files[name] = raw
+			g.nonTemplates[name] = raw
 		}
 	}
 
-	// TODO: check that g.files and g.templates are disjoint
+	// TODO: check that g.nonTemplates and g.templates are disjoint
 
 	return &g, nil
 }
@@ -216,7 +223,7 @@ func (g *KustomizeGenerator) Generate(ctx context.Context, namespace string, nam
 	data := parameters.ToUnstructured()
 	fsys := kustfsys.MakeFsInMemory()
 
-	for n, f := range g.files {
+	for n, f := range g.nonTemplates {
 		if err := fsys.WriteFile(n, f); err != nil {
 			return nil, err
 		}
@@ -233,7 +240,7 @@ func (g *KustomizeGenerator) Generate(ctx context.Context, namespace string, nam
 				Funcs(templatex.FuncMapForTemplate(t0)).
 				Funcs(templatex.FuncMapForLocalClient(localClient)).
 				Funcs(templatex.FuncMapForClient(clnt)).
-				Funcs(funcMapForGenerateContext(serverVersion, serverGroupsWithResources, component, namespace, name))
+				Funcs(funcMapForGenerateContext(g.files, serverVersion, serverGroupsWithResources, component, namespace, name))
 		}
 		var buf bytes.Buffer
 		// TODO: templates (accidentally or intentionally) could modify data, or even some of the objects supplied through builtin functions;
@@ -292,15 +299,45 @@ func (g *KustomizeGenerator) Generate(ctx context.Context, namespace string, nam
 	return objects, nil
 }
 
-func funcMapForGenerateContext(serverInfo *version.Info, serverGroupsWithResources []*metav1.APIResourceList, component component.Component, namespace string, name string) template.FuncMap {
+func funcMapForGenerateContext(files map[string][]byte, serverInfo *version.Info, serverGroupsWithResources []*metav1.APIResourceList, component component.Component, namespace string, name string) template.FuncMap {
 	return template.FuncMap{
 		// TODO: maybe it would it be better to convert component to unstructured;
 		// then calling methods would no longer be possible, and attributes would be in lowercase
+		"listFiles":         makeFuncListFiles(files),
+		"existsFile":        makeFuncExistsFile(files),
+		"readFile":          makeFuncReadFile(files),
 		"component":         makeFuncData(component),
 		"namespace":         func() string { return namespace },
 		"name":              func() string { return name },
 		"kubernetesVersion": func() *version.Info { return serverInfo },
 		"apiResources":      func() []*metav1.APIResourceList { return serverGroupsWithResources },
+	}
+}
+
+func makeFuncListFiles(files map[string][]byte) func(pattern string) ([]string, error) {
+	return func(pattern string) ([]string, error) {
+		g, err := glob.Compile(pattern, '/')
+		if err != nil {
+			return nil, err
+		}
+		return slices.Select(maps.Keys(files), func(path string) bool { return g.Match(path) }), nil
+	}
+}
+
+func makeFuncExistsFile(files map[string][]byte) func(path string) bool {
+	return func(path string) bool {
+		_, ok := files[path]
+		return ok
+	}
+}
+
+func makeFuncReadFile(files map[string][]byte) func(path string) ([]byte, error) {
+	return func(path string) ([]byte, error) {
+		data, ok := files[path]
+		if !ok {
+			return nil, fs.ErrNotExist
+		}
+		return data, nil
 	}
 }
 
@@ -322,12 +359,14 @@ func generateKustomization(fsys kustfsys.FileSystem) ([]byte, error) {
 		if err != nil {
 			return err
 		}
+		// TODO: IsDir() is false if it is a symlink; is that wanted to be this way?
 		if !info.IsDir() && !strings.HasPrefix(filepath.Base(path), ".") && (strings.HasSuffix(path, ".yaml") || strings.HasSuffix(path, ".yml")) {
 			resources = append(resources, path)
 		}
 		return nil
 	}
 
+	// TODO: does this work correctly with symlinks?
 	if err := fsys.Walk(".", f); err != nil {
 		return nil, err
 	}

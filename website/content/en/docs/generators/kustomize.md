@@ -13,7 +13,9 @@ In addition, all (or selected; see below) files in the kustomization directory c
 That means, they will be considered as a common template group (where all templates are associated with each other),
 and the same template function set that is available on Helm can be used; so, all the [sprig](http://masterminds.github.io/sprig) functions, and custom functions such as `include`, `tpl`, `lookup` can be used. In addition:
 - parameterless functions `namespace` and `name` are defined, which return the corresponding arguments passed to `Generate()`
-- a function `kubernetesVersion` is available, which returns the version information of the target cluster, as a [version.Info](https://pkg.go.dev/k8s.io/apimachinery/pkg/version#Info) structure.
+- a function `kubernetesVersion` is available, which returns the version information of the target cluster, as a [version.Info](https://pkg.go.dev/k8s.io/apimachinery/pkg/version#Info) structure
+- files from the kustomization path can be retrieved using the template function `readFile`; there are auxiliary functions `existsFile` and `listFiles`,
+  the latter one expecting a pattern as supported by the [gobwas/glob](https://pkg.go.dev/github.com/gobwas/glob) library.
 
 In the generation step, first, all the go templates will be rendered, and the result of this pre-step will be passed to kustomize.
 

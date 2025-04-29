@@ -327,9 +327,9 @@ func (r *Reconciler[T]) Reconcile(ctx context.Context, req ctrl.Request) (result
 				err = nil
 			} else {
 				if component.GetDeletionTimestamp().IsZero() && haveTimeout {
-					status.SetState(StateError, ReadyConditionReasonTimeout, err.Error())
+					status.SetState(StateError, ReadyConditionReasonTimeout, capitalize(err.Error()))
 				} else {
-					status.SetState(StateError, ReadyConditionReasonError, err.Error())
+					status.SetState(StateError, ReadyConditionReasonError, capitalize(err.Error()))
 				}
 			}
 		}

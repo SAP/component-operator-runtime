@@ -39,6 +39,9 @@ var _ manifests.Generator = &HelmGenerator{}
 // The client parameter is deprecated (ignored) and will be removed in a future release.
 // If fsys is nil, the local operating system filesystem will be used, and chartPath can be an absolute or relative path (in the latter case it will be considered
 // relative to the current working directory). If fsys is non-nil, then chartPath should be a relative path; if an absolute path is supplied, it will be turned
+// into a relative path by stripping the leading slash. If fsys is specified as a real filesystem, it is recommended to use os.Root.FS() instead of os.DirFS(),
+// in order to fence symbolic links.
+
 // An empty chartPath will be treated like ".".
 func NewHelmGenerator(fsys fs.FS, chartPath string, _ client.Client) (*HelmGenerator, error) {
 	chart, err := helm.ParseChart(fsys, chartPath, nil)

@@ -32,5 +32,6 @@ A few differences and restrictions arise from this:
   - for the `.Chart` builtin, only `.Chart.Name`, `.Chart.Version`, `.Chart.Type`, `.Chart.AppVersion`, `.Chart.Dependencies` are supported
   - for the `.Capabilities` builtin, only `.Capabilities.KubeVersion` and `.Capabilities.APIVersions` are supported
   - the `.Template` builtin is fully supported
-  - the `.Files` builtin is not supported at all.
+  - the `.Files` builtin is supported but does not return any of the paths reserved by Helm (such as `Chart.yaml`, `templates/` and so on)
 - Regarding hooks, `pre-delete` and `post-delete` hooks are not allowed; test and rollback hooks are ignored, and `pre-install`, `post-install`, `pre-upgrade`, `post-upgrade` hooks might be handled in a sligthly different way; hook weights will be handled in a compatible way; hook deletion policy `hook-failed` is not allowed, but `before-hook-creation` and `hook-succeeded` should work as expected.
+- The `.helmignore` file is currently not evaluated; in particular, files can be accessed through `.Files` altough they are listed in `.helmignore`.
