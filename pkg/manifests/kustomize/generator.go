@@ -18,6 +18,7 @@ import (
 	"text/template"
 
 	"github.com/Masterminds/sprig/v3"
+	"github.com/gobwas/glob"
 	"github.com/sap/go-generics/maps"
 	"github.com/sap/go-generics/slices"
 
@@ -313,9 +314,13 @@ func funcMapForGenerateContext(files map[string][]byte, serverInfo *version.Info
 	}
 }
 
-func makeFuncListFiles(files map[string][]byte) func() []string {
-	return func() []string {
-		return maps.Keys(files)
+func makeFuncListFiles(files map[string][]byte) func(pattern string) ([]string, error) {
+	return func(pattern string) ([]string, error) {
+		g, err := glob.Compile(pattern, '/')
+		if err != nil {
+			return nil, err
+		}
+		return slices.Select(maps.Keys(files), func(path string) bool { return g.Match(path) }), nil
 	}
 }
 
