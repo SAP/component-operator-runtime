@@ -131,14 +131,12 @@ func NewKustomizeGenerator(fsys fs.FS, kustomizationPath string, _ client.Client
 		if err != nil {
 			return nil, err
 		}
-		// Note: we use relative paths as templates names to make it easier to copy the kustomization
-		// content into the ephemeral in-memory filesystem used by krusty in Generate()
 		name, err := filepath.Rel(kustomizationPath, file)
-		g.files[name] = raw
 		if err != nil {
 			// TODO: is it ok to panic here in case of error ?
 			panic("this cannot happen")
 		}
+		g.files[name] = raw
 		if filepath.Base(name) != componentConfigFilename && strings.HasSuffix(name, *options.TemplateSuffix) {
 			if t == nil {
 				t = template.New(name)
@@ -320,7 +318,7 @@ func makeFuncListFiles(files map[string][]byte) func(pattern string) ([]string, 
 		if err != nil {
 			return nil, err
 		}
-		return slices.Select(maps.Keys(files), func(path string) bool { return g.Match(path) }), nil
+		return slices.Sort(slices.Select(maps.Keys(files), func(path string) bool { return g.Match(path) })), nil
 	}
 }
 
