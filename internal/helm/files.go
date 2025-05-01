@@ -88,6 +88,7 @@ func (f Files) AsSecrets() string {
 
 func isIgnored(name string) bool {
 	return name == "Chart.yaml" ||
+		name == "Chart.lock" ||
 		name == "LICENSE" ||
 		name == "README.md" ||
 		name == "values.yaml" ||
