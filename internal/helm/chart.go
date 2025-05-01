@@ -125,7 +125,7 @@ func ParseChart(fsys fs.FS, chartPath string, parent *Chart) (*Chart, error) {
 	}
 
 	chart.files = Files{}
-	files, err := fileutils.Find(fsys, "", "", fileutils.FileTypeRegular|fileutils.FileTypeSymlink, 0)
+	files, err := fileutils.Find(fsys, filepath.Clean(chartPath), "", fileutils.FileTypeRegular|fileutils.FileTypeSymlink, 0)
 	if err != nil {
 		return nil, err
 	}
@@ -134,7 +134,12 @@ func ParseChart(fsys fs.FS, chartPath string, parent *Chart) (*Chart, error) {
 		if err != nil {
 			return nil, err
 		}
-		chart.files.add(file, raw)
+		name, err := filepath.Rel(chartPath, file)
+		if err != nil {
+			// TODO: is it ok to panic here in case of error ?
+			panic("this cannot happen")
+		}
+		chart.files.add(name, raw)
 	}
 
 	valuesRaw, err := fs.ReadFile(fsys, filepath.Clean(chartPath+"/values.yaml"))
