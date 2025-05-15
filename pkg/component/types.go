@@ -67,6 +67,7 @@ type ImpersonationConfiguration interface {
 // tweaking the requeue interval (by default, it would be 10 minutes).
 type RequeueConfiguration interface {
 	// Get requeue interval. Should be greater than 1 minute.
+	// A return value of zero means to use the framework default.
 	GetRequeueInterval() time.Duration
 }
 
@@ -74,6 +75,7 @@ type RequeueConfiguration interface {
 // tweaking the retry interval (by default, it would be the value of the requeue interval).
 type RetryConfiguration interface {
 	// Get retry interval. Should be greater than 1 minute.
+	// A return value of zero means to use the framework default.
 	GetRetryInterval() time.Duration
 }
 
@@ -81,6 +83,7 @@ type RetryConfiguration interface {
 // tweaking the processing timeout (by default, it would be the value of the requeue interval).
 type TimeoutConfiguration interface {
 	// Get timeout. Should be greater than 1 minute.
+	// A return value of zero means to use the framework default.
 	GetTimeout() time.Duration
 }
 
@@ -110,6 +113,15 @@ type TypeConfiguration interface {
 	// or wildcards ("*"); in addition, groups can be specified as a pattern of the form "*.<suffix>"",
 	// where the wildcard matches one or multiple dns labels.
 	GetAdditionalManagedTypes() []reconciler.TypeInfo
+}
+
+// The ReapplyConfiguration interface is meant to be implemented by components (or their spec) which allow
+// to tune the force-reapply interval.
+type ReapplyConfiguration interface {
+	// Get force-reapply interval. Should be greater than the effective requeue interval. If a value smaller than the
+	// effective requeue interval is specified, the force-reapply might be delayed until the requeue happens.
+	// A return value of zero means to use the framework default.
+	GetReapplyInterval() time.Duration
 }
 
 // +kubebuilder:object:generate=true
@@ -219,6 +231,16 @@ type TypeSpec struct {
 }
 
 var _ TypeConfiguration = &TypeSpec{}
+
+// +kubebuilder:object:generate=true
+
+// ReapplySpec allows to specify the force-reapply interval.
+// Components providing ReapplyConfiguration may include this into their spec.
+type ReapplySpec struct {
+	ReapplyInterval *metav1.Duration `json:"reapplyInterval,omitempty"`
+}
+
+var _ ReapplyConfiguration = &ReapplySpec{}
 
 // +kubebuilder:object:generate=true
 

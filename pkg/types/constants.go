@@ -13,6 +13,7 @@ const (
 	AnnotationKeySuffixReconcilePolicy = "reconcile-policy"
 	AnnotationKeySuffixUpdatePolicy    = "update-policy"
 	AnnotationKeySuffixDeletePolicy    = "delete-policy"
+	AnnotationKeySuffixReapplyInterval = "reapply-interval"
 	AnnotationKeySuffixApplyOrder      = "apply-order"
 	AnnotationKeySuffixPurgeOrder      = "purge-order"
 	AnnotationKeySuffixDeleteOrder     = "delete-order"
