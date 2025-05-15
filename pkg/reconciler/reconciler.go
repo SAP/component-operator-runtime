@@ -59,7 +59,7 @@ const (
 )
 
 const (
-	forceReapplyPeriod = 60 * time.Minute
+	defaultReapplyInterval = 60 * time.Minute
 )
 
 var adoptionPolicyByAnnotation = map[string]AdoptionPolicy{
@@ -116,6 +116,8 @@ type ReconcilerOptions struct {
 	// a typical example of such additional managed types are CRDs which are implicitly created
 	// by the workloads of the component, but not part of the manifests.
 	AdditionalManagedTypes []TypeInfo
+	// Interval after which an object will be force-reapplied, even if it seems to be synced.
+	ReapplyInterval *time.Duration
 	// How to analyze the state of the dependent objects.
 	// If unspecified, an optimized kstatus based implementation is used.
 	StatusAnalyzer status.StatusAnalyzer
@@ -145,6 +147,7 @@ type Reconciler struct {
 	deletePolicy                 DeletePolicy
 	missingNamespacesPolicy      MissingNamespacesPolicy
 	additionalManagedTypes       []TypeInfo
+	reapplyInterval              time.Duration
 	labelKeyOwnerId              string
 	annotationKeyOwnerId         string
 	annotationKeyDigest          string
@@ -152,6 +155,7 @@ type Reconciler struct {
 	annotationKeyReconcilePolicy string
 	annotationKeyUpdatePolicy    string
 	annotationKeyDeletePolicy    string
+	annotationKeyReapplyInterval string
 	annotationKeyApplyOrder      string
 	annotationKeyPurgeOrder      string
 	annotationKeyDeleteOrder     string
@@ -180,6 +184,9 @@ func NewReconciler(name string, clnt cluster.Client, options ReconcilerOptions) 
 	if options.MissingNamespacesPolicy == nil {
 		options.MissingNamespacesPolicy = ref(MissingNamespacesPolicyCreate)
 	}
+	if options.ReapplyInterval == nil {
+		options.ReapplyInterval = ref(defaultReapplyInterval)
+	}
 	if options.StatusAnalyzer == nil {
 		options.StatusAnalyzer = status.NewStatusAnalyzer(name)
 	}
@@ -196,6 +203,7 @@ func NewReconciler(name string, clnt cluster.Client, options ReconcilerOptions) 
 		deletePolicy:                 *options.DeletePolicy,
 		missingNamespacesPolicy:      *options.MissingNamespacesPolicy,
 		additionalManagedTypes:       options.AdditionalManagedTypes,
+		reapplyInterval:              *options.ReapplyInterval,
 		labelKeyOwnerId:              name + "/" + types.LabelKeySuffixOwnerId,
 		annotationKeyOwnerId:         name + "/" + types.AnnotationKeySuffixOwnerId,
 		annotationKeyDigest:          name + "/" + types.AnnotationKeySuffixDigest,
@@ -203,6 +211,7 @@ func NewReconciler(name string, clnt cluster.Client, options ReconcilerOptions) 
 		annotationKeyReconcilePolicy: name + "/" + types.AnnotationKeySuffixReconcilePolicy,
 		annotationKeyUpdatePolicy:    name + "/" + types.AnnotationKeySuffixUpdatePolicy,
 		annotationKeyDeletePolicy:    name + "/" + types.AnnotationKeySuffixDeletePolicy,
+		annotationKeyReapplyInterval: name + "/" + types.AnnotationKeySuffixReapplyInterval,
 		annotationKeyApplyOrder:      name + "/" + types.AnnotationKeySuffixApplyOrder,
 		annotationKeyPurgeOrder:      name + "/" + types.AnnotationKeySuffixPurgeOrder,
 		annotationKeyDeleteOrder:     name + "/" + types.AnnotationKeySuffixDeleteOrder,
@@ -223,7 +232,7 @@ func NewReconciler(name string, clnt cluster.Client, options ReconcilerOptions) 
 // An update of an existing object will be performed if it is considered to be out of sync; that means:
 //   - the object's manifest has changed, and the effective reconcile policy is ReconcilePolicyOnObjectChange or ReconcilePolicyOnObjectOrComponentChange or
 //   - the specified component has changed and the effective reconcile policy is ReconcilePolicyOnObjectOrComponentChange or
-//   - periodically after forceReapplyPeriod.
+//   - periodically after the specified force-reapply interval.
 //
 // The update itself will be done as follows:
 //   - if the effective update policy is UpdatePolicyReplace, a http PUT request will be sent to the Kubernetes API
@@ -348,6 +357,9 @@ func (r *Reconciler) Apply(ctx context.Context, inventory *[]*InventoryItem, obj
 		if _, err := r.getDeletePolicy(object); err != nil {
 			return false, errors.Wrapf(err, "error validating object %s", types.ObjectKeyToString(object))
 		}
+		if _, err := r.getReapplyInterval(object); err != nil {
+			return false, errors.Wrapf(err, "error validating object %s", types.ObjectKeyToString(object))
+		}
 		if _, err := r.getApplyOrder(object); err != nil {
 			return false, errors.Wrapf(err, "error validating object %s", types.ObjectKeyToString(object))
 		}
@@ -376,6 +388,10 @@ func (r *Reconciler) Apply(ctx context.Context, inventory *[]*InventoryItem, obj
 	getDeletePolicy := func(object client.Object) DeletePolicy {
 		// note: this must() is ok because we checked the generated objects above, and this function will be called for these objects only
 		return must(r.getDeletePolicy(object))
+	}
+	getReapplyInterval := func(object client.Object) time.Duration {
+		// note: this must() is ok because we checked the generated objects above, and this function will be called for these objects only
+		return must(r.getReapplyInterval(object))
 	}
 	getApplyOrder := func(object client.Object) int {
 		// note: this must() is ok because we checked the generated objects above, and this function will be called for these objects only
@@ -692,6 +708,7 @@ func (r *Reconciler) Apply(ctx context.Context, inventory *[]*InventoryItem, obj
 				setAnnotation(object, r.annotationKeyDigest, item.Digest)
 
 				updatePolicy := getUpdatePolicy(object)
+				reapplyInterval := getReapplyInterval(object)
 				now := time.Now()
 				if existingObject == nil {
 					if err := r.createObject(ctx, object, nil, updatePolicy); err != nil {
@@ -702,8 +719,7 @@ func (r *Reconciler) Apply(ctx context.Context, inventory *[]*InventoryItem, obj
 					item.LastAppliedAt = &metav1.Time{Time: now}
 					numUnready++
 				} else if existingObject.GetDeletionTimestamp().IsZero() &&
-					// TODO: make force-reconcile period (60 minutes as of now) configurable
-					(existingObject.GetAnnotations()[r.annotationKeyDigest] != item.Digest || item.LastAppliedAt == nil || item.LastAppliedAt.Time.Before(now.Add(-forceReapplyPeriod))) {
+					(existingObject.GetAnnotations()[r.annotationKeyDigest] != item.Digest || item.LastAppliedAt == nil || item.LastAppliedAt.Time.Before(now.Add(-reapplyInterval))) {
 					switch updatePolicy {
 					case UpdatePolicyRecreate:
 						if err := r.deleteObject(ctx, object, existingObject, hashedOwnerId); err != nil {
@@ -1341,6 +1357,18 @@ func (r *Reconciler) getDeletePolicy(object client.Object) (DeletePolicy, error)
 	default:
 		return "", fmt.Errorf("invalid value for annotation %s: %s", r.annotationKeyDeletePolicy, deletePolicy)
 	}
+}
+
+func (r *Reconciler) getReapplyInterval(object client.Object) (time.Duration, error) {
+	value, ok := object.GetAnnotations()[r.annotationKeyReapplyInterval]
+	if !ok {
+		return r.reapplyInterval, nil
+	}
+	reapplyInterval, err := time.ParseDuration(value)
+	if err != nil {
+		return 0, errors.Wrapf(err, "invalid value for annotation %s: %s", r.annotationKeyReapplyInterval, value)
+	}
+	return reapplyInterval, nil
 }
 
 func (r *Reconciler) getApplyOrder(object client.Object) (int, error) {

@@ -30,6 +30,20 @@ func getSpec[T Component](component T) any {
 	return spec.Interface()
 }
 
+/*
+// TODO: should we use this instead of the typed assert functions?
+// Check if given component or its spec implements the specified Configuration type (and return it).
+func assertConfiguration[T Component, C any](component T) (C, bool) {
+	if configuration, ok := Component(component).(C); ok {
+		return configuration, true
+	}
+	if configuration, ok := getSpec(component).(C); ok {
+		return configuration, true
+	}
+	return *new(C), false
+}
+*/
+
 // Check if given component or its spec implements PlacementConfiguration (and return it).
 func assertPlacementConfiguration[T Component](component T) (PlacementConfiguration, bool) {
 	if placementConfiguration, ok := Component(component).(PlacementConfiguration); ok {
@@ -118,6 +132,17 @@ func assertTypeConfiguration[T Component](component T) (TypeConfiguration, bool)
 	return nil, false
 }
 
+// Check if given component or its spec implements ReapplyConfiguration (and return it).
+func assertReapplyConfiguration[T Component](component T) (ReapplyConfiguration, bool) {
+	if reapplyConfiguration, ok := Component(component).(ReapplyConfiguration); ok {
+		return reapplyConfiguration, true
+	}
+	if reapplyConfiguration, ok := getSpec(component).(ReapplyConfiguration); ok {
+		return reapplyConfiguration, true
+	}
+	return nil, false
+}
+
 // Implement the PlacementConfiguration interface.
 func (s *PlacementSpec) GetDeploymentNamespace() string {
 	return s.Namespace
@@ -195,6 +220,14 @@ func (s *PolicySpec) GetMissingNamespacesPolicy() reconciler.MissingNamespacesPo
 // Implement the TypeConfiguration interface.
 func (s *TypeSpec) GetAdditionalManagedTypes() []reconciler.TypeInfo {
 	return s.AdditionalManagedTypes
+}
+
+// Implement the ReapplyConfiguration interface.
+func (s *ReapplySpec) GetReapplyInterval() time.Duration {
+	if s.ReapplyInterval != nil {
+		return s.ReapplyInterval.Duration
+	}
+	return time.Duration(0)
 }
 
 // Check if state is Ready.

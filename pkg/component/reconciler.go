@@ -78,6 +78,8 @@ const (
 	ReadyConditionReasonDeletionProcessing = "DeletionProcessing"
 
 	triggerBufferSize = 1024
+
+	defaultReapplyInterval = 60 * time.Minute
 )
 
 // TODO: should we pass cluster.Client to hooks instead of just client.Client?
@@ -124,6 +126,8 @@ type ReconcilerOptions struct {
 	// Whether namespaces are auto-created if missing.
 	// If unspecified, MissingNamespacesPolicyCreate is assumed.
 	MissingNamespacesPolicy *reconciler.MissingNamespacesPolicy
+	// Interval after which an object will be force-reapplied, even if it seems to be synced.
+	ReapplyInterval *time.Duration
 	// SchemeBuilder allows to define additional schemes to be made available in the
 	// target client.
 	SchemeBuilder types.SchemeBuilder
@@ -181,6 +185,9 @@ func NewReconciler[T Component](name string, resourceGenerator manifests.Generat
 	}
 	if options.MissingNamespacesPolicy == nil {
 		options.MissingNamespacesPolicy = ref(reconciler.MissingNamespacesPolicyCreate)
+	}
+	if options.ReapplyInterval == nil {
+		options.ReapplyInterval = ref(defaultReapplyInterval)
 	}
 
 	return &Reconciler[T]{
@@ -796,6 +803,7 @@ func (r *Reconciler[T]) getOptionsForComponent(component T) reconciler.Reconcile
 		UpdatePolicy:            r.options.UpdatePolicy,
 		DeletePolicy:            r.options.DeletePolicy,
 		MissingNamespacesPolicy: r.options.MissingNamespacesPolicy,
+		ReapplyInterval:         r.options.ReapplyInterval,
 		StatusAnalyzer:          r.statusAnalyzer,
 		Metrics: reconciler.ReconcilerMetrics{
 			ReadCounter:   metrics.Operations.WithLabelValues(r.controllerName, "read"),
@@ -821,6 +829,11 @@ func (r *Reconciler[T]) getOptionsForComponent(component T) reconciler.Reconcile
 	}
 	if typeConfiguration, ok := assertTypeConfiguration(component); ok {
 		options.AdditionalManagedTypes = typeConfiguration.GetAdditionalManagedTypes()
+	}
+	if reapplyConfiguration, ok := assertReapplyConfiguration(component); ok {
+		if reapplyInterval := reapplyConfiguration.GetReapplyInterval(); reapplyInterval > 0 {
+			options.ReapplyInterval = &reapplyInterval
+		}
 	}
 	return options
 }

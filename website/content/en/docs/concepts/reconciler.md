@@ -60,9 +60,15 @@ The passed type parameter `T Component` is the concrete runtime type of the comp
     // Whether namespaces are auto-created if missing.
     // If unspecified, MissingNamespacesPolicyCreate is assumed.
     MissingNamespacesPolicy *reconciler.MissingNamespacesPolicy
+    // Interval after which an object will be force-reapplied, even if it seems to be synced.
+    ReapplyInterval *time.Duration
     // SchemeBuilder allows to define additional schemes to be made available in the
     // target client.
     SchemeBuilder types.SchemeBuilder
+    // NewClient allows to modify or replace the default client used by the reconciler.
+    // The returned client is used by the reconciler to manage the component instances, and passed to hooks.
+    // Its scheme therefore must recognize the component type.
+    NewClient NewClientFunc
   }
   ```
 
@@ -159,6 +165,7 @@ package component
 // tweaking the retry interval (by default, it would be the value of the requeue interval).
 type RetryConfiguration interface {
   // Get retry interval. Should be greater than 1 minute.
+  // A return value of zero means to use the framework default.
   GetRetryInterval() time.Duration
 }
 ```
@@ -177,6 +184,7 @@ package component
 // tweaking the requeue interval (by default, it would be 10 minutes).
 type RequeueConfiguration interface {
   // Get requeue interval. Should be greater than 1 minute.
+  // A return value of zero means to use the framework default.
   GetRequeueInterval() time.Duration
 }
 ```
@@ -201,6 +209,7 @@ package component
 // tweaking the processing timeout (by default, it would be the value of the requeue interval).
 type TimeoutConfiguration interface {
   // Get timeout. Should be greater than 1 minute.
+  // A return value of zero means to use the framework default.
   GetTimeout() time.Duration
 }
 ```
@@ -245,6 +254,8 @@ Sometimes, components are implicitly adding extension types. That means that the
 To make this possible, components can implement the
 
 ```go
+package component
+
 // The TypeConfiguration interface is meant to be implemented by compoments (or their spec) which allow
 // to specify additional managed types.
 type TypeConfiguration interface {
@@ -262,13 +273,34 @@ interface. The types returned by `GetAdditionalManagedTypes()` contain a group a
 ```go
 // TypeInfo represents a Kubernetes type.
 type TypeInfo struct {
-	// API group.
-	Group string `json:"group"`
-	// API kind.
-	Kind string `json:"kind"`
+  // API group.
+  Group string `json:"group"`
+  // API kind.
+  Kind string `json:"kind"`
 }
 ```
 
 To match multiple types, the following pattern syntax is supported:
 - the `Group` can be just `*` or have the form `*.domain.suffix`; note that the second case, the asterisk matches one or multiple DNS labels
 - the `Kind` can be just `*`, which matches any kind.
+
+## Tuning the reapply behavior
+
+If a requeue of a successfully reconciled dependent object happens, the reconciler usually only compares the object's current digest with the target digest, and decides based on that comparison whether a reapply is needed or not. In addition, the framework performs forced reapplies from time to time,
+in order to correct out-of-band discrepancies (e.g. resulting from manual changes). These forced repplies happen be default every 60 minutes, but this
+interval can be tuned by the component by implementing the 
+
+```go
+package component
+
+// The ReapplyConfiguration interface is meant to be implemented by components (or their spec) which allow
+// to tune the force-reapply interval.
+type ReapplyConfiguration interface {
+  // Get force-reapply interval. Should be greater than the effective requeue interval. If a value smaller than the
+  // effective requeue interval is specified, the force-reapply might be delayed until the requeue happens.
+  // A return value of zero means to use the framework default.
+  GetReapplyInterval() time.Duration
+}
+```
+
+interface. Note that the reapply interval can also be overridden on a per-object level, as described [here](../dependents).
