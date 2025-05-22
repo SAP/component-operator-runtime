@@ -23,7 +23,7 @@ require (
 	k8s.io/client-go v0.33.1
 	k8s.io/kube-aggregator v0.33.1
 	sigs.k8s.io/cli-utils v0.37.2
-	sigs.k8s.io/controller-runtime v0.20.4
+	sigs.k8s.io/controller-runtime v0.21.0
 	sigs.k8s.io/kustomize/api v0.19.0
 	sigs.k8s.io/kustomize/kyaml v0.19.0
 	sigs.k8s.io/structured-merge-diff/v6 v6.1.0
