@@ -355,10 +355,57 @@ func (r *Reconciler[T]) Reconcile(ctx context.Context, req ctrl.Request) (result
 			}
 		}
 
-		// TODO: it seems that no events will be written if the component's namespace is in deletion
 		// TODO: do not use GetState(); but accessing the condition directly is not safe (see caveat remark on the
 		// getCondition() and getOrAddCondition() methods)
 		state, reason, message := status.GetState()
+
+		if component.GetDeletionTimestamp().IsZero() || controllerutil.ContainsFinalizer(component, *r.options.Finalizer) {
+			metrics.ComponentState.WithLabelValues(r.controllerName, component.GetObjectKind().GroupVersionKind().Group, component.GetObjectKind().GroupVersionKind().Kind,
+				component.GetNamespace(), component.GetName(), string(StateReady)).
+				Set(float64(boolToInt(state == StateReady)))
+			metrics.ComponentState.WithLabelValues(r.controllerName, component.GetObjectKind().GroupVersionKind().Group, component.GetObjectKind().GroupVersionKind().Kind,
+				component.GetNamespace(), component.GetName(), string(StatePending)).
+				Set(float64(boolToInt(state == StatePending)))
+			metrics.ComponentState.WithLabelValues(r.controllerName, component.GetObjectKind().GroupVersionKind().Group, component.GetObjectKind().GroupVersionKind().Kind,
+				component.GetNamespace(), component.GetName(), string(StateProcessing)).
+				Set(float64(boolToInt(state == StateProcessing)))
+			metrics.ComponentState.WithLabelValues(r.controllerName, component.GetObjectKind().GroupVersionKind().Group, component.GetObjectKind().GroupVersionKind().Kind,
+				component.GetNamespace(), component.GetName(), string(StateDeletionPending)).
+				Set(float64(boolToInt(state == StateDeletionPending)))
+			metrics.ComponentState.WithLabelValues(r.controllerName, component.GetObjectKind().GroupVersionKind().Group, component.GetObjectKind().GroupVersionKind().Kind,
+				component.GetNamespace(), component.GetName(), string(StateDeleting)).
+				Set(float64(boolToInt(state == StateDeleting)))
+			metrics.ComponentState.WithLabelValues(r.controllerName, component.GetObjectKind().GroupVersionKind().Group, component.GetObjectKind().GroupVersionKind().Kind,
+				component.GetNamespace(), component.GetName(), string(StateError)).
+				Set(float64(boolToInt(state == StateError)))
+			metrics.Dependents.WithLabelValues(r.controllerName, component.GetObjectKind().GroupVersionKind().Group, component.GetObjectKind().GroupVersionKind().Kind,
+				component.GetNamespace(), component.GetName()).
+				Set(float64(len(status.Inventory)))
+			metrics.UnreadyDependents.WithLabelValues(r.controllerName, component.GetObjectKind().GroupVersionKind().Group, component.GetObjectKind().GroupVersionKind().Kind,
+				component.GetNamespace(), component.GetName()).
+				Set(float64(slices.Count(status.Inventory, func(item *reconciler.InventoryItem) bool {
+					return item.Phase != reconciler.PhaseReady && item.Phase != reconciler.PhaseCompleted
+				})))
+		} else {
+			metrics.ComponentState.DeleteLabelValues(r.controllerName, component.GetObjectKind().GroupVersionKind().Group, component.GetObjectKind().GroupVersionKind().Kind,
+				component.GetNamespace(), component.GetName(), string(StateReady))
+			metrics.ComponentState.DeleteLabelValues(r.controllerName, component.GetObjectKind().GroupVersionKind().Group, component.GetObjectKind().GroupVersionKind().Kind,
+				component.GetNamespace(), component.GetName(), string(StatePending))
+			metrics.ComponentState.DeleteLabelValues(r.controllerName, component.GetObjectKind().GroupVersionKind().Group, component.GetObjectKind().GroupVersionKind().Kind,
+				component.GetNamespace(), component.GetName(), string(StateProcessing))
+			metrics.ComponentState.DeleteLabelValues(r.controllerName, component.GetObjectKind().GroupVersionKind().Group, component.GetObjectKind().GroupVersionKind().Kind,
+				component.GetNamespace(), component.GetName(), string(StateDeletionPending))
+			metrics.ComponentState.DeleteLabelValues(r.controllerName, component.GetObjectKind().GroupVersionKind().Group, component.GetObjectKind().GroupVersionKind().Kind,
+				component.GetNamespace(), component.GetName(), string(StateDeleting))
+			metrics.ComponentState.DeleteLabelValues(r.controllerName, component.GetObjectKind().GroupVersionKind().Group, component.GetObjectKind().GroupVersionKind().Kind,
+				component.GetNamespace(), component.GetName(), string(StateError))
+			metrics.Dependents.DeleteLabelValues(r.controllerName, component.GetObjectKind().GroupVersionKind().Group, component.GetObjectKind().GroupVersionKind().Kind,
+				component.GetNamespace(), component.GetName())
+			metrics.UnreadyDependents.DeleteLabelValues(r.controllerName, component.GetObjectKind().GroupVersionKind().Group, component.GetObjectKind().GroupVersionKind().Kind,
+				component.GetNamespace(), component.GetName())
+		}
+
+		// TODO: it seems that no events will be written if the component's namespace is in deletion
 		var eventAnnotations map[string]string
 		// TODO: formalize this into a real published interface
 		// TODO: pass previousState, and especially componentDigest in a better way;

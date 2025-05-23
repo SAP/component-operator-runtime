@@ -58,6 +58,27 @@ var (
 		},
 		[]string{"controller"},
 	)
+	ComponentState = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: prefix + "_component_state",
+			Help: "Current state of a component",
+		},
+		[]string{"controller", "group", "kind", "namespace", "name", "state"},
+	)
+	Dependents = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: prefix + "_dependents_total",
+			Help: "Number of dependent objects",
+		},
+		[]string{"controller", "group", "kind", "namespace", "name"},
+	)
+	UnreadyDependents = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: prefix + "_unready_dependents_total",
+			Help: "Number of unready dependent objects",
+		},
+		[]string{"controller", "group", "kind", "namespace", "name"},
+	)
 )
 
 func init() {
@@ -68,5 +89,8 @@ func init() {
 		Operations,
 		CreatedClients,
 		ActiveClients,
+		ComponentState,
+		Dependents,
+		UnreadyDependents,
 	)
 }
