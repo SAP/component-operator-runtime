@@ -52,3 +52,10 @@ func addJitter(d *time.Duration, minPercent int, maxPercent int) {
 	max := int64(maxPercent)
 	*d = *d + time.Duration((rand.Int63n(max-min+1)+min)*int64(*d)/100)
 }
+
+func boolToInt(b bool) int {
+	if b {
+		return 1
+	}
+	return 0
+}
