@@ -6,6 +6,7 @@ SPDX-License-Identifier: Apache-2.0
 package kustomize
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"errors"
@@ -18,6 +19,7 @@ import (
 	"text/template"
 
 	"github.com/Masterminds/sprig/v3"
+	"github.com/go-git/go-git/plumbing/format/gitignore"
 	"github.com/gobwas/glob"
 	"github.com/sap/go-generics/maps"
 	"github.com/sap/go-generics/slices"
@@ -45,6 +47,7 @@ import (
 
 const (
 	componentConfigFilename = ".component-config.yaml"
+	componentIgnoreFilename = ".component-ignore"
 )
 
 // KustomizeGeneratorOptions allows to tweak the behavior of the kustomize generator.
@@ -116,6 +119,11 @@ func NewKustomizeGenerator(fsys fs.FS, kustomizationPath string, _ client.Client
 		return nil, err
 	}
 
+	ignore, err := readIgnore(fsys, filepath.Clean(kustomizationPath+"/"+componentIgnoreFilename))
+	if err != nil {
+		return nil, err
+	}
+
 	var t *template.Template
 	// TODO: we should consider the whole of fsys, not only the subtree rooted at kustomizationPath;
 	// this would allow people to reference resources or patches or components located in parent directories
@@ -137,7 +145,10 @@ func NewKustomizeGenerator(fsys fs.FS, kustomizationPath string, _ client.Client
 			panic("this cannot happen")
 		}
 		g.files[name] = raw
-		if filepath.Base(name) != componentConfigFilename && strings.HasSuffix(name, *options.TemplateSuffix) {
+		if ignore != nil && ignore.Match(filepath.SplitList(name), false) {
+			continue
+		}
+		if filepath.Base(name) != componentConfigFilename && filepath.Base(name) != componentIgnoreFilename && strings.HasSuffix(name, *options.TemplateSuffix) {
 			if t == nil {
 				t = template.New(name)
 				t.Delims(*options.LeftTemplateDelimiter, *options.RightTemplateDelimiter)
@@ -350,6 +361,9 @@ func makeFuncData(data any) any {
 	return fval.Interface()
 }
 
+// TODO: this could be simplified; the files which will be considered as resources for the generation kustomization.yaml are
+// exactly those keys of the g.templates and g.nonTemplates that do not start with '.' and do not end with '.yaml' or '.yml';
+// so the fsys.Walk below is basically unnecessary
 func generateKustomization(fsys kustfsys.FileSystem) ([]byte, error) {
 	var resources []string
 
@@ -399,6 +413,31 @@ func readOptions(fsys fs.FS, path string, options *KustomizeGeneratorOptions) er
 	}
 
 	return nil
+}
+
+func readIgnore(fsys fs.FS, path string) (gitignore.Matcher, error) {
+	var patterns []gitignore.Pattern
+
+	ignoreFile, err := fsys.Open(path)
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	defer ignoreFile.Close()
+
+	domain := filepath.SplitList(path)
+	domain = domain[0 : len(domain)-1]
+	scanner := bufio.NewScanner(ignoreFile)
+	for scanner.Scan() {
+		s := scanner.Text()
+		if !strings.HasPrefix(s, "#") && len(strings.TrimSpace(s)) > 0 {
+			patterns = append(patterns, gitignore.ParsePattern(s, domain))
+		}
+	}
+
+	return gitignore.NewMatcher(patterns), nil
 }
 
 func normalizeServerGroupsWithResources(serverGroupsWithResources []*metav1.APIResourceList) []*metav1.APIResourceList {
