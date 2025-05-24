@@ -145,10 +145,13 @@ func NewKustomizeGenerator(fsys fs.FS, kustomizationPath string, _ client.Client
 			panic("this cannot happen")
 		}
 		g.files[name] = raw
+		if filepath.Base(name) == componentConfigFilename || filepath.Base(name) == componentIgnoreFilename {
+			continue
+		}
 		if ignore != nil && ignore.Match(filepath.SplitList(name), false) {
 			continue
 		}
-		if filepath.Base(name) != componentConfigFilename && filepath.Base(name) != componentIgnoreFilename && strings.HasSuffix(name, *options.TemplateSuffix) {
+		if strings.HasSuffix(name, *options.TemplateSuffix) {
 			if t == nil {
 				t = template.New(name)
 				t.Delims(*options.LeftTemplateDelimiter, *options.RightTemplateDelimiter)
