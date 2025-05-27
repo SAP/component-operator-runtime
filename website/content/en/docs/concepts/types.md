@@ -54,13 +54,15 @@ package component
 
 // Component Status. Components must include this into their status.
 type Status struct {
-  ObservedGeneration int64            `json:"observedGeneration"`
-  AppliedGeneration  int64            `json:"appliedGeneration,omitempty"`
-  LastObservedAt     *metav1.Time     `json:"lastObservedAt,omitempty"`
-  LastAppliedAt      *metav1.Time     `json:"lastAppliedAt,omitempty"`
-  Conditions         []Condition      `json:"conditions,omitempty"`
-  State              State            `json:"state,omitempty"`
-  Inventory          []*InventoryItem `json:"inventory,omitempty"`
+  ObservedGeneration int64                       `json:"observedGeneration"`
+  AppliedGeneration  int64                       `json:"appliedGeneration,omitempty"`
+  LastObservedAt     *metav1.Time                `json:"lastObservedAt,omitempty"`
+  LastAppliedAt      *metav1.Time                `json:"lastAppliedAt,omitempty"`
+  ProcessingDigest   string                      `json:"processingDigest,omitempty"`
+  ProcessingSince    *metav1.Time                `json:"processingSince,omitempty"`
+  Conditions         []Condition                 `json:"conditions,omitempty"`
+  State              State                       `json:"state,omitempty"`
+  Inventory          []*reconciler.InventoryItem `json:"inventory,omitempty"`
 }
 ```
 
@@ -96,8 +98,8 @@ package component
 // The ClientConfiguration interface is meant to be implemented by components (or their spec) which offer
 // remote deployments.
 type ClientConfiguration interface {
-  // Get kubeconfig content. Should return nil if default local client shall be used.
-  GetKubeConfig() []byte
+	// Get kubeconfig content. Should return nil if default local client shall be used.
+	GetKubeConfig() []byte
 }
 ```
 
@@ -109,12 +111,12 @@ package component
 // The ImpersonationConfiguration interface is meant to be implemented by components (or their spec) which offer
 // impersonated deployments.
 type ImpersonationConfiguration interface {
-  // Return impersonation user. Should return system:serviceaccount:<namespace>:<serviceaccount>
-  // if a service account is used for impersonation. Should return an empty string
-  // if user shall not be impersonated.
-  GetImpersonationUser() string
-  // Return impersonation groups. Should return nil if groups shall not be impersonated.
-  GetImpersonationGroups() []string
+	// Return impersonation user. Should return system:serviceaccount:<namespace>:<serviceaccount>
+	// if a service account is used for impersonation. Should return an empty string
+	// if user shall not be impersonated.
+	GetImpersonationUser() string
+	// Return impersonation groups. Should return nil if groups shall not be impersonated.
+	GetImpersonationGroups() []string
 }
 ```
 
