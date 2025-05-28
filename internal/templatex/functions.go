@@ -29,29 +29,32 @@ import (
 // template FuncMap generator
 func FuncMap() template.FuncMap {
 	return template.FuncMap{
-		"toYaml":            toYaml,
-		"mustToYaml":        toYaml,
-		"fromYaml":          fromYaml,
-		"fromYamlArray":     fromYamlArray,
-		"mustFromYaml":      fromYaml,
-		"toJson":            toJson,
-		"mustToJson":        toJson,
-		"toPrettyJson":      toPrettyJson,
-		"mustToPrettyJson":  toPrettyJson,
-		"toRawJson":         toRawJson,
-		"mustToRawJson":     toRawJson,
-		"fromJson":          fromJson,
-		"mustFromJson":      fromJson,
-		"fromJsonArray":     fromJsonArray,
-		"mustFromJsonArray": fromJsonArray,
-		"required":          required,
-		"bitwiseShiftLeft":  bitwiseShiftLeft,
-		"bitwiseShiftRight": bitwiseShiftRight,
-		"bitwiseAnd":        bitwiseAnd,
-		"bitwiseOr":         bitwiseOr,
-		"bitwiseXor":        bitwiseXor,
-		"parseIPv4Address":  parseIPv4Address,
-		"formatIPv4Address": formatIPv4Address,
+		"toYaml":                   toYaml,
+		"mustToYaml":               toYaml,
+		"fromYaml":                 fromYaml,
+		"mustFromYaml":             fromYaml,
+		"fromYamlArray":            fromYamlArray,
+		"mustFromYamlArray":        fromYamlArray,
+		"toJson":                   toJson,
+		"mustToJson":               toJson,
+		"toPrettyJson":             toPrettyJson,
+		"mustToPrettyJson":         toPrettyJson,
+		"toRawJson":                toRawJson,
+		"mustToRawJson":            toRawJson,
+		"fromJson":                 fromJson,
+		"mustFromJson":             fromJson,
+		"fromJsonArray":            fromJsonArray,
+		"mustFromJsonArray":        fromJsonArray,
+		"required":                 required,
+		"bitwiseShiftLeft":         bitwiseShiftLeft,
+		"bitwiseShiftRight":        bitwiseShiftRight,
+		"bitwiseAnd":               bitwiseAnd,
+		"bitwiseOr":                bitwiseOr,
+		"bitwiseXor":               bitwiseXor,
+		"parseIPv4Address":         parseIPv4Address,
+		"formatIPv4Address":        formatIPv4Address,
+		"lookupWithKubeConfig":     makeFuncLookupWithKubeConfig(true),
+		"mustLookupWithKubeConfig": makeFuncLookupWithKubeConfig(false),
 	}
 }
 
@@ -66,10 +69,8 @@ func FuncMapForTemplate(t *template.Template) template.FuncMap {
 // template FuncMap generator for functions called in target Kubernetes context
 func FuncMapForClient(c client.Client) template.FuncMap {
 	return template.FuncMap{
-		"lookup":                   makeFuncLookup(c, true),
-		"mustLookup":               makeFuncLookup(c, false),
-		"lookupWithKubeConfig":     makeFuncLookupWithKubeConfig(true),
-		"mustLookupWithKubeConfig": makeFuncLookupWithKubeConfig(false),
+		"lookup":     makeFuncLookup(c, true),
+		"mustLookup": makeFuncLookup(c, false),
 	}
 }
 
