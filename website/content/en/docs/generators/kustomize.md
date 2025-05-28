@@ -100,4 +100,4 @@ Here:
 As of now, the specified kustomization must not reference files or paths outside `kustomizationPath`. Remote references are generally not supported.
 By default, all `.yaml` or `.yml` files in `kustomizationPath`, and its subdirectories, are subject to templating, and are considered if a `kustomization.yaml`
 is auto-generated. It is possible to exclude certain files by creating a file `.component-ignore` in `kustomizationPath`; this `.component-ignore` file uses
-the common `.gitignore syntax`.
+the common `.gitignore` syntax.
