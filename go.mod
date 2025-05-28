@@ -5,7 +5,7 @@ go 1.24.3
 require (
 	github.com/Masterminds/sprig/v3 v3.3.0
 	github.com/go-git/go-git v4.7.0+incompatible
-	github.com/go-logr/logr v1.4.2
+	github.com/go-logr/logr v1.4.3
 	github.com/gobwas/glob v0.2.3
 	github.com/hashicorp/go-multierror v1.1.1
 	github.com/iancoleman/strcase v0.3.0
