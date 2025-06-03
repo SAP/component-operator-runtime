@@ -59,6 +59,10 @@ const (
 )
 
 const (
+	digestOnce = "__once__"
+)
+
+const (
 	defaultReapplyInterval = 60 * time.Minute
 )
 
@@ -719,6 +723,7 @@ func (r *Reconciler) Apply(ctx context.Context, inventory *[]*InventoryItem, obj
 					item.LastAppliedAt = &metav1.Time{Time: now}
 					numUnready++
 				} else if existingObject.GetDeletionTimestamp().IsZero() &&
+					(existingObject.GetAnnotations()[r.annotationKeyDigest] != digestOnce || item.Digest != digestOnce) &&
 					(existingObject.GetAnnotations()[r.annotationKeyDigest] != item.Digest || item.LastAppliedAt == nil || item.LastAppliedAt.Time.Before(now.Add(-reapplyInterval))) {
 					switch updatePolicy {
 					case UpdatePolicyRecreate:
