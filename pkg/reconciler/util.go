@@ -60,7 +60,7 @@ func checkRange(x int, min int, max int) error {
 
 func calculateObjectDigest(obj client.Object, componentDigest string, reconcilePolicy ReconcilePolicy) (string, error) {
 	if reconcilePolicy == ReconcilePolicyOnce {
-		return "digestOnce", nil
+		return digestOnce, nil
 	}
 
 	resourceVersion := obj.GetResourceVersion()
