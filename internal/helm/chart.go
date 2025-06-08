@@ -91,7 +91,7 @@ func ParseChart(fsys fs.FS, chartPath string, parent *Chart) (*Chart, error) {
 	}
 
 	if chart.metadata.Type == ChartTypeApplication {
-		crds, err := fileutils.Find(fsys, filepath.Clean(chartPath+"/crds"), "*.yaml", fileutils.FileTypeRegular|fileutils.FileTypeSymlink, 0)
+		crds, err := fileutils.Find(fsys, filepath.Clean(chartPath+"/crds"), "*.yaml", fileutils.FileTypeRegular, 0)
 		if err != nil {
 			return nil, err
 		}
@@ -103,7 +103,7 @@ func ParseChart(fsys fs.FS, chartPath string, parent *Chart) (*Chart, error) {
 			chart.crds = append(chart.crds, raw)
 		}
 
-		manifests, err := fileutils.Find(fsys, filepath.Clean(chartPath+"/templates"), "[^_]*.yaml", fileutils.FileTypeRegular|fileutils.FileTypeSymlink, 0)
+		manifests, err := fileutils.Find(fsys, filepath.Clean(chartPath+"/templates"), "[^_]*.yaml", fileutils.FileTypeRegular, 0)
 		if err != nil {
 			return nil, err
 		}
@@ -114,7 +114,7 @@ func ParseChart(fsys fs.FS, chartPath string, parent *Chart) (*Chart, error) {
 		}
 	}
 
-	includes, err := fileutils.Find(fsys, filepath.Clean(chartPath+"/templates"), "_*", fileutils.FileTypeRegular|fileutils.FileTypeSymlink, 0)
+	includes, err := fileutils.Find(fsys, filepath.Clean(chartPath+"/templates"), "_*", fileutils.FileTypeRegular, 0)
 	if err != nil {
 		return nil, err
 	}
@@ -125,7 +125,7 @@ func ParseChart(fsys fs.FS, chartPath string, parent *Chart) (*Chart, error) {
 	}
 
 	chart.files = Files{}
-	files, err := fileutils.Find(fsys, filepath.Clean(chartPath), "", fileutils.FileTypeRegular|fileutils.FileTypeSymlink, 0)
+	files, err := fileutils.Find(fsys, filepath.Clean(chartPath), "", fileutils.FileTypeRegular, 0)
 	if err != nil {
 		return nil, err
 	}

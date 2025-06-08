@@ -130,7 +130,7 @@ func NewKustomizeGenerator(fsys fs.FS, kustomizationPath string, _ client.Client
 	// (which is probably a common usecase); however it has to be clarified how to handle template scopes;
 	// for example it might be desired that subtrees with a kustomization.yaml file are processed in an own
 	// template context
-	files, err := fileutils.Find(fsys, kustomizationPath, "*", fileutils.FileTypeRegular|fileutils.FileTypeSymlink, 0)
+	files, err := fileutils.Find(fsys, kustomizationPath, "*", fileutils.FileTypeRegular, 0)
 	if err != nil {
 		return nil, err
 	}
