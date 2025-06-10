@@ -394,6 +394,11 @@ func generateKustomization(fsys kustfsys.FileSystem) ([]byte, error) {
 		Resources: resources,
 	}
 
+	if len(resources) == 0 {
+		// if there are no resources, set a dummy namespace to avoid "kustomization.yaml is empty" build error
+		kustomization.Namespace = "_dummy"
+	}
+
 	rawKustomization, err := kyaml.Marshal(kustomization)
 	if err != nil {
 		return nil, err
