@@ -23,7 +23,7 @@ Returned backoff does
 - 5 quick roundtrips (exponential, below 1s)
 - then 15 roundtrips at 1s
 - then 30 roundtrips at 2s
-- then rounttrips at 10s
+- then rounttrips at maxDelay
 */
 
 func NewBackoff(maxDelay time.Duration) *Backoff {
