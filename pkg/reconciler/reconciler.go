@@ -748,6 +748,10 @@ func (r *Reconciler) Apply(ctx context.Context, inventory *[]*InventoryItem, obj
 					if existingObject.GetDeletionTimestamp().IsZero() && existingStatus == status.CurrentStatus {
 						item.Phase = PhaseReady
 					} else {
+						// TODO: is it wise to not change item.Phase here?
+						// Not changing it means that a dependent's phase stays at the last known value (which might even be Ready);
+						// which means in particular that a dependent that has reached a Ready phase will not change its phase
+						// if the dependent object starts to flicker; perhaps this is a wanted behaviour.
 						numUnready++
 					}
 					item.Status = existingStatus
