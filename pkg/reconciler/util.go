@@ -128,6 +128,10 @@ func isApiService(key types.ObjectKey) bool {
 	return key.GetObjectKind().GroupVersionKind().GroupKind() == schema.GroupKind{Group: "apiregistration.k8s.io", Kind: "APIService"}
 }
 
+func isSecret(key types.ObjectKey) bool {
+	return key.GetObjectKind().GroupVersionKind().GroupKind() == schema.GroupKind{Group: "", Kind: "Secret"}
+}
+
 func getCrds(objects []client.Object) []*apiextensionsv1.CustomResourceDefinition {
 	var crds []*apiextensionsv1.CustomResourceDefinition
 	for _, object := range objects {

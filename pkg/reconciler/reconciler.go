@@ -282,6 +282,21 @@ func (r *Reconciler) Apply(ctx context.Context, inventory *[]*InventoryItem, obj
 		return false, errors.Wrap(err, "error normalizing objects")
 	}
 
+	// merge secret stringData into data; this is required/better because server-side-apply does not work well
+	// with stringData
+	for _, object := range objects {
+		if isSecret(object) {
+			secret := object.(*corev1.Secret)
+			for k, v := range secret.StringData {
+				if secret.Data == nil {
+					secret.Data = make(map[string][]byte)
+				}
+				secret.Data[k] = []byte(v)
+			}
+			secret.StringData = nil
+		}
+	}
+
 	// perform cleanup on object manifests
 	for _, object := range objects {
 		removeLabel(object, r.labelKeyOwnerId)
