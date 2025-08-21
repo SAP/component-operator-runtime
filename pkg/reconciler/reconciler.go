@@ -825,21 +825,21 @@ func (r *Reconciler) Apply(ctx context.Context, inventory *[]*InventoryItem, obj
 				return false, errors.Wrapf(err, "error reading object %s", item)
 			}
 
-			// note: the effective deletion policy is always the last known one of the dependent object,
-			// that is, the one determined when the object was contained in the manifests the last time;
-			// just-in-time changes of the default deletion policy on the component thus have no impact on the
-			// deletion policy of redundant objects; dependent objects are orphaned if they have an effective
-			// Orphan or OrphanOnApply deletion policy.
-
-			orphan := item.DeletePolicy == DeletePolicyOrphan || item.DeletePolicy == DeletePolicyOrphanOnApply ||
-				existingObject != nil && existingObject.GetLabels()[r.labelKeyOwnerId] != hashedOwnerId
-
 			switch item.Phase {
 			case PhaseScheduledForDeletion:
 				// delete namespaces after all contained inventory items
 				// delete all instances of managed types before remaining objects; this ensures that no objects are prematurely
 				// deleted which are needed for the deletion of the managed instances, such as webhook servers, api servers, ...
 				if !isUsedNamespace(item) && (numManagedToBeDeleted == 0 || isManaged(item)) {
+					// note: the effective deletion policy is always the last known one of the dependent object,
+					// that is, the one determined when the object was contained in the manifests the last time;
+					// just-in-time changes of the default deletion policy on the component thus have no impact on the
+					// deletion policy of redundant objects; dependent objects are orphaned if they have an effective
+					// Orphan or OrphanOnApply deletion policy.
+
+					orphan := item.DeletePolicy == DeletePolicyOrphan || item.DeletePolicy == DeletePolicyOrphanOnApply ||
+						existingObject != nil && existingObject.GetLabels()[r.labelKeyOwnerId] != hashedOwnerId
+
 					if orphan {
 						item.Phase = ""
 					} else {
@@ -940,9 +940,6 @@ func (r *Reconciler) Delete(ctx context.Context, inventory *[]*InventoryItem, ow
 			return false, errors.Wrapf(err, "error reading object %s", item)
 		}
 
-		orphan := item.DeletePolicy == DeletePolicyOrphan || item.DeletePolicy == DeletePolicyOrphanOnDelete ||
-			existingObject != nil && existingObject.GetLabels()[r.labelKeyOwnerId] != hashedOwnerId
-
 		switch item.Phase {
 		case PhaseDeleting:
 			if existingObject == nil {
@@ -961,6 +958,9 @@ func (r *Reconciler) Delete(ctx context.Context, inventory *[]*InventoryItem, ow
 				return false, fmt.Errorf("object %s was already deleted but has no deletion timestamp", types.ObjectKeyToString(item))
 			}
 		default:
+			orphan := item.DeletePolicy == DeletePolicyOrphan || item.DeletePolicy == DeletePolicyOrphanOnDelete ||
+				existingObject != nil && existingObject.GetLabels()[r.labelKeyOwnerId] != hashedOwnerId
+
 			// delete namespaces after all contained inventory items
 			// delete all instances of managed types before remaining objects; this ensures that no objects are prematurely
 			// deleted which are needed for the deletion of the managed instances, such as webhook servers, api servers, ...
