@@ -85,13 +85,13 @@ var templates embed.FS
 
 // default verions
 var (
-	goVersion                      = "1.23.4"
-	kubernetesVersion              = "v0.32.0"
-	controllerRuntimeVersion       = "v0.19.3"
-	controllerToolsVersion         = "v0.16.5"
-	codeGeneratorVersion           = "v0.32.0"
-	admissionWebhookRuntimeVersion = "v0.1.52"
-	envtestKubernetesVersion       = "1.30.3"
+	goVersion                      = "1.25.0"
+	kubernetesVersion              = "v0.34.0-rc.2"
+	controllerRuntimeVersion       = "v0.21.0"
+	controllerToolsVersion         = "v0.18.0"
+	codeGeneratorVersion           = "v0.34.0-rc.2"
+	admissionWebhookRuntimeVersion = "v0.1.67"
+	envtestKubernetesVersion       = "1.33.0"
 )
 
 func main() {
