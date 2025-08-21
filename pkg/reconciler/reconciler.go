@@ -838,7 +838,7 @@ func (r *Reconciler) Apply(ctx context.Context, inventory *[]*InventoryItem, obj
 					// Orphan or OrphanOnApply deletion policy.
 
 					orphan := item.DeletePolicy == DeletePolicyOrphan || item.DeletePolicy == DeletePolicyOrphanOnApply ||
-						existingObject != nil && existingObject.GetLabels()[r.labelKeyOwnerId] != hashedOwnerId
+						(existingObject != nil && existingObject.GetLabels()[r.labelKeyOwnerId] != hashedOwnerId)
 
 					if orphan {
 						item.Phase = ""
@@ -959,7 +959,7 @@ func (r *Reconciler) Delete(ctx context.Context, inventory *[]*InventoryItem, ow
 			}
 		default:
 			orphan := item.DeletePolicy == DeletePolicyOrphan || item.DeletePolicy == DeletePolicyOrphanOnDelete ||
-				existingObject != nil && existingObject.GetLabels()[r.labelKeyOwnerId] != hashedOwnerId
+				(existingObject != nil && existingObject.GetLabels()[r.labelKeyOwnerId] != hashedOwnerId)
 
 			// delete namespaces after all contained inventory items
 			// delete all instances of managed types before remaining objects; this ensures that no objects are prematurely
