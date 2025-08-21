@@ -15,6 +15,7 @@ import (
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	kstatus "sigs.k8s.io/cli-utils/pkg/kstatus/status"
 
@@ -43,6 +44,30 @@ func NewStatusAnalyzer(reconcilerName string) StatusAnalyzer {
 
 // Implement the StatusAnalyzer interface.
 func (s *statusAnalyzer) ComputeStatus(object *unstructured.Unstructured) (Status, error) {
+	type ObjectCondition struct {
+		Type               string                 `json:"type"`
+		Status             corev1.ConditionStatus `json:"status"`
+		ObservedGeneration *int64                 `json:"observedGeneration"`
+	}
+	type ObjectStatus struct {
+		ObservedGeneration *int64 `json:"observedGeneration"`
+		Conditions         []ObjectCondition
+	}
+	type Object struct {
+		Status ObjectStatus `json:"status"`
+	}
+
+	obj := &Object{}
+	if err := runtime.DefaultUnstructuredConverter.FromUnstructured(object.Object, obj); err != nil {
+		return UnknownStatus, err
+	}
+	var readyCondition *ObjectCondition
+	for i, condition := range obj.Status.Conditions {
+		if condition.Type == conditionTypeReady {
+			readyCondition = &obj.Status.Conditions[i]
+		}
+	}
+
 	var extraConditions []string
 
 	// parse hints from annotations
@@ -60,50 +85,39 @@ func (s *statusAnalyzer) ComputeStatus(object *unstructured.Unstructured) (Statu
 			}
 			switch strcase.ToKebab(key) {
 			case types.StatusHintHasObservedGeneration:
-				// add an impossible status.observedGeneration if there is none, but the hint says there will be one
 				if hasValue {
 					return UnknownStatus, fmt.Errorf("status hint %s does not take a value", types.StatusHintHasObservedGeneration)
 				}
-				_, found, err := unstructured.NestedInt64(object.Object, "status", "observedGeneration")
-				if err != nil {
-					return UnknownStatus, err
-				}
-				if !found {
-					if err := unstructured.SetNestedField(object.Object, int64(-1), "status", "observedGeneration"); err != nil {
-						return UnknownStatus, err
+				if obj.Status.ObservedGeneration == nil {
+					if readyCondition != nil && readyCondition.ObservedGeneration != nil {
+						// add the ready condition's observed generation (if present) as observed generation if there is none, but the hint says there will be one
+						if err := unstructured.SetNestedField(object.Object, *readyCondition.ObservedGeneration, "status", "observedGeneration"); err != nil {
+							return UnknownStatus, err
+						}
+					} else {
+						// otherwise add an impossible observed generation if there is none, but the hint says there will be one
+						if err := unstructured.SetNestedField(object.Object, int64(-1), "status", "observedGeneration"); err != nil {
+							return UnknownStatus, err
+						}
 					}
 				}
 			case types.StatusHintHasReadyCondition:
-				// add an Unknown Ready condition if there is none, but the hint says there will be one
 				if hasValue {
 					return UnknownStatus, fmt.Errorf("status hint %s does not take a value", types.StatusHintHasReadyCondition)
 				}
-				foundReadyCondition := false
-				conditions, found, err := unstructured.NestedSlice(object.Object, "status", "conditions")
-				if err != nil {
-					return UnknownStatus, err
-				}
-				if !found {
-					conditions = make([]any, 0)
-				}
-				for _, condition := range conditions {
-					if condition, ok := condition.(map[string]any); ok {
-						condType, found, err := unstructured.NestedString(condition, "type")
-						if err != nil {
-							return UnknownStatus, err
-						}
-						if found && condType == conditionTypeReady {
-							foundReadyCondition = true
-							break
-						}
+				if readyCondition == nil {
+					// add a ready condition with status 'Unknown' if there is none, but the hint says there will be one
+					conditions, _, err := unstructured.NestedSlice(object.Object, "status", "conditions")
+					if err != nil {
+						// TODO: this error should never occur because it was verified above that status.conditions has the right type
+						return UnknownStatus, err
 					}
-				}
-				if !foundReadyCondition {
 					conditions = append(conditions, map[string]any{
 						"type":   conditionTypeReady,
 						"status": string(corev1.ConditionUnknown),
 					})
 					if err := unstructured.SetNestedSlice(object.Object, conditions, "status", "conditions"); err != nil {
+						// TODO: this error should never occur because it was verified above that status.conditions can be digged
 						return UnknownStatus, err
 					}
 				}
@@ -135,13 +149,9 @@ func (s *statusAnalyzer) ComputeStatus(object *unstructured.Unstructured) (Statu
 
 	// check extra conditions
 	if status == CurrentStatus && len(extraConditions) > 0 {
-		objc, err := kstatus.GetObjectWithConditions(object.UnstructuredContent())
-		if err != nil {
-			return UnknownStatus, err
-		}
 		for _, condition := range extraConditions {
 			found := false
-			for _, cond := range objc.Status.Conditions {
+			for _, cond := range obj.Status.Conditions {
 				if cond.Type == condition {
 					found = true
 					if cond.Status != corev1.ConditionTrue {
@@ -161,11 +171,7 @@ func (s *statusAnalyzer) ComputeStatus(object *unstructured.Unstructured) (Statu
 		// other than kstatus we want to consider jobs as InProgress if its pods are still running, resp. did not (yet) finish successfully
 		if status == CurrentStatus {
 			done := false
-			objc, err := kstatus.GetObjectWithConditions(object.UnstructuredContent())
-			if err != nil {
-				return UnknownStatus, err
-			}
-			for _, cond := range objc.Status.Conditions {
+			for _, cond := range obj.Status.Conditions {
 				if cond.Type == string(batchv1.JobComplete) && cond.Status == corev1.ConditionTrue {
 					done = true
 					break
