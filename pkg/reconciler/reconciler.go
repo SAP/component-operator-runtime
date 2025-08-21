@@ -831,7 +831,8 @@ func (r *Reconciler) Apply(ctx context.Context, inventory *[]*InventoryItem, obj
 			// deletion policy of redundant objects; dependent objects are orphaned if they have an effective
 			// Orphan or OrphanOnApply deletion policy.
 
-			orphan := item.DeletePolicy == DeletePolicyOrphan || item.DeletePolicy == DeletePolicyOrphanOnApply
+			orphan := item.DeletePolicy == DeletePolicyOrphan || item.DeletePolicy == DeletePolicyOrphanOnApply ||
+				existingObject != nil && existingObject.GetLabels()[r.labelKeyOwnerId] != hashedOwnerId
 
 			switch item.Phase {
 			case PhaseScheduledForDeletion:
@@ -939,7 +940,8 @@ func (r *Reconciler) Delete(ctx context.Context, inventory *[]*InventoryItem, ow
 			return false, errors.Wrapf(err, "error reading object %s", item)
 		}
 
-		orphan := item.DeletePolicy == DeletePolicyOrphan || item.DeletePolicy == DeletePolicyOrphanOnDelete
+		orphan := item.DeletePolicy == DeletePolicyOrphan || item.DeletePolicy == DeletePolicyOrphanOnDelete ||
+			existingObject != nil && existingObject.GetLabels()[r.labelKeyOwnerId] != hashedOwnerId
 
 		switch item.Phase {
 		case PhaseDeleting:
