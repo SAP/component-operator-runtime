@@ -50,8 +50,8 @@ func (s *statusAnalyzer) ComputeStatus(object *unstructured.Unstructured) (Statu
 		ObservedGeneration *int64                 `json:"observedGeneration"`
 	}
 	type ObjectStatus struct {
-		ObservedGeneration *int64 `json:"observedGeneration"`
-		Conditions         []ObjectCondition
+		ObservedGeneration *int64            `json:"observedGeneration"`
+		Conditions         []ObjectCondition `json:"conditions"`
 	}
 	type Object struct {
 		Status ObjectStatus `json:"status"`
