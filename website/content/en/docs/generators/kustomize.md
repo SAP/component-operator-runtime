@@ -47,6 +47,9 @@ and the well-known template function set that is available in Helm can be used; 
 | `mustLocalLookup <apiVersion string, kind string, namespace string, name string>`                                  | Lookup a Kubernetes resource with the local client; fail in case of 404 (not found) errors. |
 | `lookupWithKubeConfig <apiVersion string, kind string, namespace string, name string kubeConfig string> `          | Lookup a Kubernetes resource with the given kubeconfig; return nil in case of 404 (not found) errors. |
 | `mustLookupWithKubeConfig <apiVersion string, kind string, namespace string, name string, kubeConfig string>`      | Lookup a Kubernetes resource with the given kubeconfig; fail in case of 404 (not found) errors. |
+| `lookupList <apiVersion string, kind string, namespace string, labelSelector string>`                                           | Lookup (list) Kubernetes resources with the target client. |
+| `localLookupList <apiVersion string, kind string, namespace string, labelSelector string>`                                      | Lookup (list) Kubernetes resources with the local client. |
+| `lookupListWithKubeConfig <apiVersion string, kind string, namespace string, labelSelector string kubeConfig string> `          | Lookup (list) Kubernetes resources with the given kubeconfig. |
 | `listFiles <pattern string>`                                                                                       | List files relative to the provided kustomization directory,  matching the given [pattern](https://pkg.go.dev/github.com/gobwas/glob). | 
 | `existsFile <path string>`                                                                                         | Check if the given file path exists, relative to the provided kustomization directory. |
 | `readFile <path string>`                                                                                           | Read the given file, relative to the provided kustomization directory. |

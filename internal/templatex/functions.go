@@ -16,10 +16,12 @@ import (
 	"text/template"
 
 	"github.com/pkg/errors"
+	"github.com/sap/go-generics/slices"
 	"github.com/spf13/cast"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/labels"
 	apitypes "k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/clientcmd"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -55,6 +57,7 @@ func FuncMap() template.FuncMap {
 		"formatIPv4Address":        formatIPv4Address,
 		"lookupWithKubeConfig":     makeFuncLookupWithKubeConfig(true),
 		"mustLookupWithKubeConfig": makeFuncLookupWithKubeConfig(false),
+		"lookupListWithKubeConfig": makeFuncLookupListWithKubeConfig(),
 	}
 }
 
@@ -71,6 +74,7 @@ func FuncMapForClient(c client.Client) template.FuncMap {
 	return template.FuncMap{
 		"lookup":     makeFuncLookup(c, true),
 		"mustLookup": makeFuncLookup(c, false),
+		"lookupList": makeFuncLookupList(c),
 	}
 }
 
@@ -79,6 +83,7 @@ func FuncMapForLocalClient(c client.Client) template.FuncMap {
 	return template.FuncMap{
 		"localLookup":     makeFuncLookup(c, true),
 		"mustLocalLookup": makeFuncLookup(c, false),
+		"localLookupList": makeFuncLookupList(c),
 	}
 }
 
@@ -310,5 +315,45 @@ func makeFuncLookupWithKubeConfig(ignoreNotFound bool) func(string, string, stri
 			return map[string]any{}, err
 		}
 		return object.UnstructuredContent(), nil
+	}
+}
+
+func makeFuncLookupList(c client.Client) func(string, string, string, string) ([]map[string]any, error) {
+	return func(apiVersion string, kind string, namespace string, labelSelector string) ([]map[string]any, error) {
+		objectList := &unstructured.UnstructuredList{}
+		objectList.SetAPIVersion(apiVersion)
+		objectList.SetKind(kind)
+		selector, err := labels.Parse(labelSelector)
+		if err != nil {
+			return nil, err
+		}
+		if err := c.List(context.Background(), objectList, client.InNamespace(namespace), client.MatchingLabelsSelector{Selector: selector}); err != nil {
+			return nil, err
+		}
+		return slices.Collect(objectList.Items, func(object unstructured.Unstructured) map[string]any { return object.UnstructuredContent() }), nil
+	}
+}
+
+func makeFuncLookupListWithKubeConfig() func(string, string, string, string, string) ([]map[string]any, error) {
+	return func(apiVersion string, kind string, namespace string, labelSelector string, kubeConfig string) ([]map[string]any, error) {
+		cfg, err := clientcmd.RESTConfigFromKubeConfig([]byte(kubeConfig))
+		if err != nil {
+			return nil, err
+		}
+		c, err := client.New(cfg, client.Options{})
+		if err != nil {
+			return nil, err
+		}
+		objectList := &unstructured.UnstructuredList{}
+		objectList.SetAPIVersion(apiVersion)
+		objectList.SetKind(kind)
+		selector, err := labels.Parse(labelSelector)
+		if err != nil {
+			return nil, err
+		}
+		if err := c.List(context.Background(), objectList, client.InNamespace(namespace), client.MatchingLabelsSelector{Selector: selector}); err != nil {
+			return nil, err
+		}
+		return slices.Collect(objectList.Items, func(object unstructured.Unstructured) map[string]any { return object.UnstructuredContent() }), nil
 	}
 }
