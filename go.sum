@@ -197,6 +197,8 @@ github.com/rogpeppe/go-internal v1.14.1/go.mod h1:MaRKkUm5W0goXpeCfT7UZI6fk/L7L7
 github.com/russross/blackfriday/v2 v2.1.0/go.mod h1:+Rmxgy9KzJVeS9/2gXHxylqXiyQDYRxCVz55jmeOWTM=
 github.com/sap/go-generics v0.2.44 h1:AviSdcGVsSh8pms2SDx5891bYBNCwSEo0Ht9v7IYSvo=
 github.com/sap/go-generics v0.2.44/go.mod h1:ma5l+ZDka+1uod2W00x3R6g+Zu4K5Y3tLKg4mePatlE=
+github.com/sap/go-generics v0.2.45 h1:Sly5dNVZWSLs1Vz3MFPz/uoTfZhRbx5V0gxEo5BWrLs=
+github.com/sap/go-generics v0.2.45/go.mod h1:6CZylrnWV6OkeVAsUzWYQaJ5AvPR5HYsCkI5CvONeX8=
 github.com/sergi/go-diff v1.0.0/go.mod h1:0CfEIISq7TuYL3j771MWULgwwjU+GofnZX9QAmXWZgo=
 github.com/sergi/go-diff v1.3.2-0.20230802210424-5b0b94c5c0d3 h1:n661drycOFuPLCN3Uc8sB6B/s6Z4t2xvBgU1htSHuq8=
 github.com/sergi/go-diff v1.3.2-0.20230802210424-5b0b94c5c0d3/go.mod h1:A0bzQcvG0E7Rwjx0REVgAGH58e96+X0MeOfepqsbeW4=
