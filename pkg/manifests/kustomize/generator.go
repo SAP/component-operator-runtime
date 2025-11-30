@@ -161,7 +161,7 @@ func NewKustomizeGenerator(fsys fs.FS, kustomizationPath string, _ client.Client
 					Funcs(templatex.FuncMapForTemplate(nil)).
 					Funcs(templatex.FuncMapForLocalClient(nil)).
 					Funcs(templatex.FuncMapForClient(nil)).
-					Funcs(funcMapForGenerateContext(nil, nil, nil, nil, "", ""))
+					Funcs(funcMapForGenerateContext(nil, nil, nil, nil, "", "", ""))
 			} else {
 				t = t.New(name)
 			}
@@ -218,6 +218,10 @@ func (g *KustomizeGenerator) Generate(ctx context.Context, namespace string, nam
 	if err != nil {
 		return nil, err
 	}
+	componentDigest, err := component.ComponentDigestFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
 	component, err := component.ComponentFromContext(ctx)
 	if err != nil {
 		return nil, err
@@ -252,7 +256,7 @@ func (g *KustomizeGenerator) Generate(ctx context.Context, namespace string, nam
 				Funcs(templatex.FuncMapForTemplate(t0)).
 				Funcs(templatex.FuncMapForLocalClient(localClient)).
 				Funcs(templatex.FuncMapForClient(clnt)).
-				Funcs(funcMapForGenerateContext(g.files, serverVersion, serverGroupsWithResources, component, namespace, name))
+				Funcs(funcMapForGenerateContext(g.files, serverVersion, serverGroupsWithResources, component, componentDigest, namespace, name))
 		}
 		var buf bytes.Buffer
 		// TODO: templates (accidentally or intentionally) could modify data, or even some of the objects supplied through builtin functions;
@@ -311,7 +315,7 @@ func (g *KustomizeGenerator) Generate(ctx context.Context, namespace string, nam
 	return objects, nil
 }
 
-func funcMapForGenerateContext(files map[string][]byte, serverInfo *version.Info, serverGroupsWithResources []*metav1.APIResourceList, component component.Component, namespace string, name string) template.FuncMap {
+func funcMapForGenerateContext(files map[string][]byte, serverInfo *version.Info, serverGroupsWithResources []*metav1.APIResourceList, component component.Component, componentDigest string, namespace string, name string) template.FuncMap {
 	return template.FuncMap{
 		// TODO: maybe it would it be better to convert component to unstructured;
 		// then calling methods would no longer be possible, and attributes would be in lowercase
@@ -319,6 +323,7 @@ func funcMapForGenerateContext(files map[string][]byte, serverInfo *version.Info
 		"existsFile":        makeFuncExistsFile(files),
 		"readFile":          makeFuncReadFile(files),
 		"component":         makeFuncData(component),
+		"componentDigest":   func() string { return componentDigest },
 		"namespace":         func() string { return namespace },
 		"name":              func() string { return name },
 		"kubernetesVersion": func() *version.Info { return serverInfo },
