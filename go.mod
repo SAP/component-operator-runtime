@@ -1,6 +1,6 @@
 module github.com/sap/component-operator-runtime
 
-go 1.25.4
+go 1.25.5
 
 require (
 	github.com/Masterminds/sprig/v3 v3.3.0
@@ -15,7 +15,7 @@ require (
 	github.com/prometheus/client_golang v1.23.2
 	github.com/sap/go-generics v0.2.45
 	github.com/spf13/cast v1.10.0
-	github.com/spf13/cobra v1.10.1
+	github.com/spf13/cobra v1.10.2
 	github.com/spf13/pflag v1.0.10
 	k8s.io/api v0.34.2
 	k8s.io/apiextensions-apiserver v0.34.2
