@@ -7,6 +7,7 @@ package component
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"reflect"
 	"regexp"
@@ -15,7 +16,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/pkg/errors"
+	legacyerrors "github.com/pkg/errors"
 	"github.com/sap/go-generics/slices"
 
 	corev1 "k8s.io/api/core/v1"
@@ -23,7 +24,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	apitypes "k8s.io/apimachinery/pkg/types"
-	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/client-go/discovery"
 	"k8s.io/client-go/util/workqueue"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -82,7 +82,7 @@ const (
 	defaultReapplyInterval = 60 * time.Minute
 )
 
-// TODO: should we pass cluster.Client to hooks instead of just client.Client?
+// TODO: should we pass cluster.Client to hooks instead of just client.Client (or, in the other direction, just client.Reader)?
 
 // HookFunc is the function signature that can be used to
 // establish callbacks at certain points in the reconciliation logic.
@@ -132,18 +132,21 @@ type ReconcilerOptions struct {
 	// target client.
 	SchemeBuilder types.SchemeBuilder
 	// NewClient allows to modify or replace the default client used by the reconciler.
-	// The returned client is used by the reconciler to manage the component instances, and passed to hooks.
+	// The returned client is used by the reconciler to manage the component instances.
 	// Its scheme therefore must recognize the component type.
 	NewClient NewClientFunc
 }
 
 // Reconciler provides the implementation of controller-runtime's Reconciler interface, for a given Component type T.
 type Reconciler[T Component] struct {
-	name               string
-	id                 string
-	groupVersionKind   schema.GroupVersionKind
-	controllerName     string
-	client             cluster.Client
+	name             string
+	id               string
+	groupVersionKind schema.GroupVersionKind
+	controllerName   string
+	// TODO: client could be just a client.Client
+	client cluster.Client
+	// TODO: hookClient could be just a client.Client or even client.Reader
+	hookClient         cluster.Client
 	eventRecorder      events.DeduplicatingRecorder
 	resourceGenerator  manifests.Generator
 	statusAnalyzer     status.StatusAnalyzer
@@ -225,7 +228,7 @@ func (r *Reconciler[T]) Reconcile(ctx context.Context, req ctrl.Request) (result
 			log.V(1).Info("not found; ignoring")
 			return ctrl.Result{}, nil
 		}
-		return ctrl.Result{}, errors.Wrap(err, "unexpected get error")
+		return ctrl.Result{}, legacyerrors.Wrap(err, "unexpected get error")
 	}
 	component.GetObjectKind().SetGroupVersionKind(r.groupVersionKind)
 	// componentDigest is populated after setting up the status handler, right before the post-read hook phase
@@ -439,7 +442,7 @@ func (r *Reconciler[T]) Reconcile(ctx context.Context, req ctrl.Request) (result
 			}
 		}
 		if updateErr := r.client.Status().Update(ctx, component, client.FieldOwner(*r.options.FieldOwner)); updateErr != nil {
-			err = utilerrors.NewAggregate([]error{err, updateErr})
+			err = errors.Join(err, updateErr)
 			result = ctrl.Result{}
 		}
 	}()
@@ -451,9 +454,9 @@ func (r *Reconciler[T]) Reconcile(ctx context.Context, req ctrl.Request) (result
 	}
 
 	// resolve references
-	componentDigest, err = resolveReferences(ctx, r.client, component)
+	componentDigest, err = resolveReferences(ctx, r.client, r.hookClient, component)
 	if err != nil {
-		return ctrl.Result{}, errors.Wrap(err, "error resolving references")
+		return ctrl.Result{}, legacyerrors.Wrap(err, "error resolving references")
 	}
 
 	if component.GetDeletionTimestamp().IsZero() {
@@ -481,19 +484,19 @@ func (r *Reconciler[T]) Reconcile(ctx context.Context, req ctrl.Request) (result
 	hookCtx := NewContext(ctx).
 		WithReconcilerName(r.name)
 	for hookOrder, hook := range r.postReadHooks {
-		if err := hook(hookCtx, r.client, component); err != nil {
-			return ctrl.Result{}, errors.Wrapf(err, "error running post-read hook (%d)", hookOrder)
+		if err := hook(hookCtx, r.hookClient, component); err != nil {
+			return ctrl.Result{}, legacyerrors.Wrapf(err, "error running post-read hook (%d)", hookOrder)
 		}
 	}
 
 	// setup target
 	localClient, err := r.getLocalClientForComponent(component)
 	if err != nil {
-		return ctrl.Result{}, errors.Wrap(err, "error getting local client for component")
+		return ctrl.Result{}, legacyerrors.Wrap(err, "error getting local client for component")
 	}
 	targetClient, err := r.getClientForComponent(component)
 	if err != nil {
-		return ctrl.Result{}, errors.Wrap(err, "error getting client for component")
+		return ctrl.Result{}, legacyerrors.Wrap(err, "error getting client for component")
 	}
 	targetOptions := r.getOptionsForComponent(component)
 	target := newReconcileTarget[T](r.name, r.id, localClient, targetClient, r.resourceGenerator, targetOptions)
@@ -510,7 +513,7 @@ func (r *Reconciler[T]) Reconcile(ctx context.Context, req ctrl.Request) (result
 		// TODO: optionally (to be completely consistent) set finalizer through a mutating webhook
 		if added := controllerutil.AddFinalizer(component, *r.options.Finalizer); added {
 			if err := r.client.Update(ctx, component, client.FieldOwner(*r.options.FieldOwner)); err != nil {
-				return ctrl.Result{}, errors.Wrap(err, "error adding finalizer")
+				return ctrl.Result{}, legacyerrors.Wrap(err, "error adding finalizer")
 			}
 			// trigger another round trip
 			// this is necessary because the update call invalidates potential changes done to the component by the post-read
@@ -521,19 +524,19 @@ func (r *Reconciler[T]) Reconcile(ctx context.Context, req ctrl.Request) (result
 
 		log.V(2).Info("reconciling dependent resources")
 		for hookOrder, hook := range r.preReconcileHooks {
-			if err := hook(hookCtx, r.client, component); err != nil {
-				return ctrl.Result{}, errors.Wrapf(err, "error running pre-reconcile hook (%d)", hookOrder)
+			if err := hook(hookCtx, r.hookClient, component); err != nil {
+				return ctrl.Result{}, legacyerrors.Wrapf(err, "error running pre-reconcile hook (%d)", hookOrder)
 			}
 		}
 		ok, err := target.Apply(ctx, component, componentDigest)
 		if err != nil {
 			log.V(1).Info("error while reconciling dependent resources")
-			return ctrl.Result{}, errors.Wrap(err, "error reconciling dependent resources")
+			return ctrl.Result{}, legacyerrors.Wrap(err, "error reconciling dependent resources")
 		}
 		if ok {
 			for hookOrder, hook := range r.postReconcileHooks {
-				if err := hook(hookCtx, r.client, component); err != nil {
-					return ctrl.Result{}, errors.Wrapf(err, "error running post-reconcile hook (%d)", hookOrder)
+				if err := hook(hookCtx, r.hookClient, component); err != nil {
+					return ctrl.Result{}, legacyerrors.Wrapf(err, "error running post-reconcile hook (%d)", hookOrder)
 				}
 			}
 			log.V(1).Info("all dependent resources successfully reconciled")
@@ -554,14 +557,14 @@ func (r *Reconciler[T]) Reconcile(ctx context.Context, req ctrl.Request) (result
 		}
 	} else {
 		for hookOrder, hook := range r.preDeleteHooks {
-			if err := hook(hookCtx, r.client, component); err != nil {
-				return ctrl.Result{}, errors.Wrapf(err, "error running pre-delete hook (%d)", hookOrder)
+			if err := hook(hookCtx, r.hookClient, component); err != nil {
+				return ctrl.Result{}, legacyerrors.Wrapf(err, "error running pre-delete hook (%d)", hookOrder)
 			}
 		}
 		allowed, msg, err := target.IsDeletionAllowed(ctx, component)
 		if err != nil {
 			log.V(1).Info("error while checking if deletion is allowed")
-			return ctrl.Result{}, errors.Wrap(err, "error checking whether deletion is possible")
+			return ctrl.Result{}, legacyerrors.Wrap(err, "error checking whether deletion is possible")
 		}
 		if !allowed {
 			// deletion is blocked because of existing managed CROs and so on
@@ -583,19 +586,19 @@ func (r *Reconciler[T]) Reconcile(ctx context.Context, req ctrl.Request) (result
 		ok, err := target.Delete(ctx, component)
 		if err != nil {
 			log.V(1).Info("error while deleting dependent resources")
-			return ctrl.Result{}, errors.Wrap(err, "error deleting dependent resources")
+			return ctrl.Result{}, legacyerrors.Wrap(err, "error deleting dependent resources")
 		}
 		if ok {
 			for hookOrder, hook := range r.postDeleteHooks {
-				if err := hook(hookCtx, r.client, component); err != nil {
-					return ctrl.Result{}, errors.Wrapf(err, "error running post-delete hook (%d)", hookOrder)
+				if err := hook(hookCtx, r.hookClient, component); err != nil {
+					return ctrl.Result{}, legacyerrors.Wrapf(err, "error running post-delete hook (%d)", hookOrder)
 				}
 			}
 			// all dependent resources are already gone, so that's it
 			log.V(1).Info("all dependent resources are successfully deleted; removing finalizer")
 			if removed := controllerutil.RemoveFinalizer(component, *r.options.Finalizer); removed {
 				if err := r.client.Update(ctx, component, client.FieldOwner(*r.options.FieldOwner)); err != nil {
-					return ctrl.Result{}, errors.Wrap(err, "error removing finalizer")
+					return ctrl.Result{}, legacyerrors.Wrap(err, "error removing finalizer")
 				}
 			}
 			// skip status update, since the instance will anyway deleted timely by the API server
@@ -691,11 +694,14 @@ func (r *Reconciler[T]) WithPostDeleteHook(hook HookFunc[T]) *Reconciler[T] {
 
 // Register the reconciler with a given controller-runtime Manager and Builder.
 // This will call For() and Complete() on the provided builder.
-// It populates the recnciler's client with an enhnanced client derived from mgr.GetClient() and mgr.GetConfig().
-// That client is used for three purposes:
+// It populates the reconciler's client with a dedicated client derived from mgr.GetConfig() and mgr.GetScheme().
+// That client is used for the following purposes:
 // - reading/updating the reconciled component, sending events for this component
+// - it is used to resolve configmap(key) and secret(key) references;
+// as a consequence, mgr.GetScheme() must recognize the core group (v1) and the component type.
+// Note that the manager's client (that is mgr.GetClient()) is used as well, for the following purposes:
 // - it is passed to hooks
-// - it is passed to the factory for target clients as a default local client
+// - is is used to resolved generic references, that is, spec fields implementing the Reference[T] interface.
 func (r *Reconciler[T]) SetupWithManagerAndBuilder(mgr ctrl.Manager, blder *ctrl.Builder) error {
 	r.setupMutex.Lock()
 	defer r.setupMutex.Unlock()
@@ -705,28 +711,31 @@ func (r *Reconciler[T]) SetupWithManagerAndBuilder(mgr ctrl.Manager, blder *ctrl
 
 	kubeSystemNamespace := &corev1.Namespace{}
 	if err := mgr.GetAPIReader().Get(context.Background(), apitypes.NamespacedName{Name: "kube-system"}, kubeSystemNamespace); err != nil {
-		return errors.Wrap(err, "error retrieving uid of kube-system namespace")
+		return legacyerrors.Wrap(err, "error retrieving uid of kube-system namespace")
 	}
 	r.id = string(kubeSystemNamespace.UID)
 
-	discoveryClient, err := discovery.NewDiscoveryClientForConfigAndClient(mgr.GetConfig(), mgr.GetHTTPClient())
-	if err != nil {
-		return errors.Wrap(err, "error creating discovery client")
-	}
-	r.client = cluster.NewClient(mgr.GetClient(), discoveryClient, mgr.GetEventRecorderFor(r.name), mgr.GetConfig(), mgr.GetHTTPClient())
+	var err error
+	r.client, err = clientfactory.NewClientFor(mgr.GetConfig(), mgr.GetScheme(), r.name)
 	if r.options.NewClient != nil {
 		clnt, err := r.options.NewClient(r.client)
 		if err != nil {
-			return errors.Wrap(err, "error calling custom client constructor")
+			return legacyerrors.Wrap(err, "error calling custom client constructor")
 		}
 		r.client = clnt
 	}
 	r.eventRecorder = *events.NewDeduplicatingRecorder(r.client.EventRecorder())
 
+	discoveryClient, err := discovery.NewDiscoveryClientForConfigAndClient(mgr.GetConfig(), mgr.GetHTTPClient())
+	if err != nil {
+		return legacyerrors.Wrap(err, "error creating discovery client")
+	}
+	r.hookClient = cluster.NewClient(mgr.GetClient(), discoveryClient, mgr.GetEventRecorderFor(r.name), mgr.GetConfig(), mgr.GetHTTPClient())
+
 	component := newComponent[T]()
 	r.groupVersionKind, err = apiutil.GVKForObject(component, r.client.Scheme())
 	if err != nil {
-		return errors.Wrap(err, "error getting type metadata for component")
+		return legacyerrors.Wrap(err, "error getting type metadata for component")
 	}
 	// TODO: should this be more fully qualified, or configurable?
 	// for now we reproduce the controller-runtime default (the lowercase kind of the reconciled type)
@@ -741,7 +750,7 @@ func (r *Reconciler[T]) SetupWithManagerAndBuilder(mgr ctrl.Manager, blder *ctrl
 	}
 	r.clients, err = clientfactory.NewClientFactory(r.name, r.controllerName, mgr.GetConfig(), schemeBuilders)
 	if err != nil {
-		return errors.Wrap(err, "error creating client factory")
+		return legacyerrors.Wrap(err, "error creating client factory")
 	}
 
 	if err := blder.
@@ -754,7 +763,7 @@ func (r *Reconciler[T]) SetupWithManagerAndBuilder(mgr ctrl.Manager, blder *ctrl
 			source.WithBufferSize[apitypes.NamespacedName, reconcile.Request](triggerBufferSize))).
 		Named(r.controllerName).
 		Complete(r); err != nil {
-		return errors.Wrap(err, "error creating controller")
+		return legacyerrors.Wrap(err, "error creating controller")
 	}
 
 	r.setupComplete = true
@@ -790,7 +799,7 @@ func (r *Reconciler[T]) getLocalClientForComponent(component T) (cluster.Client,
 	}
 	clnt, err := r.clients.Get(nil, impersonationUser, impersonationGroups)
 	if err != nil {
-		return nil, errors.Wrap(err, "error getting local client")
+		return nil, legacyerrors.Wrap(err, "error getting local client")
 	}
 	return clnt, nil
 }
@@ -837,7 +846,7 @@ func (r *Reconciler[T]) getClientForComponent(component T) (cluster.Client, erro
 	}
 	clnt, err := r.clients.Get(kubeConfig, impersonationUser, impersonationGroups)
 	if err != nil {
-		return nil, errors.Wrap(err, "error getting target client")
+		return nil, legacyerrors.Wrap(err, "error getting target client")
 	}
 	return clnt, nil
 }

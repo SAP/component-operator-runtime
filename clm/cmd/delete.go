@@ -7,12 +7,12 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"time"
 
 	"github.com/spf13/cobra"
-	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 
 	"github.com/sap/component-operator-runtime/clm/internal/backoff"
 	"github.com/sap/component-operator-runtime/clm/internal/release"
@@ -87,7 +87,7 @@ func newDeleteCmd() *cobra.Command {
 					release.State = component.StateError
 				}
 				if updateErr := releaseClient.Update(context.TODO(), release); updateErr != nil {
-					err = utilerrors.NewAggregate([]error{err, updateErr})
+					err = errors.Join(err, updateErr)
 				}
 			}()
 
