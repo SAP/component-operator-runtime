@@ -6,12 +6,11 @@ SPDX-License-Identifier: Apache-2.0
 package walk
 
 import (
+	"errors"
 	"fmt"
 	"reflect"
 	"strconv"
 	"strings"
-
-	"github.com/hashicorp/go-multierror"
 )
 
 type WalkFunc func(x any, path []string, tag reflect.StructTag) error
@@ -42,7 +41,7 @@ func Walk(x any, f WalkFunc) error {
 	}
 	errs := walk(v, nil, "", f)
 	if len(errs) > 0 {
-		return multierror.Append(nil, errs...)
+		return errors.Join(errs...)
 	}
 	return nil
 }

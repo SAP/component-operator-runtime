@@ -10,7 +10,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/pkg/errors"
+	legacyerrors "github.com/pkg/errors"
 	"github.com/sap/go-generics/slices"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -53,7 +53,7 @@ func replaceFieldManager(managedFields []metav1.ManagedFieldsEntry, managerPrefi
 		}
 		mergedFields, err := mergeManagedFieldsV1(managerEntry.FieldsV1, entry.FieldsV1)
 		if err != nil {
-			return nil, false, errors.Wrap(err, "unable to merge managed fields")
+			return nil, false, legacyerrors.Wrap(err, "unable to merge managed fields")
 		}
 		managerEntry.FieldsV1 = mergedFields
 		changed = true
