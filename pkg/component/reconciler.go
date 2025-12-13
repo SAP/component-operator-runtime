@@ -9,6 +9,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	"reflect"
 	"regexp"
 	"strconv"
@@ -25,6 +26,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	apitypes "k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/discovery"
+	"k8s.io/client-go/rest"
 	"k8s.io/client-go/util/workqueue"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
@@ -293,7 +295,7 @@ func (r *Reconciler[T]) Reconcile(ctx context.Context, req ctrl.Request) (result
 				// remains to be done; note: it may happen (if the apply runs successfully through on the first iteration)
 				// that status.processingSince is never set, and this additional trigger does not happen
 				if status.ProcessingSince != nil {
-					result = ctrl.Result{RequeueAfter: 1 * time.Millisecond}
+					result = ctrl.Result{RequeueAfter: time.Millisecond}
 				}
 				// clear processing state; note that processing will be off until the next component digest change;
 				// if (for whatever reason) the state would again flip to Processing, or an error would occur, then
@@ -450,7 +452,7 @@ func (r *Reconciler[T]) Reconcile(ctx context.Context, req ctrl.Request) (result
 	// set a first status (and requeue, because the status update itself will not trigger another reconciliation because of the event filter set)
 	if status.ObservedGeneration <= 0 {
 		status.SetState(StatePending, ReadyConditionReasonNew, "First seen")
-		return ctrl.Result{RequeueAfter: 1 * time.Millisecond}, nil
+		return ctrl.Result{RequeueAfter: time.Millisecond}, nil
 	}
 
 	// resolve references
@@ -470,7 +472,7 @@ func (r *Reconciler[T]) Reconcile(ctx context.Context, req ctrl.Request) (result
 			status.ProcessingDigest = componentDigest
 			r.backoff.Forget(req)
 			status.SetState(StateProcessing, ReadyConditionReasonRestarting, "Restarting processing due to component changes")
-			return ctrl.Result{RequeueAfter: 1 * time.Millisecond}, nil
+			return ctrl.Result{RequeueAfter: time.Millisecond}, nil
 		}
 	} else {
 		status.ProcessingSince = nil
@@ -519,7 +521,7 @@ func (r *Reconciler[T]) Reconcile(ctx context.Context, req ctrl.Request) (result
 			// this is necessary because the update call invalidates potential changes done to the component by the post-read
 			// hook above; this means, not to the object itself, but for example to loaded secrets or config maps;
 			// in the following round trip, the finalizer will already be there, and the update will not happen again
-			return ctrl.Result{RequeueAfter: 1 * time.Millisecond}, nil
+			return ctrl.Result{RequeueAfter: time.Millisecond}, nil
 		}
 
 		log.V(2).Info("reconciling dependent resources")
@@ -716,7 +718,14 @@ func (r *Reconciler[T]) SetupWithManagerAndBuilder(mgr ctrl.Manager, blder *ctrl
 	r.id = string(kubeSystemNamespace.UID)
 
 	var err error
-	r.client, err = clientfactory.NewClientFor(mgr.GetConfig(), mgr.GetScheme(), r.name)
+	config := rest.CopyConfig(mgr.GetConfig())
+	config.Wrap(func(rt http.RoundTripper) http.RoundTripper {
+		return roundTripperFunc(func(request *http.Request) (*http.Response, error) {
+			metrics.Requests.WithLabelValues(r.controllerName, request.Method).Inc()
+			return rt.RoundTrip(request)
+		})
+	})
+	r.client, err = clientfactory.NewClientFor(config, mgr.GetScheme(), r.name)
 	if r.options.NewClient != nil {
 		clnt, err := r.options.NewClient(r.client)
 		if err != nil {
@@ -726,11 +735,11 @@ func (r *Reconciler[T]) SetupWithManagerAndBuilder(mgr ctrl.Manager, blder *ctrl
 	}
 	r.eventRecorder = *events.NewDeduplicatingRecorder(r.client.EventRecorder())
 
-	discoveryClient, err := discovery.NewDiscoveryClientForConfigAndClient(mgr.GetConfig(), mgr.GetHTTPClient())
+	discoveryClient, err := discovery.NewDiscoveryClientForConfigAndClient(config, mgr.GetHTTPClient())
 	if err != nil {
 		return legacyerrors.Wrap(err, "error creating discovery client")
 	}
-	r.hookClient = cluster.NewClient(mgr.GetClient(), discoveryClient, mgr.GetEventRecorderFor(r.name), mgr.GetConfig(), mgr.GetHTTPClient())
+	r.hookClient = cluster.NewClient(mgr.GetClient(), discoveryClient, mgr.GetEventRecorderFor(r.name), config, mgr.GetHTTPClient())
 
 	component := newComponent[T]()
 	r.groupVersionKind, err = apiutil.GVKForObject(component, r.client.Scheme())
@@ -748,7 +757,7 @@ func (r *Reconciler[T]) SetupWithManagerAndBuilder(mgr ctrl.Manager, blder *ctrl
 	if r.options.SchemeBuilder != nil {
 		schemeBuilders = append(schemeBuilders, r.options.SchemeBuilder)
 	}
-	r.clients, err = clientfactory.NewClientFactory(r.name, r.controllerName, mgr.GetConfig(), schemeBuilders)
+	r.clients, err = clientfactory.NewClientFactory(r.name, r.controllerName, config, schemeBuilders)
 	if err != nil {
 		return legacyerrors.Wrap(err, "error creating client factory")
 	}
@@ -892,4 +901,12 @@ func (r *Reconciler[T]) getOptionsForComponent(component T) reconciler.Reconcile
 		}
 	}
 	return options
+}
+
+type roundTripperFunc func(r *http.Request) (*http.Response, error)
+
+var _ http.RoundTripper = roundTripperFunc(nil)
+
+func (f roundTripperFunc) RoundTrip(r *http.Request) (*http.Response, error) {
+	return f(r)
 }
