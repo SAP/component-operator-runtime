@@ -1,0 +1,12 @@
+/*
+SPDX-FileCopyrightText: 2024 SAP SE or an SAP affiliate company and component-operator-runtime contributors
+SPDX-License-Identifier: Apache-2.0
+*/
+
+package cluster
+
+// TODO: consolidate all the util files into an internal reuse package
+
+func ref[T any](x T) *T {
+	return &x
+}
