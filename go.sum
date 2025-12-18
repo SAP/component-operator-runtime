@@ -203,6 +203,8 @@ github.com/sap/go-generics v0.2.45 h1:Sly5dNVZWSLs1Vz3MFPz/uoTfZhRbx5V0gxEo5BWrL
 github.com/sap/go-generics v0.2.45/go.mod h1:6CZylrnWV6OkeVAsUzWYQaJ5AvPR5HYsCkI5CvONeX8=
 github.com/sap/go-generics v0.2.46 h1:UcP6fu5StG6YGnxv2y8uBCKiC2wD6fJk1PNW6YCYCcE=
 github.com/sap/go-generics v0.2.46/go.mod h1:ycp8c0jKRZ8WQXXEPhm5GsO9sAflMbDEHZJM1J85EDg=
+github.com/sap/go-generics v0.2.47 h1:T0ODIlrIuL9SGp3iFhM07bhA3ZXFp2JHcsncDZ+ufbg=
+github.com/sap/go-generics v0.2.47/go.mod h1:sShwY4JtsiczJ4IZgpWMcTWRn8r+j3R9eg6JoEEQVyM=
 github.com/sergi/go-diff v1.0.0/go.mod h1:0CfEIISq7TuYL3j771MWULgwwjU+GofnZX9QAmXWZgo=
 github.com/sergi/go-diff v1.4.0 h1:n/SP9D5ad1fORl+llWyN+D6qoUETXNZARKjyY2/KVCw=
 github.com/sergi/go-diff v1.4.0/go.mod h1:A0bzQcvG0E7Rwjx0REVgAGH58e96+X0MeOfepqsbeW4=
