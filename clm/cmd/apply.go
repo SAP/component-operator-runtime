@@ -7,6 +7,7 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"time"
@@ -17,7 +18,6 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	apitypes "k8s.io/apimachinery/pkg/types"
-	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 
 	"github.com/sap/component-operator-runtime/clm/internal/backoff"
 	"github.com/sap/component-operator-runtime/clm/internal/manifests"
@@ -108,7 +108,7 @@ func newApplyCmd() *cobra.Command {
 					release.State = component.StateError
 				}
 				if updateErr := releaseClient.Update(context.TODO(), release); updateErr != nil {
-					err = utilerrors.NewAggregate([]error{err, updateErr})
+					err = errors.Join(err, updateErr)
 				}
 			}()
 

@@ -14,7 +14,7 @@ import (
 	"time"
 
 	"github.com/iancoleman/strcase"
-	"github.com/pkg/errors"
+	legacyerrors "github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/sap/go-generics/sets"
 	"github.com/sap/go-generics/slices"
@@ -279,7 +279,7 @@ func (r *Reconciler) Apply(ctx context.Context, inventory *[]*InventoryItem, obj
 	// - check that non-unstructured types are known to the scheme, and validate/set their type information
 	objects, err = normalizeObjects(objects, r.client.Scheme())
 	if err != nil {
-		return false, errors.Wrap(err, "error normalizing objects")
+		return false, legacyerrors.Wrap(err, "error normalizing objects")
 	}
 
 	// merge secret stringData into data; this is required/better because server-side-apply does not work well
@@ -315,7 +315,7 @@ func (r *Reconciler) Apply(ctx context.Context, inventory *[]*InventoryItem, obj
 		if err == nil {
 			scope = scopeFromRestMapping(restMapping)
 		} else if !apimeta.IsNoMatchError(err) {
-			return false, errors.Wrapf(err, "error getting rest mapping for object %s", types.ObjectKeyToString(object))
+			return false, legacyerrors.Wrapf(err, "error getting rest mapping for object %s", types.ObjectKeyToString(object))
 		}
 		for _, crd := range getCrds(objects) {
 			if crd.Spec.Group == gvk.Group && crd.Spec.Names.Kind == gvk.Kind {
@@ -332,7 +332,7 @@ func (r *Reconciler) Apply(ctx context.Context, inventory *[]*InventoryItem, obj
 			}
 		}
 		if err != nil {
-			return false, errors.Wrapf(err, "error getting rest mapping for object %s", types.ObjectKeyToString(object))
+			return false, legacyerrors.Wrapf(err, "error getting rest mapping for object %s", types.ObjectKeyToString(object))
 		}
 
 		if object.GetNamespace() == "" && scope == scopeNamespaced {
@@ -365,28 +365,28 @@ func (r *Reconciler) Apply(ctx context.Context, inventory *[]*InventoryItem, obj
 	// validate annotations
 	for _, object := range objects {
 		if _, err := r.getAdoptionPolicy(object); err != nil {
-			return false, errors.Wrapf(err, "error validating object %s", types.ObjectKeyToString(object))
+			return false, legacyerrors.Wrapf(err, "error validating object %s", types.ObjectKeyToString(object))
 		}
 		if _, err := r.getReconcilePolicy(object); err != nil {
-			return false, errors.Wrapf(err, "error validating object %s", types.ObjectKeyToString(object))
+			return false, legacyerrors.Wrapf(err, "error validating object %s", types.ObjectKeyToString(object))
 		}
 		if _, err := r.getUpdatePolicy(object); err != nil {
-			return false, errors.Wrapf(err, "error validating object %s", types.ObjectKeyToString(object))
+			return false, legacyerrors.Wrapf(err, "error validating object %s", types.ObjectKeyToString(object))
 		}
 		if _, err := r.getDeletePolicy(object); err != nil {
-			return false, errors.Wrapf(err, "error validating object %s", types.ObjectKeyToString(object))
+			return false, legacyerrors.Wrapf(err, "error validating object %s", types.ObjectKeyToString(object))
 		}
 		if _, err := r.getReapplyInterval(object); err != nil {
-			return false, errors.Wrapf(err, "error validating object %s", types.ObjectKeyToString(object))
+			return false, legacyerrors.Wrapf(err, "error validating object %s", types.ObjectKeyToString(object))
 		}
 		if _, err := r.getApplyOrder(object); err != nil {
-			return false, errors.Wrapf(err, "error validating object %s", types.ObjectKeyToString(object))
+			return false, legacyerrors.Wrapf(err, "error validating object %s", types.ObjectKeyToString(object))
 		}
 		if _, err := r.getPurgeOrder(object); err != nil {
-			return false, errors.Wrapf(err, "error validating object %s", types.ObjectKeyToString(object))
+			return false, legacyerrors.Wrapf(err, "error validating object %s", types.ObjectKeyToString(object))
 		}
 		if _, err := r.getDeleteOrder(object); err != nil {
-			return false, errors.Wrapf(err, "error validating object %s", types.ObjectKeyToString(object))
+			return false, legacyerrors.Wrapf(err, "error validating object %s", types.ObjectKeyToString(object))
 		}
 		// TODO: should status-hint be validated here as well?
 	}
@@ -430,15 +430,15 @@ func (r *Reconciler) Apply(ctx context.Context, inventory *[]*InventoryItem, obj
 		switch {
 		case isNamespace(object):
 			if getPurgeOrder(object) <= maxOrder {
-				return false, errors.Wrapf(fmt.Errorf("namespaces must not define a purge order"), "error validating object %s", types.ObjectKeyToString(object))
+				return false, legacyerrors.Wrapf(fmt.Errorf("namespaces must not define a purge order"), "error validating object %s", types.ObjectKeyToString(object))
 			}
 		case isCrd(object):
 			if getPurgeOrder(object) <= maxOrder {
-				return false, errors.Wrapf(fmt.Errorf("custom resource definitions must not define a purge order"), "error validating object %s", types.ObjectKeyToString(object))
+				return false, legacyerrors.Wrapf(fmt.Errorf("custom resource definitions must not define a purge order"), "error validating object %s", types.ObjectKeyToString(object))
 			}
 		case isApiService(object):
 			if getPurgeOrder(object) <= maxOrder {
-				return false, errors.Wrapf(fmt.Errorf("api services must not define a purge order"), "error validating object %s", types.ObjectKeyToString(object))
+				return false, legacyerrors.Wrapf(fmt.Errorf("api services must not define a purge order"), "error validating object %s", types.ObjectKeyToString(object))
 			}
 		}
 	}
@@ -456,7 +456,7 @@ func (r *Reconciler) Apply(ctx context.Context, inventory *[]*InventoryItem, obj
 		// this is in particular the case if the policy changes from or to ReconcilePolicyOnce.
 		digest, err := calculateObjectDigest(object, componentDigest, getReconcilePolicy(object))
 		if err != nil {
-			return false, errors.Wrapf(err, "error calculating digest for object %s", types.ObjectKeyToString(object))
+			return false, legacyerrors.Wrapf(err, "error calculating digest for object %s", types.ObjectKeyToString(object))
 		}
 
 		// if item was not found, append an empty item
@@ -469,7 +469,7 @@ func (r *Reconciler) Apply(ctx context.Context, inventory *[]*InventoryItem, obj
 			// fetch object (if existing)
 			existingObject, err := r.readObject(ctx, object)
 			if err != nil {
-				return false, errors.Wrapf(err, "error reading object %s", types.ObjectKeyToString(object))
+				return false, legacyerrors.Wrapf(err, "error reading object %s", types.ObjectKeyToString(object))
 			}
 			// check ownership
 			// note: failing already here in case of a conflict prevents problems during apply and, in particular, during deletion
@@ -602,10 +602,10 @@ func (r *Reconciler) Apply(ctx context.Context, inventory *[]*InventoryItem, obj
 		for _, namespace := range findMissingNamespaces(objects) {
 			if err := r.client.Get(ctx, apitypes.NamespacedName{Name: namespace}, &corev1.Namespace{}); err != nil {
 				if !apierrors.IsNotFound(err) {
-					return false, errors.Wrapf(err, "error reading namespace %s", namespace)
+					return false, legacyerrors.Wrapf(err, "error reading namespace %s", namespace)
 				}
 				if err := r.client.Create(ctx, &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: namespace}}, client.FieldOwner(r.fieldOwner)); err != nil {
-					return false, errors.Wrapf(err, "error creating namespace %s", namespace)
+					return false, legacyerrors.Wrapf(err, "error creating namespace %s", namespace)
 				}
 			}
 		}
@@ -624,13 +624,13 @@ func (r *Reconciler) Apply(ctx context.Context, inventory *[]*InventoryItem, obj
 		if item.Phase == PhaseScheduledForCompletion || item.Phase == PhaseCompleting {
 			existingObject, err := r.readObject(ctx, item)
 			if err != nil {
-				return false, errors.Wrapf(err, "error reading object %s", item)
+				return false, legacyerrors.Wrapf(err, "error reading object %s", item)
 			}
 
 			switch item.Phase {
 			case PhaseScheduledForCompletion:
 				if err := r.deleteObject(ctx, item, existingObject, hashedOwnerId); err != nil {
-					return false, errors.Wrapf(err, "error deleting object %s", item)
+					return false, legacyerrors.Wrapf(err, "error deleting object %s", item)
 				}
 				item.Phase = PhaseCompleting
 				item.Status = status.TerminatingStatus
@@ -719,7 +719,7 @@ func (r *Reconciler) Apply(ctx context.Context, inventory *[]*InventoryItem, obj
 				// fetch object (if existing)
 				existingObject, err := r.readObject(ctx, item)
 				if err != nil {
-					return false, errors.Wrapf(err, "error reading object %s", item)
+					return false, legacyerrors.Wrapf(err, "error reading object %s", item)
 				}
 
 				setLabel(object, r.labelKeyOwnerId, hashedOwnerId)
@@ -731,7 +731,7 @@ func (r *Reconciler) Apply(ctx context.Context, inventory *[]*InventoryItem, obj
 				now := time.Now()
 				if existingObject == nil {
 					if err := r.createObject(ctx, object, nil, updatePolicy); err != nil {
-						return false, errors.Wrapf(err, "error creating object %s", item)
+						return false, legacyerrors.Wrapf(err, "error creating object %s", item)
 					}
 					item.Phase = PhaseCreating
 					item.Status = status.InProgressStatus
@@ -743,12 +743,12 @@ func (r *Reconciler) Apply(ctx context.Context, inventory *[]*InventoryItem, obj
 					switch updatePolicy {
 					case UpdatePolicyRecreate:
 						if err := r.deleteObject(ctx, object, existingObject, hashedOwnerId); err != nil {
-							return false, errors.Wrapf(err, "error deleting (while recreating) object %s", item)
+							return false, legacyerrors.Wrapf(err, "error deleting (while recreating) object %s", item)
 						}
 					default:
 						// TODO: perform an additional owner id check
 						if err := r.updateObject(ctx, object, existingObject, nil, updatePolicy); err != nil {
-							return false, errors.Wrapf(err, "error updating object %s", item)
+							return false, legacyerrors.Wrapf(err, "error updating object %s", item)
 						}
 					}
 					item.Phase = PhaseUpdating
@@ -758,7 +758,7 @@ func (r *Reconciler) Apply(ctx context.Context, inventory *[]*InventoryItem, obj
 				} else {
 					existingStatus, err := r.statusAnalyzer.ComputeStatus(existingObject)
 					if err != nil {
-						return false, errors.Wrapf(err, "error checking status of object %s", item)
+						return false, legacyerrors.Wrapf(err, "error checking status of object %s", item)
 					}
 					if existingObject.GetDeletionTimestamp().IsZero() && existingStatus == status.CurrentStatus {
 						item.Phase = PhaseReady
@@ -837,7 +837,7 @@ func (r *Reconciler) Apply(ctx context.Context, inventory *[]*InventoryItem, obj
 			// fetch object (if existing)
 			existingObject, err := r.readObject(ctx, item)
 			if err != nil {
-				return false, errors.Wrapf(err, "error reading object %s", item)
+				return false, legacyerrors.Wrapf(err, "error reading object %s", item)
 			}
 
 			switch item.Phase {
@@ -861,7 +861,7 @@ func (r *Reconciler) Apply(ctx context.Context, inventory *[]*InventoryItem, obj
 						// note: here is a theoretical risk that we delete an existing foreign object, because informers are not yet synced
 						// however not sending the delete request is also not an option, because this might lead to orphaned own dependents
 						if err := r.deleteObject(ctx, item, existingObject, hashedOwnerId); err != nil {
-							return false, errors.Wrapf(err, "error deleting object %s", item)
+							return false, legacyerrors.Wrapf(err, "error deleting object %s", item)
 						}
 						item.Phase = PhaseDeleting
 						item.Status = status.TerminatingStatus
@@ -952,7 +952,7 @@ func (r *Reconciler) Delete(ctx context.Context, inventory *[]*InventoryItem, ow
 		// fetch object (if existing)
 		existingObject, err := r.readObject(ctx, item)
 		if err != nil {
-			return false, errors.Wrapf(err, "error reading object %s", item)
+			return false, legacyerrors.Wrapf(err, "error reading object %s", item)
 		}
 
 		switch item.Phase {
@@ -987,7 +987,7 @@ func (r *Reconciler) Delete(ctx context.Context, inventory *[]*InventoryItem, ow
 					// note: here is a theoretical risk that we delete an existing (foreign) object, because informers are not yet synced
 					// however not sending the delete request is also not an option, because this might lead to orphaned own dependents
 					if err := r.deleteObject(ctx, item, existingObject, hashedOwnerId); err != nil {
-						return false, errors.Wrapf(err, "error deleting object %s", item)
+						return false, legacyerrors.Wrapf(err, "error deleting object %s", item)
 					}
 					item.Phase = PhaseDeleting
 					item.Status = status.TerminatingStatus
@@ -1023,7 +1023,7 @@ func (r *Reconciler) IsDeletionAllowed(ctx context.Context, inventory *[]*Invent
 		gk := schema.GroupKind(t)
 		used, err := r.isTypeUsed(ctx, gk, hashedOwnerId, true)
 		if err != nil {
-			return false, "", errors.Wrapf(err, "error checking usage of type %s", gk)
+			return false, "", legacyerrors.Wrapf(err, "error checking usage of type %s", gk)
 		}
 		if used {
 			return false, fmt.Sprintf("type %s is still in use (instances exist)", gk), nil
@@ -1044,12 +1044,12 @@ func (r *Reconciler) IsDeletionAllowed(ctx context.Context, inventory *[]*Invent
 				if apierrors.IsNotFound(err) {
 					continue
 				} else {
-					return false, "", errors.Wrapf(err, "error retrieving crd %s", item.GetName())
+					return false, "", legacyerrors.Wrapf(err, "error retrieving crd %s", item.GetName())
 				}
 			}
 			used, err := r.isCrdUsed(ctx, crd, hashedOwnerId, true)
 			if err != nil {
-				return false, "", errors.Wrapf(err, "error checking usage of crd %s", item.GetName())
+				return false, "", legacyerrors.Wrapf(err, "error checking usage of crd %s", item.GetName())
 			}
 			if used {
 				return false, fmt.Sprintf("crd %s is still in use (instances exist)", item.GetName()), nil
@@ -1060,12 +1060,12 @@ func (r *Reconciler) IsDeletionAllowed(ctx context.Context, inventory *[]*Invent
 				if apierrors.IsNotFound(err) {
 					continue
 				} else {
-					return false, "", errors.Wrapf(err, "error retrieving api service %s", item.GetName())
+					return false, "", legacyerrors.Wrapf(err, "error retrieving api service %s", item.GetName())
 				}
 			}
 			used, err := r.isApiServiceUsed(ctx, apiService, hashedOwnerId, true)
 			if err != nil {
-				return false, "", errors.Wrapf(err, "error checking usage of api service %s", item.GetName())
+				return false, "", legacyerrors.Wrapf(err, "error checking usage of api service %s", item.GetName())
 			}
 			if used {
 				// TODO: other than with CRDs it is not clear for which types there are instances existing
@@ -1392,7 +1392,7 @@ func (r *Reconciler) getReapplyInterval(object client.Object) (time.Duration, er
 	}
 	reapplyInterval, err := time.ParseDuration(value)
 	if err != nil {
-		return 0, errors.Wrapf(err, "invalid value for annotation %s: %s", r.annotationKeyReapplyInterval, value)
+		return 0, legacyerrors.Wrapf(err, "invalid value for annotation %s: %s", r.annotationKeyReapplyInterval, value)
 	}
 	return reapplyInterval, nil
 }
@@ -1404,10 +1404,10 @@ func (r *Reconciler) getApplyOrder(object client.Object) (int, error) {
 	}
 	applyOrder, err := strconv.Atoi(value)
 	if err != nil {
-		return 0, errors.Wrapf(err, "invalid value for annotation %s: %s", r.annotationKeyApplyOrder, value)
+		return 0, legacyerrors.Wrapf(err, "invalid value for annotation %s: %s", r.annotationKeyApplyOrder, value)
 	}
 	if err := checkRange(applyOrder, minOrder, maxOrder); err != nil {
-		return 0, errors.Wrapf(err, "invalid value for annotation %s: %s", r.annotationKeyApplyOrder, value)
+		return 0, legacyerrors.Wrapf(err, "invalid value for annotation %s: %s", r.annotationKeyApplyOrder, value)
 	}
 	return applyOrder, nil
 }
@@ -1419,10 +1419,10 @@ func (r *Reconciler) getPurgeOrder(object client.Object) (int, error) {
 	}
 	purgeOrder, err := strconv.Atoi(value)
 	if err != nil {
-		return 0, errors.Wrapf(err, "invalid value for annotation %s: %s", r.annotationKeyPurgeOrder, value)
+		return 0, legacyerrors.Wrapf(err, "invalid value for annotation %s: %s", r.annotationKeyPurgeOrder, value)
 	}
 	if err := checkRange(purgeOrder, minOrder, maxOrder); err != nil {
-		return 0, errors.Wrapf(err, "invalid value for annotation %s: %s", r.annotationKeyPurgeOrder, value)
+		return 0, legacyerrors.Wrapf(err, "invalid value for annotation %s: %s", r.annotationKeyPurgeOrder, value)
 	}
 	return purgeOrder, nil
 }
@@ -1434,10 +1434,10 @@ func (r *Reconciler) getDeleteOrder(object client.Object) (int, error) {
 	}
 	deleteOrder, err := strconv.Atoi(value)
 	if err != nil {
-		return 0, errors.Wrapf(err, "invalid value for annotation %s: %s", r.annotationKeyDeleteOrder, value)
+		return 0, legacyerrors.Wrapf(err, "invalid value for annotation %s: %s", r.annotationKeyDeleteOrder, value)
 	}
 	if err := checkRange(deleteOrder, minOrder, maxOrder); err != nil {
-		return 0, errors.Wrapf(err, "invalid value for annotation %s: %s", r.annotationKeyDeleteOrder, value)
+		return 0, legacyerrors.Wrapf(err, "invalid value for annotation %s: %s", r.annotationKeyDeleteOrder, value)
 	}
 	return deleteOrder, nil
 }

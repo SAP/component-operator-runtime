@@ -10,7 +10,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/pkg/errors"
+	legacyerrors "github.com/pkg/errors"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -44,7 +44,7 @@ func ParseHookMetadata(object client.Object) (*HookMetadata, error) {
 	if value, ok := annotations[annotationKeyHookWeight]; ok {
 		weight, err := strconv.Atoi(value)
 		if err != nil {
-			return nil, errors.Wrapf(err, "invalid hook weight: %s", value)
+			return nil, legacyerrors.Wrapf(err, "invalid hook weight: %s", value)
 		}
 		if weight < HookMinWeight || weight > HookMaxWeight {
 			return nil, fmt.Errorf("invalid hook weight: %d (allowed range: %d..%d)", weight, HookMinWeight, HookMaxWeight)

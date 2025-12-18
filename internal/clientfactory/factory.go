@@ -9,7 +9,6 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
-	"net/http"
 	"reflect"
 	"sync"
 	"time"
@@ -121,12 +120,6 @@ func (f *ClientFactory) Get(kubeConfig []byte, impersonationUser string, imperso
 		return clnt, nil
 	}
 
-	config.Wrap(func(rt http.RoundTripper) http.RoundTripper {
-		return roundTripperFunc(func(r *http.Request) (*http.Response, error) {
-			metrics.Requests.WithLabelValues(f.controllerName, r.Method).Inc()
-			return rt.RoundTrip(r)
-		})
-	})
 	clnt, err := NewClientFor(config, f.scheme, f.name)
 	if err != nil {
 		return nil, err
@@ -148,12 +141,4 @@ func sha256sum(data any) string {
 	}
 	sha256sum := sha256.Sum256(dataAsJson)
 	return string(sha256sum[:])
-}
-
-type roundTripperFunc func(r *http.Request) (*http.Response, error)
-
-var _ http.RoundTripper = roundTripperFunc(nil)
-
-func (f roundTripperFunc) RoundTrip(r *http.Request) (*http.Response, error) {
-	return f(r)
 }

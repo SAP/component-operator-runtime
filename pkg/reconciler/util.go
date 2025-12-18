@@ -13,7 +13,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/pkg/errors"
+	legacyerrors "github.com/pkg/errors"
 	"github.com/sap/go-generics/slices"
 
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
@@ -74,7 +74,7 @@ func calculateObjectDigest(obj client.Object, componentDigest string, reconcileP
 	obj.SetManagedFields(nil)
 	raw, err := json.Marshal(obj)
 	if err != nil {
-		return "", errors.Wrapf(err, "error serializing object %s", types.ObjectKeyToString(obj))
+		return "", legacyerrors.Wrapf(err, "error serializing object %s", types.ObjectKeyToString(obj))
 	}
 	digest := sha256hex(raw)
 
@@ -240,15 +240,15 @@ func normalizeObjects(objects []client.Object, scheme *runtime.Scheme) ([]client
 			if scheme.Recognizes(gvk) {
 				typedObject, err := scheme.New(gvk)
 				if err != nil {
-					return nil, errors.Wrapf(err, "error instantiating type for object %s", types.ObjectKeyToString(object))
+					return nil, legacyerrors.Wrapf(err, "error instantiating type for object %s", types.ObjectKeyToString(object))
 				}
 				if typedObject, ok := typedObject.(client.Object); ok {
 					if err := runtime.DefaultUnstructuredConverter.FromUnstructured(unstructuredObject.Object, typedObject); err != nil {
-						return nil, errors.Wrapf(err, "error converting object %s", types.ObjectKeyToString(object))
+						return nil, legacyerrors.Wrapf(err, "error converting object %s", types.ObjectKeyToString(object))
 					}
 					normalizedObjects[i] = typedObject
 				} else {
-					return nil, errors.Wrapf(err, "error instantiating type for object %s", types.ObjectKeyToString(object))
+					return nil, legacyerrors.Wrapf(err, "error instantiating type for object %s", types.ObjectKeyToString(object))
 				}
 			} else if isCrd(object) || isApiService(object) {
 				return nil, fmt.Errorf("scheme does not recognize type of object %s", types.ObjectKeyToString(object))
@@ -258,7 +258,7 @@ func normalizeObjects(objects []client.Object, scheme *runtime.Scheme) ([]client
 		} else {
 			_gvk, err := apiutil.GVKForObject(object, scheme)
 			if err != nil {
-				return nil, errors.Wrapf(err, "error retrieving scheme type information for object %s", types.ObjectKeyToString(object))
+				return nil, legacyerrors.Wrapf(err, "error retrieving scheme type information for object %s", types.ObjectKeyToString(object))
 			}
 			object = object.DeepCopyObject().(client.Object)
 			if gvk.Version == "" || gvk.Kind == "" {
