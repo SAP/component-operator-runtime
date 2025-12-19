@@ -26,7 +26,13 @@ import (
 
 // KustomizeGeneratorOptions allows to tweak the behavior of the kustomize generator.
 type KustomizeGeneratorOptions struct {
-	kustomize.KustomizationOptions
+	TemplateSuffix *string
+	// If defined, the given left delimiter will be used to parse go templates; otherwise, defaults to '{{'
+	LeftTemplateDelimiter *string
+	// If defined, the given right delimiter will be used to parse go templates; otherwise, defaults to '}}'
+	RightTemplateDelimiter *string
+	// If defined, used to decrypt files
+	Decryptor manifests.Decryptor
 }
 
 // KustomizeGenerator is a Generator implementation that basically renders a given Kustomization.
@@ -48,7 +54,12 @@ var _ manifests.Generator = &KustomizeGenerator{}
 // into a relative path by stripping the leading slash. If fsys is specified as a real filesystem, it is recommended to use os.Root.FS() instead of os.DirFS(), in order
 // to fence symbolic links. An empty kustomizationPath will be treated like ".".
 func NewKustomizeGenerator(fsys fs.FS, kustomizationPath string, _ client.Client, options KustomizeGeneratorOptions) (*KustomizeGenerator, error) {
-	kustomization, err := kustomize.ParseKustomization(fsys, kustomizationPath, options.KustomizationOptions)
+	kustomization, err := kustomize.ParseKustomization(fsys, kustomizationPath, kustomize.KustomizationOptions{
+		TemplateSuffix:         options.TemplateSuffix,
+		LeftTemplateDelimiter:  options.LeftTemplateDelimiter,
+		RightTemplateDelimiter: options.RightTemplateDelimiter,
+		Decryptor:              options.Decryptor,
+	})
 	if err != nil {
 		return nil, err
 	}

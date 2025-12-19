@@ -35,6 +35,7 @@ import (
 	"github.com/sap/component-operator-runtime/internal/fileutils"
 	"github.com/sap/component-operator-runtime/internal/templatex"
 	"github.com/sap/component-operator-runtime/pkg/component"
+	"github.com/sap/component-operator-runtime/pkg/manifests"
 )
 
 // TODO: double-check symlink handling
@@ -54,6 +55,8 @@ type KustomizationOptions struct {
 	IncludedFiles []string
 	// If defined, paths to referenced kustomizations
 	IncludedKustomizations []string
+	// If defined, used to decrypt files
+	Decryptor manifests.Decryptor
 }
 
 type RenderContext struct {
@@ -147,6 +150,12 @@ func parseKustomization(fsys fs.FS, kustomizationPath string, options Kustomizat
 		if err != nil {
 			return nil, err
 		}
+		if options.Decryptor != nil {
+			raw, err = options.Decryptor.Decrypt(raw, file)
+			if err != nil {
+				return nil, err
+			}
+		}
 		name, err := filepath.Rel(kustomizationPath, file)
 		if err != nil {
 			// TODO: is it ok to panic here in case of error ?
@@ -204,12 +213,24 @@ func parseKustomization(fsys fs.FS, kustomizationPath string, options Kustomizat
 				if err != nil {
 					return nil, err
 				}
+				if options.Decryptor != nil {
+					raw, err = options.Decryptor.Decrypt(raw, file)
+					if err != nil {
+						return nil, err
+					}
+				}
 				k.files[path] = raw
 			}
 		} else {
 			raw, err := fs.ReadFile(fsys, absolutePath)
 			if err != nil {
 				return nil, err
+			}
+			if options.Decryptor != nil {
+				raw, err = options.Decryptor.Decrypt(raw, absolutePath)
+				if err != nil {
+					return nil, err
+				}
 			}
 			k.files[path] = raw
 		}
