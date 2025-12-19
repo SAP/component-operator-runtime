@@ -41,3 +41,9 @@ type ParameterTransformer interface {
 type ObjectTransformer interface {
 	TransformObjects(namespace string, name string, objects []client.Object) ([]client.Object, error)
 }
+
+// Decryptor interface.
+// Allows to decrypt content of referenced manifest sources.
+type Decryptor interface {
+	Decrypt(input []byte, path string) ([]byte, error)
+}
