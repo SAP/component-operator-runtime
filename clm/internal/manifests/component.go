@@ -34,6 +34,7 @@ func (c *Component) GetStatus() *component.Status {
 		// LastAppliedAt
 		// ProcessingDigest
 		// ProcessingSince
+		Revision: c.release.Revision,
 		// Conditions
 		State:     c.release.State,
 		Inventory: c.release.Inventory,

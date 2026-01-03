@@ -20,6 +20,7 @@ type (
 	componentNameContextKeyType      struct{}
 	componentNamespaceContextKeyType struct{}
 	componentDigestContextKeyType    struct{}
+	componentRevisionContextKeyType  struct{}
 )
 
 var (
@@ -30,6 +31,7 @@ var (
 	componentNameContextKey      = componentNameContextKeyType{}
 	componentNamespaceContextKey = componentNamespaceContextKeyType{}
 	componentDigestContextKey    = componentDigestContextKeyType{}
+	componentRevisionContextKey  = componentRevisionContextKeyType{}
 )
 
 type Context interface {
@@ -41,6 +43,7 @@ type Context interface {
 	WithComponentName(componentName string) Context
 	WithComponentNamespace(componentNamespace string) Context
 	WithComponentDigest(componentDigest string) Context
+	WithComponentRevision(componentRevision int64) Context
 }
 
 func NewContext(ctx context.Context) Context {
@@ -77,6 +80,10 @@ func (c *contextImpl) WithComponentNamespace(componentNamespace string) Context 
 
 func (c *contextImpl) WithComponentDigest(componentDigest string) Context {
 	return &contextImpl{Context: context.WithValue(c, componentDigestContextKey, componentDigest)}
+}
+
+func (c *contextImpl) WithComponentRevision(componentRevision int64) Context {
+	return &contextImpl{Context: context.WithValue(c, componentRevisionContextKey, componentRevision)}
 }
 
 func ReconcilerNameFromContext(ctx context.Context) (string, error) {
@@ -127,4 +134,11 @@ func ComponentDigestFromContext(ctx context.Context) (string, error) {
 		return componentDigest, nil
 	}
 	return "", fmt.Errorf("component digest not found in context")
+}
+
+func ComponentRevisionFromContext(ctx context.Context) (int64, error) {
+	if componentRevision, ok := ctx.Value(componentRevisionContextKey).(int64); ok {
+		return componentRevision, nil
+	}
+	return 0, fmt.Errorf("component revision not found in context")
 }

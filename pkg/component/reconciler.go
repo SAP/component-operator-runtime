@@ -524,6 +524,11 @@ func (r *Reconciler[T]) Reconcile(ctx context.Context, req ctrl.Request) (result
 			return ctrl.Result{RequeueAfter: time.Millisecond}, nil
 		}
 
+		if status.ProcessingDigest != status.LastProcessingDigest {
+			status.Revision += 1
+			status.LastProcessingDigest = status.ProcessingDigest
+		}
+
 		log.V(2).Info("reconciling dependent resources")
 		for hookOrder, hook := range r.preReconcileHooks {
 			if err := hook(hookCtx, r.hookClient, component); err != nil {

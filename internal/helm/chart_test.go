@@ -63,6 +63,7 @@ var _ = Describe("testing: chart.go", func() {
 						Service:   "Helm",
 						IsInstall: true,
 						IsUpgrade: false,
+						Revision:  1,
 					},
 					Values: values,
 				})

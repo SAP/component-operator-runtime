@@ -75,6 +75,7 @@ type Release struct {
 	Service   string `json:"service,omitempty"`
 	IsInstall bool   `json:"isInstall,omitempty"`
 	IsUpgrade bool   `json:"isUpgrade,omitempty"`
+	Revision  int64  `json:"revision"`
 }
 
 // +kubebuilder:object:generate=true

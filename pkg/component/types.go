@@ -246,13 +246,15 @@ var _ ReapplyConfiguration = &ReapplySpec{}
 
 // Component Status. Components must include this into their status.
 type Status struct {
-	ObservedGeneration int64        `json:"observedGeneration"`
-	AppliedGeneration  int64        `json:"appliedGeneration,omitempty"`
-	LastObservedAt     *metav1.Time `json:"lastObservedAt,omitempty"`
-	LastAppliedAt      *metav1.Time `json:"lastAppliedAt,omitempty"`
-	ProcessingDigest   string       `json:"processingDigest,omitempty"`
-	ProcessingSince    *metav1.Time `json:"processingSince,omitempty"`
-	Conditions         []Condition  `json:"conditions,omitempty"`
+	ObservedGeneration   int64        `json:"observedGeneration"`
+	AppliedGeneration    int64        `json:"appliedGeneration,omitempty"`
+	LastObservedAt       *metav1.Time `json:"lastObservedAt,omitempty"`
+	LastAppliedAt        *metav1.Time `json:"lastAppliedAt,omitempty"`
+	ProcessingDigest     string       `json:"processingDigest,omitempty"`
+	ProcessingSince      *metav1.Time `json:"processingSince,omitempty"`
+	LastProcessingDigest string       `json:"lastProcessingDigest,omitempty"`
+	Revision             int64        `json:"revision,omitempty"`
+	Conditions           []Condition  `json:"conditions,omitempty"`
 	// +kubebuilder:validation:Enum=Ready;Pending;Processing;DeletionPending;Deleting;Error
 	State     State                       `json:"state,omitempty"`
 	Inventory []*reconciler.InventoryItem `json:"inventory,omitempty"`
