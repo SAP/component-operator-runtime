@@ -52,6 +52,12 @@ func (t *reconcileTarget[T]) Apply(ctx context.Context, component T, componentDi
 	ownerId := t.reconcilerId + "/" + component.GetNamespace() + "/" + component.GetName()
 	status := component.GetStatus()
 
+	// TODO: componentDigest should always equal status.ProcessingDigest;
+	// so it should be ok to remove that parameter from the method
+	if componentDigest != status.ProcessingDigest {
+		panic("this cannot happen")
+	}
+
 	// TODO: enhance ctx with local client
 	generateCtx := NewContext(ctx).
 		WithReconcilerName(t.reconcilerName).
@@ -60,7 +66,8 @@ func (t *reconcileTarget[T]) Apply(ctx context.Context, component T, componentDi
 		WithComponent(component).
 		WithComponentName(component.GetName()).
 		WithComponentNamespace(component.GetNamespace()).
-		WithComponentDigest(componentDigest)
+		WithComponentDigest(componentDigest).
+		WithComponentRevision(status.Revision)
 	objects, err := t.resourceGenerator.Generate(generateCtx, namespace, name, component.GetSpec())
 	if err != nil {
 		return false, errors.Wrap(err, "error rendering manifests")
