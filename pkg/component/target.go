@@ -8,7 +8,7 @@ package component
 import (
 	"context"
 
-	"github.com/pkg/errors"
+	legacyerrors "github.com/pkg/errors"
 
 	"github.com/sap/component-operator-runtime/pkg/cluster"
 	"github.com/sap/component-operator-runtime/pkg/manifests"
@@ -63,7 +63,7 @@ func (t *reconcileTarget[T]) Apply(ctx context.Context, component T, componentDi
 		WithComponentDigest(componentDigest)
 	objects, err := t.resourceGenerator.Generate(generateCtx, namespace, name, component.GetSpec())
 	if err != nil {
-		return false, errors.Wrap(err, "error rendering manifests")
+		return false, legacyerrors.Wrap(err, "error rendering manifests")
 	}
 
 	return t.reconciler.Apply(ctx, &status.Inventory, objects, namespace, ownerId, componentDigest)

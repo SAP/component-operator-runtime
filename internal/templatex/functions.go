@@ -9,13 +9,13 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
 	"strconv"
 	"strings"
 	"text/template"
 
-	"github.com/pkg/errors"
 	"github.com/sap/go-generics/slices"
 	"github.com/spf13/cast"
 
@@ -232,7 +232,7 @@ func parseIPv4Address(data any) (uint32, error) {
 	}
 	octets := strings.Split(s, ".")
 	if len(octets) != 4 {
-		return 0, errors.New("invalid IP address")
+		return 0, fmt.Errorf("invalid IP address")
 	}
 	var r uint64
 	for i := uint64(0); i < 4; i++ {
