@@ -1299,6 +1299,7 @@ func (r *Reconciler) deleteObject(ctx context.Context, key types.ObjectKey, exis
 			if ok := controllerutil.RemoveFinalizer(crd, r.finalizer); ok {
 				// note: 409 error is very likely here (because of concurrent updates happening through the api server); this is why we retry once
 				if err := r.client.Update(ctx, crd, client.FieldOwner(r.fieldOwner)); err != nil {
+					// TODO: this immediate retry is actually no longer necessary because of the retry logic in the client
 					if i == 1 && apierrors.IsConflict(err) {
 						log.V(1).Info("error while updating CustomResourcedefinition (409 conflict); doing one retry", "error", err.Error())
 						continue
@@ -1324,6 +1325,7 @@ func (r *Reconciler) deleteObject(ctx context.Context, key types.ObjectKey, exis
 			if ok := controllerutil.RemoveFinalizer(apiService, r.finalizer); ok {
 				// note: 409 error is very likely here (because of concurrent updates happening through the api server); this is why we retry once
 				if err := r.client.Update(ctx, apiService, client.FieldOwner(r.fieldOwner)); err != nil {
+					// TODO: this immediate retry is actually no longer necessary because of the retry logic in the client
 					if i == 1 && apierrors.IsConflict(err) {
 						log.V(1).Info("error while updating APIService (409 conflict); doing one retry", "error", err.Error())
 						continue
