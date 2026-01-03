@@ -320,6 +320,7 @@ func (r *Reconciler[T]) Reconcile(ctx context.Context, req ctrl.Request) (result
 		if err != nil {
 			// convert retriable errors into non-errors (Pending or DeletionPending state), and return specified or default backoff
 			if retriableError := new(types.RetriableError); errors.As(err, retriableError) {
+				log.V(1).Info("requeuing due to retriable error", "error", err.Error())
 				retryAfter := retriableError.RetryAfter()
 				if retryAfter == nil || *retryAfter == 0 {
 					retryAfter = &retryInterval
@@ -444,7 +445,7 @@ func (r *Reconciler[T]) Reconcile(ctx context.Context, req ctrl.Request) (result
 		}
 		if updateErr := r.client.Status().Update(ctx, component, client.FieldOwner(*r.options.FieldOwner)); updateErr != nil {
 			if retriableError := new(types.RetriableError); errors.As(updateErr, retriableError) {
-				log.Error(updateErr, "error updating status, retrying", "requeue", result.Requeue || result.RequeueAfter > 0, "requeueAfter", result.RequeueAfter.String())
+				log.V(1).Info("error updating status, retrying", "requeue", result.Requeue || result.RequeueAfter > 0, "requeueAfter", result.RequeueAfter.String(), "error", updateErr.Error())
 				retryAfter := retriableError.RetryAfter()
 				if retryAfter == nil || *retryAfter == 0 {
 					retryAfter = &retryInterval
