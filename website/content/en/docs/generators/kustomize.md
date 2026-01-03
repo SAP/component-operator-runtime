@@ -87,20 +87,41 @@ Here:
   package kustomize
   
   type KustomizeGeneratorOptions struct {
-    // If defined, only files with that suffix will be subject to templating.
-    TemplateSuffix *string
-    // If defined, the given left delimiter will be used to parse go templates;
-    // otherwise, defaults to '{{'
-    LeftTemplateDelimiter *string
-    // If defined, the given right delimiter will be used to parse go templates;
-    // otherwise, defaults to '}}'
-    RightTemplateDelimiter *string
+  TemplateSuffix *string
+  // If defined, the given left delimiter will be used to parse go templates;
+  // otherwise, defaults to '{{'
+  LeftTemplateDelimiter *string
+  // If defined, the given right delimiter will be used to parse go templates;
+  // otherwise, defaults to '}}'
+  RightTemplateDelimiter *string
+  // If defined, used to decrypt files
+  Decryptor manifests.Decryptor
   }
   ```
 
-  The generator options can be overridden on source level by creating a file `.component-config.yaml` in the specified `kustomizationPath`; the file can contain JSON or YAML, compatible with the  `KustomizeGeneratorOptions` struct.
+  The generator options can be overridden on source level by creating a file `.component-config.yaml` in the specified `kustomizationPath`; the file can contain JSON or YAML, compatible with the  `KustomizationsOptions` struct:
 
-As of now, the specified kustomization must not reference files or paths outside `kustomizationPath`. Remote references are generally not supported.
-By default, all `.yaml` or `.yml` files in `kustomizationPath`, and its subdirectories, are subject to templating, and are considered if a `kustomization.yaml`
-is auto-generated. It is possible to exclude certain files by creating a file `.component-ignore` in `kustomizationPath`; this `.component-ignore` file uses
-the common `.gitignore` syntax.
+  ```go
+  package kustomize
+
+  type KustomizationOptions struct {
+    TemplateSuffix *string
+    // If defined, the given left delimiter will be used to parse go templates; otherwise, defaults to '{{'
+    LeftTemplateDelimiter *string
+    // If defined, the given right delimiter will be used to parse go templates; otherwise, defaults to '}}'
+    RightTemplateDelimiter *string
+    // If defined, paths to referenced files or directories outside kustomizationPath
+    IncludedFiles []string
+    // If defined, paths to referenced kustomizations
+    IncludedKustomizations []string
+    // If defined, used to decrypt files
+    Decryptor manifests.Decryptor
+  }
+  ```
+
+By default, the specified kustomization cannot reference files or paths on `fsys` outside `kustomizationPath`.
+By default, all `.yaml` or `.yml` files in `kustomizationPath`, and its subdirectories, are subject to templating, and are considered if a `kustomization.yaml` is auto-generated. It is possible to exclude certain files from templating by creating a file `.component-ignore` in `kustomizationPath`; this `.component-ignore` file uses the common `.gitignore` syntax. Note that excluded files are still visible to the `readFile` template function. Furthermore, additional file outside the `kustomizationPath` can be referenced if the according paths are declared in `.component-config.yaml` as:
+- `includedKustomizations: []string`: a list of directory paths relative to `kustomizationPath`; targeted directories are treated as own components, rendered with the including component's parameters (values), and then supplied to kustomize at the identical path; recursive inclusions are possible, but must not lead to cycles (there is a circuit breaking logic that will fail the generator in case of cycles).
+- `includedFiles: []string`: a list of paths relative to `kustomizationPath` (single files or directories); all referenced files (recursively in case a directory is specified) can be used with `readFile`.
+
+Finally, note that remote references are not supported at all.
