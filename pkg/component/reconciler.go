@@ -444,7 +444,7 @@ func (r *Reconciler[T]) Reconcile(ctx context.Context, req ctrl.Request) (result
 		}
 		if updateErr := r.client.Status().Update(ctx, component, client.FieldOwner(*r.options.FieldOwner)); updateErr != nil {
 			if retriableError := new(types.RetriableError); errors.As(updateErr, retriableError) {
-				log.V(1).Info("error updating status, retrying", "requeue", result.Requeue || result.RequeueAfter > 0, "requeueAfter", result.RequeueAfter.String())
+				log.Error(updateErr, "error updating status, retrying", "requeue", result.Requeue || result.RequeueAfter > 0, "requeueAfter", result.RequeueAfter.String())
 				retryAfter := retriableError.RetryAfter()
 				if retryAfter == nil || *retryAfter == 0 {
 					retryAfter = &retryInterval
