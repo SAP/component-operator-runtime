@@ -8,7 +8,7 @@ package manifests
 import (
 	"context"
 
-	"github.com/pkg/errors"
+	legacyerrors "github.com/pkg/errors"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -40,7 +40,7 @@ func (g *tranformableGenerator) Generate(ctx context.Context, namespace string, 
 	for i, transformer := range g.parameterTransformers {
 		_parameters, err := transformer.TransformParameters(namespace, name, parameters)
 		if err != nil {
-			return nil, errors.Wrapf(err, "error calling parameter transformer (%d)", i)
+			return nil, legacyerrors.Wrapf(err, "error calling parameter transformer (%d)", i)
 		}
 		parameters = _parameters
 	}
@@ -51,7 +51,7 @@ func (g *tranformableGenerator) Generate(ctx context.Context, namespace string, 
 	for i, transformer := range g.objectTransformers {
 		_objects, err := transformer.TransformObjects(namespace, name, objects)
 		if err != nil {
-			return nil, errors.Wrapf(err, "error calling object transformer (%d)", i)
+			return nil, legacyerrors.Wrapf(err, "error calling object transformer (%d)", i)
 		}
 		objects = _objects
 	}
