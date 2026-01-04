@@ -60,14 +60,15 @@ type KustomizationOptions struct {
 }
 
 type RenderContext struct {
-	LocalClient     client.Client
-	Client          client.Client
-	DiscoveryClient discovery.DiscoveryInterface
-	Component       component.Component
-	ComponentDigest string
-	Namespace       string
-	Name            string
-	Parameters      map[string]any
+	LocalClient       client.Client
+	Client            client.Client
+	DiscoveryClient   discovery.DiscoveryInterface
+	Component         component.Component
+	ComponentDigest   string
+	ComponentRevision int64
+	Namespace         string
+	Name              string
+	Parameters        map[string]any
 }
 
 type Kustomization struct {
@@ -178,7 +179,7 @@ func parseKustomization(fsys fs.FS, kustomizationPath string, options Kustomizat
 					Funcs(templatex.FuncMapForTemplate(nil)).
 					Funcs(templatex.FuncMapForLocalClient(nil)).
 					Funcs(templatex.FuncMapForClient(nil)).
-					Funcs(funcMapForContext(nil, nil, nil, nil, "", "", ""))
+					Funcs(funcMapForContext(nil, nil, nil, nil, "", 0, "", ""))
 			} else {
 				t = t.New(name)
 			}
@@ -290,7 +291,7 @@ func (k *Kustomization) Render(context RenderContext, fsys kustfsys.FileSystem) 
 				Funcs(templatex.FuncMapForTemplate(t0)).
 				Funcs(templatex.FuncMapForLocalClient(context.LocalClient)).
 				Funcs(templatex.FuncMapForClient(context.Client)).
-				Funcs(funcMapForContext(k.files, serverVersion, serverGroupsWithResources, context.Component, context.ComponentDigest, context.Namespace, context.Name))
+				Funcs(funcMapForContext(k.files, serverVersion, serverGroupsWithResources, context.Component, context.ComponentDigest, context.ComponentRevision, context.Namespace, context.Name))
 		}
 		var buf bytes.Buffer
 		// TODO: templates (accidentally or intentionally) could modify data, or even some of the objects supplied through builtin functions;
@@ -330,7 +331,7 @@ func (k *Kustomization) Render(context RenderContext, fsys kustfsys.FileSystem) 
 	return nil
 }
 
-func funcMapForContext(files map[string][]byte, serverInfo *version.Info, serverGroupsWithResources []*metav1.APIResourceList, component component.Component, componentDigest string, namespace string, name string) template.FuncMap {
+func funcMapForContext(files map[string][]byte, serverInfo *version.Info, serverGroupsWithResources []*metav1.APIResourceList, component component.Component, componentDigest string, componentRevision int64, namespace string, name string) template.FuncMap {
 	return template.FuncMap{
 		// TODO: maybe it would it be better to convert component to unstructured;
 		// then calling methods would no longer be possible, and attributes would be in lowercase
@@ -339,6 +340,7 @@ func funcMapForContext(files map[string][]byte, serverInfo *version.Info, server
 		"readFile":          makeFuncReadFile(files),
 		"component":         makeFuncData(component),
 		"componentDigest":   func() string { return componentDigest },
+		"componentRevision": func() int64 { return componentRevision },
 		"namespace":         func() string { return namespace },
 		"name":              func() string { return name },
 		"kubernetesVersion": func() *version.Info { return serverInfo },
