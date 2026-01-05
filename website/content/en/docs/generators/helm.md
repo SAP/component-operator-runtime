@@ -28,7 +28,7 @@ It should be noted that `HelmGenerator` does not use the Helm SDK; instead it tr
 A few differences and restrictions arise from this:
 - Not all Helm template functions are supported. To be exact, `toToml` is not supported; all other functions should be supported, but may behave more strictly in error situtations.
 - Not all builtin variables are supported; the following restrictions apply:
-  - the `.Release` builtin is supported; note that `Release.IsInstall` is set to `true` during the first reconcile iteration of the component (precisely, if `status.revision` equals 1), and `Release.IsUpgrade` is set to inverse of `Release.IsInstall`; also note that `Release.Revision` increases whenever the component manifest, or one of its references (such as referenced secrets) changes
+  - the `.Release` builtin is supported; note that `Release.IsInstall` is set to `true` during the first reconcile iteration of the component (precisely, if `status.revision` equals 1), and `Release.IsUpgrade` is set to the inverse of `Release.IsInstall`; also note that `Release.Revision` increases whenever the component manifest, or one of its references (such as referenced secrets) changes
   - for the `.Chart` builtin, only `.Chart.Name`, `.Chart.Version`, `.Chart.Type`, `.Chart.AppVersion`, `.Chart.Dependencies` are supported
   - for the `.Capabilities` builtin, only `.Capabilities.KubeVersion` and `.Capabilities.APIVersions` are supported
   - the `.Template` builtin is fully supported
