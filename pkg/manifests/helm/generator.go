@@ -122,6 +122,7 @@ func (g *HelmGenerator) Generate(ctx context.Context, namespace string, name str
 
 	annotationKeyReconcilePolicy := reconcilerName + "/" + types.AnnotationKeySuffixReconcilePolicy
 	annotationKeyUpdatePolicy := reconcilerName + "/" + types.AnnotationKeySuffixUpdatePolicy
+	annotationKeyDeletePolicy := reconcilerName + "/" + types.AnnotationKeySuffixDeletePolicy
 	annotationKeyApplyOrder := reconcilerName + "/" + types.AnnotationKeySuffixApplyOrder
 	annotationKeyPurgeOrder := reconcilerName + "/" + types.AnnotationKeySuffixPurgeOrder
 
@@ -132,6 +133,22 @@ func (g *HelmGenerator) Generate(ctx context.Context, namespace string, name str
 				return nil, fmt.Errorf("annotation %s must not be set (object: %s)", key, types.ObjectKeyToString(object))
 			}
 		}
+
+		resourceMetadata, err := helm.ParseResourceMetadata(object)
+		if err != nil {
+			return nil, err
+		}
+		if resourceMetadata != nil {
+			switch resourceMetadata.Policy {
+			case helm.ResourcePolicyKeep:
+				// TODO: better use types.DeletePolicyOrphanOnDelete?
+				annotations[annotationKeyDeletePolicy] = types.DeletePolicyOrphan
+			default:
+				// should not occur
+			}
+			object.SetAnnotations(annotations)
+		}
+
 		hookMetadata, err := helm.ParseHookMetadata(object)
 		if err != nil {
 			return nil, err

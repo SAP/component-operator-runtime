@@ -112,6 +112,14 @@ func (apiVersions ApiVersions) Has(version string) bool {
 	return false
 }
 
+type ResourceMetadata struct {
+	Policy string
+}
+
+const (
+	ResourcePolicyKeep = "keep"
+)
+
 type HookMetadata struct {
 	Types          []string
 	Weight         int
