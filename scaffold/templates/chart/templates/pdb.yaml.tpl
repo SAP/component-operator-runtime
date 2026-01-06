@@ -16,9 +16,9 @@ metadata:
     {{`{{`}}- end {{`}}`}}
 spec:
   {{`{{`}}- if .Values.pdb.maxUnavailable {{`}}`}}
-  maxUnavailable: {{ .Values.pdb.maxUnavailable {{`}}`}}
+  maxUnavailable: {{`{{`}} .Values.pdb.maxUnavailable {{`}}`}}
   {{`{{`}}- else }}
-  minAvailable: {{ .Values.pdb.minAvailable {{`}}`}}
+  minAvailable: {{`{{`}} .Values.pdb.minAvailable {{`}}`}}
   {{`{{`}}- end {{`}}`}}
   selector:
     matchLabels:
