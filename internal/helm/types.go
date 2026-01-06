@@ -75,6 +75,7 @@ type Release struct {
 	Service   string `json:"service,omitempty"`
 	IsInstall bool   `json:"isInstall,omitempty"`
 	IsUpgrade bool   `json:"isUpgrade,omitempty"`
+	Revision  int64  `json:"revision"`
 }
 
 // +kubebuilder:object:generate=true
@@ -110,6 +111,14 @@ func (apiVersions ApiVersions) Has(version string) bool {
 	}
 	return false
 }
+
+type ResourceMetadata struct {
+	Policy string
+}
+
+const (
+	ResourcePolicyKeep = "keep"
+)
 
 type HookMetadata struct {
 	Types          []string

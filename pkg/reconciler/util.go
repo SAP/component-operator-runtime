@@ -63,6 +63,7 @@ func calculateObjectDigest(obj client.Object, componentDigest string, reconcileP
 		return digestOnce, nil
 	}
 
+	// TODO: the clear/defer approach below is not concurrency-safe (which is probably not a problem, but ...)
 	resourceVersion := obj.GetResourceVersion()
 	defer obj.SetResourceVersion(resourceVersion)
 	obj.SetResourceVersion("")

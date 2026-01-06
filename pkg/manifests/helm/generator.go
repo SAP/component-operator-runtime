@@ -95,6 +95,12 @@ func (g *HelmGenerator) Generate(ctx context.Context, namespace string, name str
 	if err != nil {
 		return nil, err
 	}
+	componentRevision, err := component.ComponentRevisionFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	isInstall := componentRevision == 1
 
 	renderedObjects, err := g.chart.Render(helm.RenderContext{
 		LocalClient:     localClient,
@@ -104,10 +110,9 @@ func (g *HelmGenerator) Generate(ctx context.Context, namespace string, name str
 			Namespace: namespace,
 			Name:      name,
 			Service:   reconcilerName,
-			// TODO: probably IsInstall and IsUpgrade should be set in a more differentiated way;
-			// but we don't know how, since this framework does not really distinguish between installation and upgrade ...
-			IsInstall: true,
-			IsUpgrade: false,
+			IsInstall: isInstall,
+			IsUpgrade: !isInstall,
+			Revision:  componentRevision,
 		},
 		Values: parameters.ToUnstructured(),
 	})
@@ -117,6 +122,7 @@ func (g *HelmGenerator) Generate(ctx context.Context, namespace string, name str
 
 	annotationKeyReconcilePolicy := reconcilerName + "/" + types.AnnotationKeySuffixReconcilePolicy
 	annotationKeyUpdatePolicy := reconcilerName + "/" + types.AnnotationKeySuffixUpdatePolicy
+	annotationKeyDeletePolicy := reconcilerName + "/" + types.AnnotationKeySuffixDeletePolicy
 	annotationKeyApplyOrder := reconcilerName + "/" + types.AnnotationKeySuffixApplyOrder
 	annotationKeyPurgeOrder := reconcilerName + "/" + types.AnnotationKeySuffixPurgeOrder
 
@@ -127,6 +133,22 @@ func (g *HelmGenerator) Generate(ctx context.Context, namespace string, name str
 				return nil, fmt.Errorf("annotation %s must not be set (object: %s)", key, types.ObjectKeyToString(object))
 			}
 		}
+
+		resourceMetadata, err := helm.ParseResourceMetadata(object)
+		if err != nil {
+			return nil, err
+		}
+		if resourceMetadata != nil {
+			switch resourceMetadata.Policy {
+			case helm.ResourcePolicyKeep:
+				// TODO: better use types.DeletePolicyOrphanOnDelete?
+				annotations[annotationKeyDeletePolicy] = types.DeletePolicyOrphan
+			default:
+				// should not occur
+			}
+			object.SetAnnotations(annotations)
+		}
+
 		hookMetadata, err := helm.ParseHookMetadata(object)
 		if err != nil {
 			return nil, err
@@ -152,38 +174,53 @@ func (g *HelmGenerator) Generate(ctx context.Context, namespace string, name str
 				annotations[annotationKeyUpdatePolicy] = types.UpdatePolicyRecreate
 			}
 			switch {
-			case slices.Equal(slices.Sort(hookMetadata.Types), slices.Sort([]string{helm.HookTypePreInstall})):
+			case slices.Contains(hookMetadata.Types, helm.HookTypePreInstall) && slices.Contains(hookMetadata.Types, helm.HookTypePostInstall):
+				annotations[annotationKeyReconcilePolicy] = types.ReconcilePolicyOnce
+				annotations[annotationKeyApplyOrder] = strconv.Itoa(hookMetadata.Weight - helm.HookMaxWeight - 1)
+				if slices.Contains(hookMetadata.DeletePolicies, helm.HookDeletePolicyHookSucceeded) {
+					annotations[annotationKeyPurgeOrder] = strconv.Itoa(helm.HookMaxWeight - helm.HookMinWeight + 1)
+				}
+			case slices.Contains(hookMetadata.Types, helm.HookTypePreInstall):
 				annotations[annotationKeyReconcilePolicy] = types.ReconcilePolicyOnce
 				annotations[annotationKeyApplyOrder] = strconv.Itoa(hookMetadata.Weight - helm.HookMaxWeight - 1)
 				if slices.Contains(hookMetadata.DeletePolicies, helm.HookDeletePolicyHookSucceeded) {
 					annotations[annotationKeyPurgeOrder] = strconv.Itoa(-1)
 				}
-			case slices.Equal(slices.Sort(hookMetadata.Types), slices.Sort([]string{helm.HookTypePostInstall})):
+			case slices.Contains(hookMetadata.Types, helm.HookTypePostInstall):
 				annotations[annotationKeyReconcilePolicy] = types.ReconcilePolicyOnce
 				annotations[annotationKeyApplyOrder] = strconv.Itoa(hookMetadata.Weight - helm.HookMinWeight + 1)
-				if slices.Contains(hookMetadata.DeletePolicies, helm.HookDeletePolicyHookSucceeded) {
-					annotations[annotationKeyPurgeOrder] = strconv.Itoa(helm.HookMaxWeight - helm.HookMinWeight + 1)
-				}
-			case slices.Equal(slices.Sort(hookMetadata.Types), slices.Sort([]string{helm.HookTypePreInstall, helm.HookTypePreUpgrade})):
-				annotations[annotationKeyReconcilePolicy] = types.ReconcilePolicyOnObjectOrComponentChange
-				annotations[annotationKeyApplyOrder] = strconv.Itoa(hookMetadata.Weight - helm.HookMaxWeight - 1)
-				if slices.Contains(hookMetadata.DeletePolicies, helm.HookDeletePolicyHookSucceeded) {
-					annotations[annotationKeyPurgeOrder] = strconv.Itoa(-1)
-				}
-			case slices.Equal(slices.Sort(hookMetadata.Types), slices.Sort([]string{helm.HookTypePostInstall, helm.HookTypePostUpgrade})):
-				annotations[annotationKeyReconcilePolicy] = types.ReconcilePolicyOnObjectOrComponentChange
-				annotations[annotationKeyApplyOrder] = strconv.Itoa(hookMetadata.Weight - helm.HookMinWeight + 1)
-				if slices.Contains(hookMetadata.DeletePolicies, helm.HookDeletePolicyHookSucceeded) {
-					annotations[annotationKeyPurgeOrder] = strconv.Itoa(helm.HookMaxWeight - helm.HookMinWeight + 1)
-				}
-			case slices.Equal(slices.Sort(hookMetadata.Types), slices.Sort([]string{helm.HookTypePreInstall, helm.HookTypePreUpgrade, helm.HookTypePostInstall, helm.HookTypePostUpgrade})):
-				annotations[annotationKeyReconcilePolicy] = types.ReconcilePolicyOnObjectOrComponentChange
-				annotations[annotationKeyApplyOrder] = strconv.Itoa(hookMetadata.Weight - helm.HookMaxWeight - 1)
 				if slices.Contains(hookMetadata.DeletePolicies, helm.HookDeletePolicyHookSucceeded) {
 					annotations[annotationKeyPurgeOrder] = strconv.Itoa(helm.HookMaxWeight - helm.HookMinWeight + 1)
 				}
 			default:
-				return nil, fmt.Errorf("unsupported helm hook type combination: %s (object: %s)", strings.Join(hookMetadata.Types, ","), types.ObjectKeyToString(object))
+				if isInstall {
+					continue
+				}
+			}
+			if !isInstall {
+				switch {
+				case slices.Contains(hookMetadata.Types, helm.HookTypePreUpgrade) && slices.Contains(hookMetadata.Types, helm.HookTypePostUpgrade):
+					annotations[annotationKeyReconcilePolicy] = types.ReconcilePolicyOnObjectOrComponentChange
+					annotations[annotationKeyApplyOrder] = strconv.Itoa(hookMetadata.Weight - helm.HookMaxWeight - 1)
+					if slices.Contains(hookMetadata.DeletePolicies, helm.HookDeletePolicyHookSucceeded) {
+						annotations[annotationKeyPurgeOrder] = strconv.Itoa(helm.HookMaxWeight - helm.HookMinWeight + 1)
+					}
+				case slices.Contains(hookMetadata.Types, helm.HookTypePreUpgrade):
+					annotations[annotationKeyReconcilePolicy] = types.ReconcilePolicyOnObjectOrComponentChange
+					annotations[annotationKeyApplyOrder] = strconv.Itoa(hookMetadata.Weight - helm.HookMaxWeight - 1)
+					if slices.Contains(hookMetadata.DeletePolicies, helm.HookDeletePolicyHookSucceeded) {
+						annotations[annotationKeyPurgeOrder] = strconv.Itoa(-1)
+					}
+				case slices.Contains(hookMetadata.Types, helm.HookTypePostUpgrade):
+					annotations[annotationKeyReconcilePolicy] = types.ReconcilePolicyOnObjectOrComponentChange
+					annotations[annotationKeyApplyOrder] = strconv.Itoa(hookMetadata.Weight - helm.HookMinWeight + 1)
+					if slices.Contains(hookMetadata.DeletePolicies, helm.HookDeletePolicyHookSucceeded) {
+						annotations[annotationKeyPurgeOrder] = strconv.Itoa(helm.HookMaxWeight - helm.HookMinWeight + 1)
+					}
+				default:
+					// nothing to do, just keep the object
+					// this is reached if there are only pre/post-install hooks defined
+				}
 			}
 			object.SetAnnotations(annotations)
 		}

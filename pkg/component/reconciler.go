@@ -524,6 +524,17 @@ func (r *Reconciler[T]) Reconcile(ctx context.Context, req ctrl.Request) (result
 			return ctrl.Result{RequeueAfter: time.Millisecond}, nil
 		}
 
+		// TODO: this is temporarily needed until the revision is adopted by all consumers and rolled out completely
+		// otherwise, existing components would have revision == 1 which might lead to problems with helm generator
+		if status.Revision == 0 && status.LastAppliedAt != nil {
+			status.Revision = 1
+		}
+
+		if status.ProcessingDigest != status.LastProcessingDigest {
+			status.Revision += 1
+			status.LastProcessingDigest = status.ProcessingDigest
+		}
+
 		log.V(2).Info("reconciling dependent resources")
 		for hookOrder, hook := range r.preReconcileHooks {
 			if err := hook(hookCtx, r.hookClient, component); err != nil {

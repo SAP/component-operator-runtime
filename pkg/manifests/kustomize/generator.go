@@ -120,20 +120,25 @@ func (g *KustomizeGenerator) Generate(ctx context.Context, namespace string, nam
 	if err != nil {
 		return nil, err
 	}
+	componentRevision, err := component.ComponentRevisionFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
 	component, err := component.ComponentFromContext(ctx)
 	if err != nil {
 		return nil, err
 	}
 
 	if err := g.kustomization.Render(kustomize.RenderContext{
-		LocalClient:     localClient,
-		Client:          clnt,
-		DiscoveryClient: clnt.DiscoveryClient(),
-		Component:       component,
-		ComponentDigest: componentDigest,
-		Namespace:       namespace,
-		Name:            name,
-		Parameters:      parameters.ToUnstructured(),
+		LocalClient:       localClient,
+		Client:            clnt,
+		DiscoveryClient:   clnt.DiscoveryClient(),
+		Component:         component,
+		ComponentDigest:   componentDigest,
+		ComponentRevision: componentRevision,
+		Namespace:         namespace,
+		Name:              name,
+		Parameters:        parameters.ToUnstructured(),
 	}, fsys); err != nil {
 		return nil, err
 	}
