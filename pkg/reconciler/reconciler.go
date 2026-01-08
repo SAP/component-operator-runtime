@@ -864,6 +864,9 @@ func (r *Reconciler) Apply(ctx context.Context, inventory *[]*InventoryItem, obj
 						(existingObject != nil && existingObject.GetLabels()[r.labelKeyOwnerId] != hashedOwnerId)
 
 					if orphan {
+						if err := r.orphanObject(ctx, existingObject, hashedOwnerId); err != nil {
+							return false, legacyerrors.Wrapf(err, "error orphaning object %s", item)
+						}
 						item.Phase = ""
 					} else {
 						// note: here is a theoretical risk that we delete an existing foreign object, because informers are not yet synced
@@ -989,6 +992,9 @@ func (r *Reconciler) Delete(ctx context.Context, inventory *[]*InventoryItem, ow
 			// deleted which are needed for the deletion of the managed instances, such as webhook servers, api servers, ...
 			if (!isNamespace(item) || !isNamespaceUsed(*inventory, item.Name)) && (numManagedToBeDeleted == 0 || isManagedInstance(r.additionalManagedTypes, *inventory, item)) {
 				if orphan {
+					if err := r.orphanObject(ctx, existingObject, hashedOwnerId); err != nil {
+						return false, legacyerrors.Wrapf(err, "error orphaning object %s", item)
+					}
 					item.Phase = ""
 				} else {
 					// delete the object
@@ -1348,6 +1354,29 @@ func (r *Reconciler) deleteObject(ctx context.Context, key types.ObjectKey, exis
 			break
 		}
 	}
+	return nil
+}
+
+// orphan object; if existingObject is nil, no action is performed; otherwise if the object is a crd or an api service, then
+// our finalizer (i.e. the finalizer equal to the reconciler name) will be cleared
+func (r *Reconciler) orphanObject(ctx context.Context, existingObject *unstructured.Unstructured, hashedOwnerId string) (err error) {
+	if existingObject == nil {
+		return nil
+	}
+
+	if existingObject.GetLabels()[r.labelKeyOwnerId] != hashedOwnerId {
+		return fmt.Errorf("owner conflict; object %s has no or different owner", types.ObjectKeyToString(existingObject))
+	}
+
+	if isCrd(existingObject) || isApiService(existingObject) {
+		object := existingObject.DeepCopy()
+		if controllerutil.RemoveFinalizer(object, r.finalizer) {
+			if err := r.client.Update(ctx, object, client.FieldOwner(r.fieldOwner)); err != nil {
+				return err
+			}
+		}
+	}
+
 	return nil
 }
 
