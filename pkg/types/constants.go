@@ -18,6 +18,7 @@ const (
 	AnnotationKeySuffixPurgeOrder      = "purge-order"
 	AnnotationKeySuffixDeleteOrder     = "delete-order"
 	AnnotationKeySuffixStatusHint      = "status-hint"
+	AnnotationKeySuffixDisableEvents   = "disable-events"
 )
 
 const (
