@@ -911,6 +911,10 @@ func (r *Reconciler[T]) getOptionsForComponent(component T) reconciler.Reconcile
 			options.ReapplyInterval = &reapplyInterval
 		}
 	}
+	// TODO: formalize the following into a Configuration interface?
+	if component.GetAnnotations()[r.name+"/"+types.AnnotationKeySuffixDisableEvents] == "true" {
+		options.EnableEvents = ref(false)
+	}
 	return options
 }
 

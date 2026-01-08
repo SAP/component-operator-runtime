@@ -127,6 +127,9 @@ type ReconcilerOptions struct {
 	StatusAnalyzer status.StatusAnalyzer
 	// Prometheus metrics to be populated by the reconciler.
 	Metrics ReconcilerMetrics
+	// Whether to disable sending events on the dependent objects.
+	// If unspecified, true is assumed.
+	EnableEvents *bool
 }
 
 // ReconcilerMetrics defines metrics that the reconciler can populate.
@@ -152,6 +155,7 @@ type Reconciler struct {
 	missingNamespacesPolicy      MissingNamespacesPolicy
 	additionalManagedTypes       []TypeInfo
 	reapplyInterval              time.Duration
+	enableEvents                 bool
 	labelKeyOwnerId              string
 	annotationKeyOwnerId         string
 	annotationKeyDigest          string
@@ -194,6 +198,9 @@ func NewReconciler(name string, clnt cluster.Client, options ReconcilerOptions) 
 	if options.StatusAnalyzer == nil {
 		options.StatusAnalyzer = status.NewStatusAnalyzer(name)
 	}
+	if options.EnableEvents == nil {
+		options.EnableEvents = ref(true)
+	}
 
 	return &Reconciler{
 		fieldOwner:                   *options.FieldOwner,
@@ -208,6 +215,7 @@ func NewReconciler(name string, clnt cluster.Client, options ReconcilerOptions) 
 		missingNamespacesPolicy:      *options.MissingNamespacesPolicy,
 		additionalManagedTypes:       options.AdditionalManagedTypes,
 		reapplyInterval:              *options.ReapplyInterval,
+		enableEvents:                 *options.EnableEvents,
 		labelKeyOwnerId:              name + "/" + types.LabelKeySuffixOwnerId,
 		annotationKeyOwnerId:         name + "/" + types.AnnotationKeySuffixOwnerId,
 		annotationKeyDigest:          name + "/" + types.AnnotationKeySuffixDigest,
@@ -1108,8 +1116,10 @@ func (r *Reconciler) createObject(ctx context.Context, object client.Object, cre
 		if err == nil && createdObject != nil {
 			err = runtime.DefaultUnstructuredConverter.FromUnstructured(object.(*unstructured.Unstructured).Object, createdObject)
 		}
-		if err == nil {
-			r.client.EventRecorder().Event(object, corev1.EventTypeNormal, objectReasonCreated, "Object successfully created")
+		if r.enableEvents {
+			if err == nil {
+				r.client.EventRecorder().Event(object, corev1.EventTypeNormal, objectReasonCreated, "Object successfully created")
+			}
 		}
 	}()
 
@@ -1156,10 +1166,12 @@ func (r *Reconciler) updateObject(ctx context.Context, object client.Object, exi
 		if err == nil && updatedObject != nil {
 			err = runtime.DefaultUnstructuredConverter.FromUnstructured(object.(*unstructured.Unstructured).Object, updatedObject)
 		}
-		if err == nil {
-			r.client.EventRecorder().Event(object, corev1.EventTypeNormal, objectReasonUpdated, "Object successfully updated")
-		} else {
-			r.client.EventRecorder().Eventf(existingObject, corev1.EventTypeWarning, objectReasonUpdateError, "Error updating object: %s", err)
+		if r.enableEvents {
+			if err == nil {
+				r.client.EventRecorder().Event(object, corev1.EventTypeNormal, objectReasonUpdated, "Object successfully updated")
+			} else {
+				r.client.EventRecorder().Eventf(existingObject, corev1.EventTypeWarning, objectReasonUpdateError, "Error updating object: %s", err)
+			}
 		}
 	}()
 
@@ -1248,13 +1260,15 @@ func (r *Reconciler) deleteObject(ctx context.Context, key types.ObjectKey, exis
 	}
 
 	defer func() {
-		if existingObject == nil {
-			return
-		}
-		if err == nil {
-			r.client.EventRecorder().Event(existingObject, corev1.EventTypeNormal, objectReasonDeleted, "Object successfully deleted")
-		} else {
-			r.client.EventRecorder().Eventf(existingObject, corev1.EventTypeWarning, objectReasonDeleteError, "Error deleting object: %s", err)
+		if r.enableEvents {
+			if existingObject == nil {
+				return
+			}
+			if err == nil {
+				r.client.EventRecorder().Event(existingObject, corev1.EventTypeNormal, objectReasonDeleted, "Object successfully deleted")
+			} else {
+				r.client.EventRecorder().Eventf(existingObject, corev1.EventTypeWarning, objectReasonDeleteError, "Error deleting object: %s", err)
+			}
 		}
 	}()
 
