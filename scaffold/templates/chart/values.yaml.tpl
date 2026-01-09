@@ -62,6 +62,18 @@ resources:
     # -- Memory request
     memory: 128Mi
 
+pdb:
+  # -- Whether to create a PodDisruptionBudget for the webhook
+  enabled: true
+  # -- Labels to set on the PodDisruptionBudget
+  labels: {}
+  # -- Annotations to set on the PodDisruptionBudget
+  annotations: {}
+  # -- Number of pods that are available after eviction as number or percentage (e.g. 50%)
+  minAvailable: "1"
+  # -- Number of pods that are unavailable after eviction as number or percentage (e.g: 50%); has higher precedence over `pdb.minAvailable`
+  maxUnavailable: ""
+
 {{- if or .validatingWebhookEnabled .mutatingWebhookEnabled }}
 
 service:
