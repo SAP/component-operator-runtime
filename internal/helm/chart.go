@@ -83,6 +83,20 @@ func ParseChart(fsys fs.FS, chartPath string, parent *Chart) (*Chart, error) {
 	if err := kyaml.Unmarshal(chartRaw, chart.metadata); err != nil {
 		return nil, err
 	}
+	if chart.metadata.Dependencies == nil {
+		requirementsRaw, err := fs.ReadFile(fsys, filepath.Clean(chartPath+"/requirements.yaml"))
+		if err == nil {
+			requirements := struct {
+				Dependencies []ChartDependency `json:"dependencies,omitempty"`
+			}{}
+			if err := kyaml.Unmarshal(requirementsRaw, &requirements); err != nil {
+				return nil, err
+			}
+			chart.metadata.Dependencies = requirements.Dependencies
+		} else if !errors.Is(err, fs.ErrNotExist) {
+			return nil, err
+		}
+	}
 	if chart.metadata.Type == "" {
 		chart.metadata.Type = ChartTypeApplication
 	}
