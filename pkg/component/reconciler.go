@@ -45,6 +45,7 @@ import (
 	"github.com/sap/component-operator-runtime/internal/clientfactory"
 	"github.com/sap/component-operator-runtime/internal/events"
 	"github.com/sap/component-operator-runtime/internal/metrics"
+	"github.com/sap/component-operator-runtime/internal/util"
 	"github.com/sap/component-operator-runtime/pkg/cluster"
 	"github.com/sap/component-operator-runtime/pkg/manifests"
 	"github.com/sap/component-operator-runtime/pkg/reconciler"
@@ -514,7 +515,7 @@ func (r *Reconciler[T]) Reconcile(ctx context.Context, req ctrl.Request) (result
 		// create/update case
 		// TODO: optionally (to be completely consistent) set finalizer through a mutating webhook
 		if added := controllerutil.AddFinalizer(component, *r.options.Finalizer); added {
-			if err := r.client.Update(ctx, component, client.FieldOwner(*r.options.FieldOwner)); err != nil {
+			if err := util.UpdateFinalizers(ctx, r.client, component, *r.options.FieldOwner); err != nil {
 				return ctrl.Result{}, legacyerrors.Wrap(err, "error adding finalizer")
 			}
 			// trigger another round trip
@@ -610,7 +611,7 @@ func (r *Reconciler[T]) Reconcile(ctx context.Context, req ctrl.Request) (result
 			// all dependent resources are already gone, so that's it
 			log.V(1).Info("all dependent resources are successfully deleted; removing finalizer")
 			if removed := controllerutil.RemoveFinalizer(component, *r.options.Finalizer); removed {
-				if err := r.client.Update(ctx, component, client.FieldOwner(*r.options.FieldOwner)); err != nil {
+				if err := util.UpdateFinalizers(ctx, r.client, component, *r.options.FieldOwner); err != nil {
 					return ctrl.Result{}, legacyerrors.Wrap(err, "error removing finalizer")
 				}
 			}
