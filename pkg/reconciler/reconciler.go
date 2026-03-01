@@ -181,25 +181,25 @@ func NewReconciler(name string, clnt cluster.Client, options ReconcilerOptions) 
 		options.Finalizer = &name
 	}
 	if options.AdoptionPolicy == nil {
-		options.AdoptionPolicy = ref(AdoptionPolicyIfUnowned)
+		options.AdoptionPolicy = new(AdoptionPolicyIfUnowned)
 	}
 	if options.UpdatePolicy == nil {
-		options.UpdatePolicy = ref(UpdatePolicyReplace)
+		options.UpdatePolicy = new(UpdatePolicyReplace)
 	}
 	if options.DeletePolicy == nil {
-		options.DeletePolicy = ref(DeletePolicyDelete)
+		options.DeletePolicy = new(DeletePolicyDelete)
 	}
 	if options.MissingNamespacesPolicy == nil {
-		options.MissingNamespacesPolicy = ref(MissingNamespacesPolicyCreate)
+		options.MissingNamespacesPolicy = new(MissingNamespacesPolicyCreate)
 	}
 	if options.ReapplyInterval == nil {
-		options.ReapplyInterval = ref(defaultReapplyInterval)
+		options.ReapplyInterval = new(defaultReapplyInterval)
 	}
 	if options.StatusAnalyzer == nil {
 		options.StatusAnalyzer = status.NewStatusAnalyzer(name)
 	}
 	if options.EnableEvents == nil {
-		options.EnableEvents = ref(true)
+		options.EnableEvents = new(true)
 	}
 
 	return &Reconciler{
@@ -1290,10 +1290,10 @@ func (r *Reconciler) deleteObject(ctx context.Context, key types.ObjectKey, exis
 	object.SetGroupVersionKind(key.GetObjectKind().GroupVersionKind())
 	object.SetNamespace(key.GetNamespace())
 	object.SetName(key.GetName())
-	deleteOptions := &client.DeleteOptions{PropagationPolicy: ref(metav1.DeletePropagationBackground)}
+	deleteOptions := &client.DeleteOptions{PropagationPolicy: new(metav1.DeletePropagationBackground)}
 	if existingObject != nil {
 		deleteOptions.Preconditions = &metav1.Preconditions{
-			ResourceVersion: ref(existingObject.GetResourceVersion()),
+			ResourceVersion: new(existingObject.GetResourceVersion()),
 		}
 	}
 	if err := r.client.Delete(ctx, object, deleteOptions); err != nil {

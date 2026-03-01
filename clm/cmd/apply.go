@@ -58,7 +58,7 @@ func newApplyCmd() *cobra.Command {
 			}
 
 			reconciler := reconciler.NewReconciler(fullName, clnt, reconciler.ReconcilerOptions{
-				UpdatePolicy: ref(reconciler.UpdatePolicySsaOverride),
+				UpdatePolicy: new(reconciler.UpdatePolicySsaOverride),
 			})
 
 			releaseClient := release.NewClient(fullName, clnt)

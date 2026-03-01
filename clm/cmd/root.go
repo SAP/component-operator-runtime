@@ -32,7 +32,7 @@ Common actions for clm:
 
 func newRootCmd() *cobra.Command {
 	configFlags := genericclioptions.NewConfigFlags(true)
-	configFlags.Namespace = ref("default")
+	configFlags.Namespace = new("default")
 
 	cmd := &cobra.Command{
 		Use:          shortName,
