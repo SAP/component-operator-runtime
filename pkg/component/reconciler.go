@@ -180,19 +180,19 @@ func NewReconciler[T Component](name string, resourceGenerator manifests.Generat
 		options.Finalizer = &name
 	}
 	if options.AdoptionPolicy == nil {
-		options.AdoptionPolicy = ref(reconciler.AdoptionPolicyIfUnowned)
+		options.AdoptionPolicy = new(reconciler.AdoptionPolicyIfUnowned)
 	}
 	if options.UpdatePolicy == nil {
-		options.UpdatePolicy = ref(reconciler.UpdatePolicyReplace)
+		options.UpdatePolicy = new(reconciler.UpdatePolicyReplace)
 	}
 	if options.DeletePolicy == nil {
-		options.DeletePolicy = ref(reconciler.DeletePolicyDelete)
+		options.DeletePolicy = new(reconciler.DeletePolicyDelete)
 	}
 	if options.MissingNamespacesPolicy == nil {
-		options.MissingNamespacesPolicy = ref(reconciler.MissingNamespacesPolicyCreate)
+		options.MissingNamespacesPolicy = new(reconciler.MissingNamespacesPolicyCreate)
 	}
 	if options.ReapplyInterval == nil {
-		options.ReapplyInterval = ref(defaultReapplyInterval)
+		options.ReapplyInterval = new(defaultReapplyInterval)
 	}
 
 	return &Reconciler[T]{
@@ -913,7 +913,7 @@ func (r *Reconciler[T]) getOptionsForComponent(component T) reconciler.Reconcile
 	}
 	// TODO: formalize the following into a Configuration interface?
 	if component.GetAnnotations()[r.name+"/"+types.AnnotationKeySuffixDisableEvents] == "true" {
-		options.EnableEvents = ref(false)
+		options.EnableEvents = new(false)
 	}
 	return options
 }

@@ -92,13 +92,13 @@ func ParseKustomization(fsys fs.FS, kustomizationPath string, options Kustomizat
 
 func parseKustomization(fsys fs.FS, kustomizationPath string, options KustomizationOptions, visitedKustomizationPaths []string) (*Kustomization, error) {
 	if options.TemplateSuffix == nil {
-		options.TemplateSuffix = ref("")
+		options.TemplateSuffix = new("")
 	}
 	if options.LeftTemplateDelimiter == nil {
-		options.LeftTemplateDelimiter = ref("")
+		options.LeftTemplateDelimiter = new("")
 	}
 	if options.RightTemplateDelimiter == nil {
-		options.RightTemplateDelimiter = ref("")
+		options.RightTemplateDelimiter = new("")
 	}
 
 	if fsys == nil {

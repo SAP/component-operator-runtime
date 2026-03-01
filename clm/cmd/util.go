@@ -28,10 +28,6 @@ import (
 
 // TODO: consolidate all the util files into an internal reuse package
 
-func ref[T any](x T) *T {
-	return &x
-}
-
 func must[T any](x T, err error) T {
 	if err != nil {
 		panic(err)
