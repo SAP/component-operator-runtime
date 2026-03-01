@@ -14,6 +14,7 @@ import (
 
 	"github.com/Masterminds/sprig/v3"
 
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	kyaml "sigs.k8s.io/yaml"
 
 	"github.com/sap/component-operator-runtime/internal/templatex"
@@ -69,4 +70,28 @@ func (t *TemplateParameterTransformer) TransformParameters(namespace string, nam
 		return nil, err
 	}
 	return transformedParameters, nil
+}
+
+type SubstitutionObjectTransformer struct{}
+
+var _ ObjectTransformer = &SubstitutionObjectTransformer{}
+
+func NewSubstitutionObjectTransformer(substitutions map[string]string, selector types.Selector[client.Object]) (*SubstitutionObjectTransformer, error) {
+	return &SubstitutionObjectTransformer{}, nil
+}
+
+func (t *SubstitutionObjectTransformer) TransformObjects(namespace string, name string, objects []client.Object) ([]client.Object, error) {
+	return objects, nil
+}
+
+type KustomizeObjectTransformer struct{}
+
+var _ ObjectTransformer = &KustomizeObjectTransformer{}
+
+func NewKustomizeObjectTransformer(patches []KustomizePatch, images []KustomizeImage) (*KustomizeObjectTransformer, error) {
+	return &KustomizeObjectTransformer{}, nil
+}
+
+func (t *KustomizeObjectTransformer) TransformObjects(namespace string, name string, objects []client.Object) ([]client.Object, error) {
+	return objects, nil
 }
