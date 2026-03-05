@@ -47,3 +47,34 @@ type ObjectTransformer interface {
 type Decryptor interface {
 	Decrypt(input []byte, path string) ([]byte, error)
 }
+
+// +kubebuilder:object:generate=true
+
+// Kustomize patch specification, basically a subset of sigs.k8s.io/kustomize/api/types#Patch
+type KustomizePatch struct {
+	Patch  string             `json:"patch,omitempty"`
+	Target *KustomizeSelector `json:"target,omitempty"`
+}
+
+// +kubebuilder:object:generate=true
+
+// Kustomize object selector; corresponds to sigs.k8s.io/kustomize/api/types#Selector
+type KustomizeSelector struct {
+	Group              string `json:"group,omitempty"`
+	Version            string `json:"version,omitempty"`
+	Kind               string `json:"kind,omitempty"`
+	Name               string `json:"name,omitempty"`
+	Namespace          string `json:"namespace,omitempty"`
+	AnnotationSelector string `json:"annotationSelector,omitempty"`
+	LabelSelector      string `json:"labelSelector,omitempty"`
+}
+
+// +kubebuilder:object:generate=true
+
+// Kustomize image modifier specification, basically a subset of sigs.k8s.io/kustomize/api/types#Image
+type KustomizeImage struct {
+	Name    string `json:"name"`
+	NewName string `json:"newName,omitempty"`
+	NewTag  string `json:"newTag,omitempty"`
+	Digest  string `json:"digest,omitempty"`
+}

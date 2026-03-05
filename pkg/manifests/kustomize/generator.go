@@ -15,7 +15,7 @@ import (
 	utilyaml "k8s.io/apimachinery/pkg/util/yaml"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/kustomize/api/krusty"
-	kustypes "sigs.k8s.io/kustomize/api/types"
+	kusttypes "sigs.k8s.io/kustomize/api/types"
 	kustfsys "sigs.k8s.io/kustomize/kyaml/filesys"
 
 	"github.com/sap/component-operator-runtime/internal/kustomize"
@@ -65,8 +65,8 @@ func NewKustomizeGenerator(fsys fs.FS, kustomizationPath string, _ client.Client
 	}
 
 	kustomizerOptions := &krusty.Options{
-		LoadRestrictions: kustypes.LoadRestrictionsNone,
-		PluginConfig:     kustypes.DisabledPluginConfig(),
+		LoadRestrictions: kusttypes.LoadRestrictionsNone,
+		PluginConfig:     kusttypes.DisabledPluginConfig(),
 	}
 	kustomizer := krusty.MakeKustomizer(kustomizerOptions)
 

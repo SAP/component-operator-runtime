@@ -28,7 +28,7 @@ import (
 	"k8s.io/client-go/discovery"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/kustomize/api/konfig"
-	kustypes "sigs.k8s.io/kustomize/api/types"
+	kusttypes "sigs.k8s.io/kustomize/api/types"
 	kustfsys "sigs.k8s.io/kustomize/kyaml/filesys"
 	kyaml "sigs.k8s.io/yaml"
 
@@ -408,10 +408,10 @@ func generateKustomization(fsys kustfsys.FileSystem, kustomizationPath string) (
 		return nil, err
 	}
 
-	kustomization := kustypes.Kustomization{
-		TypeMeta: kustypes.TypeMeta{
-			APIVersion: kustypes.KustomizationVersion,
-			Kind:       kustypes.KustomizationKind,
+	kustomization := kusttypes.Kustomization{
+		TypeMeta: kusttypes.TypeMeta{
+			APIVersion: kusttypes.KustomizationVersion,
+			Kind:       kusttypes.KustomizationKind,
 		},
 		Resources: resources,
 	}
