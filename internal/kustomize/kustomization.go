@@ -392,20 +392,22 @@ func makeFuncData(data any) any {
 func generateKustomization(fsys kustfsys.FileSystem, kustomizationPath string) ([]byte, error) {
 	var resources []string
 
-	f := func(path string, info fs.FileInfo, err error) error {
-		if err != nil {
-			return err
+	if fsys.IsDir(kustomizationPath) {
+		f := func(path string, info fs.FileInfo, err error) error {
+			if err != nil {
+				return err
+			}
+			// TODO: IsDir() is false if it is a symlink; is that wanted to be this way?
+			if !info.IsDir() && !strings.HasPrefix(filepath.Base(path), ".") && (strings.HasSuffix(path, ".yaml") || strings.HasSuffix(path, ".yml")) {
+				resources = append(resources, path)
+			}
+			return nil
 		}
-		// TODO: IsDir() is false if it is a symlink; is that wanted to be this way?
-		if !info.IsDir() && !strings.HasPrefix(filepath.Base(path), ".") && (strings.HasSuffix(path, ".yaml") || strings.HasSuffix(path, ".yml")) {
-			resources = append(resources, path)
-		}
-		return nil
-	}
 
-	// TODO: does this work correctly with symlinks?
-	if err := fsys.Walk(kustomizationPath, f); err != nil {
-		return nil, err
+		// TODO: does this work correctly with symlinks?
+		if err := fsys.Walk(kustomizationPath, f); err != nil {
+			return nil, err
+		}
 	}
 
 	kustomization := kustypes.Kustomization{
