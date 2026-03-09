@@ -10,6 +10,8 @@ import (
 	"strings"
 )
 
+// TODO: consolidate all the util files into an internal reuse package
+
 /*
 func getString(data map[string]any, key string) (string, bool, bool) {
 	if v, ok := data[key]; ok {
