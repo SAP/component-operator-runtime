@@ -196,7 +196,7 @@ func parseKustomization(fsys fs.FS, kustomizationPath string, options Kustomizat
 
 	for _, path := range options.IncludedFiles {
 		if filepath.IsAbs(path) {
-			return nil, fmt.Errorf("include path (%s) must be absolute", path)
+			return nil, fmt.Errorf("include path (%s) must not be absolute", path)
 		}
 		absolutePath := filepath.Clean(filepath.Join(kustomizationPath, path))
 		if isSubdirectory(absolutePath, kustomizationPath) {

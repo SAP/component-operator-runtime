@@ -234,6 +234,15 @@ func normalizeObjects(objects []client.Object, scheme *runtime.Scheme) ([]client
 			if gvk.Version == "" || gvk.Kind == "" {
 				return nil, fmt.Errorf("unstructured object %s is missing type information", types.ObjectKeyToString(object))
 			}
+			// explicitly check that metadata.labels and metadata.annotations are map[string]string;
+			// the same method unstructured.NestedNullCoercingStringMap() is used in GetLabels() and GetAnnotations(), but errors
+			// are discarded there; this is why we check it here
+			if _, _, err := unstructured.NestedNullCoercingStringMap(unstructuredObject.Object, "metadata", "labels"); err != nil {
+				return nil, legacyerrors.Wrapf(err, "unstructured object %s has invalid labels (probably because of non-string label values)", types.ObjectKeyToString(object))
+			}
+			if _, _, err := unstructured.NestedNullCoercingStringMap(unstructuredObject.Object, "metadata", "annotations"); err != nil {
+				return nil, legacyerrors.Wrapf(err, "unstructured object %s has invalid annotations (probably because of non-string annotation values)", types.ObjectKeyToString(object))
+			}
 			if scheme.Recognizes(gvk) {
 				typedObject, err := scheme.New(gvk)
 				if err != nil {
