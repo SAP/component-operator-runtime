@@ -1366,9 +1366,11 @@ func (r *Reconciler) orphanObject(ctx context.Context, existingObject *unstructu
 	}
 
 	if existingObject.GetLabels()[r.labelKeyOwnerId] != hashedOwnerId {
-		return fmt.Errorf("owner conflict; object %s has no or different owner", types.ObjectKeyToString(existingObject))
+		// the object has a different owner; so we do not raise an owner id conflict error here
+		return nil
 	}
 
+	// do cleanup on orphaned object; note: this happens only if we own it; otherwise we already returned above
 	if isCrd(existingObject) || isApiService(existingObject) {
 		object := existingObject.DeepCopy()
 		if controllerutil.RemoveFinalizer(object, r.finalizer) {
