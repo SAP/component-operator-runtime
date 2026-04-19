@@ -34,6 +34,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
+	"github.com/sap/component-operator-runtime/internal/util"
 	"github.com/sap/component-operator-runtime/pkg/cluster"
 	"github.com/sap/component-operator-runtime/pkg/status"
 	"github.com/sap/component-operator-runtime/pkg/types"
@@ -1318,7 +1319,7 @@ func (r *Reconciler) deleteObject(ctx context.Context, key types.ObjectKey, exis
 			}
 			if ok := controllerutil.RemoveFinalizer(crd, r.finalizer); ok {
 				// note: 409 error is very likely here (because of concurrent updates happening through the api server); this is why we retry once
-				if err := r.client.Update(ctx, crd, client.FieldOwner(r.fieldOwner)); err != nil {
+				if err := util.UpdateFinalizers(ctx, r.client, crd, r.fieldOwner); err != nil {
 					if i == 1 && apierrors.IsConflict(err) {
 						log.V(1).Info("error while updating CustomResourcedefinition (409 conflict); doing one retry", "error", err.Error())
 						continue
@@ -1343,7 +1344,7 @@ func (r *Reconciler) deleteObject(ctx context.Context, key types.ObjectKey, exis
 			}
 			if ok := controllerutil.RemoveFinalizer(apiService, r.finalizer); ok {
 				// note: 409 error is very likely here (because of concurrent updates happening through the api server); this is why we retry once
-				if err := r.client.Update(ctx, apiService, client.FieldOwner(r.fieldOwner)); err != nil {
+				if err := util.UpdateFinalizers(ctx, r.client, apiService, r.fieldOwner); err != nil {
 					if i == 1 && apierrors.IsConflict(err) {
 						log.V(1).Info("error while updating APIService (409 conflict); doing one retry", "error", err.Error())
 						continue
@@ -1365,13 +1366,15 @@ func (r *Reconciler) orphanObject(ctx context.Context, existingObject *unstructu
 	}
 
 	if existingObject.GetLabels()[r.labelKeyOwnerId] != hashedOwnerId {
-		return fmt.Errorf("owner conflict; object %s has no or different owner", types.ObjectKeyToString(existingObject))
+		// the object has a different owner; so we do not raise an owner id conflict error here
+		return nil
 	}
 
+	// do cleanup on orphaned object; note: this happens only if we own it; otherwise we already returned above
 	if isCrd(existingObject) || isApiService(existingObject) {
 		object := existingObject.DeepCopy()
 		if controllerutil.RemoveFinalizer(object, r.finalizer) {
-			if err := r.client.Update(ctx, object, client.FieldOwner(r.fieldOwner)); err != nil {
+			if err := util.UpdateFinalizers(ctx, r.client, object, r.fieldOwner); err != nil {
 				return err
 			}
 		}
@@ -1528,9 +1531,11 @@ func (r *Reconciler) isTypeUsed(ctx context.Context, gk schema.GroupKind, hashed
 
 func (r *Reconciler) isCrdUsed(ctx context.Context, crd *apiextensionsv1.CustomResourceDefinition, hashedOwnerId string, onlyForeign bool) (bool, error) {
 	gvk := schema.GroupVersionKind{
-		Group:   crd.Spec.Group,
-		Version: crd.Spec.Versions[0].Name,
-		Kind:    crd.Spec.Names.Kind,
+		Group: crd.Spec.Group,
+		Version: slices.Select(crd.Spec.Versions, func(v apiextensionsv1.CustomResourceDefinitionVersion) bool {
+			return v.Served
+		})[0].Name,
+		Kind: crd.Spec.Names.Kind,
 	}
 	list := &unstructured.UnstructuredList{}
 	list.SetGroupVersionKind(gvk)
