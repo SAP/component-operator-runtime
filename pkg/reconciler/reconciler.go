@@ -1531,9 +1531,11 @@ func (r *Reconciler) isTypeUsed(ctx context.Context, gk schema.GroupKind, hashed
 
 func (r *Reconciler) isCrdUsed(ctx context.Context, crd *apiextensionsv1.CustomResourceDefinition, hashedOwnerId string, onlyForeign bool) (bool, error) {
 	gvk := schema.GroupVersionKind{
-		Group:   crd.Spec.Group,
-		Version: crd.Spec.Versions[0].Name,
-		Kind:    crd.Spec.Names.Kind,
+		Group: crd.Spec.Group,
+		Version: slices.Select(crd.Spec.Versions, func(v apiextensionsv1.CustomResourceDefinitionVersion) bool {
+			return v.Served
+		})[0].Name,
+		Kind: crd.Spec.Names.Kind,
 	}
 	list := &unstructured.UnstructuredList{}
 	list.SetGroupVersionKind(gvk)
