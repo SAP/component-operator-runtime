@@ -1,6 +1,6 @@
 module github.com/sap/component-operator-runtime
 
-go 1.26.0
+go 1.26.2
 
 require (
 	github.com/Masterminds/sprig/v3 v3.3.0
@@ -12,7 +12,7 @@ require (
 	github.com/onsi/gomega v1.39.1
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/client_golang v1.23.2
-	github.com/sap/go-generics v0.2.54
+	github.com/sap/go-generics v0.2.57
 	github.com/spf13/cast v1.10.0
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/pflag v1.0.10
@@ -23,7 +23,7 @@ require (
 	k8s.io/client-go v0.35.1
 	k8s.io/kube-aggregator v0.35.1
 	sigs.k8s.io/cli-utils v0.37.2
-	sigs.k8s.io/controller-runtime v0.23.1
+	sigs.k8s.io/controller-runtime v0.23.3
 	sigs.k8s.io/controller-tools v0.20.1
 	sigs.k8s.io/kustomize/api v0.21.1
 	sigs.k8s.io/kustomize/kyaml v0.21.1
