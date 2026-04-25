@@ -122,7 +122,7 @@ type ImpersonationConfiguration interface {
 
 to use different user/groups for the deployment of dependent objects.
 
-Sometimes it is desired to suspend the reconciliation of a component. In offer this, the compoent (or its spec) can implement the interface
+Sometimes it is desired to suspend the reconciliation of a component. To offer this, the compoent (or its spec) can implement the interface
 
 ```go
 package component
