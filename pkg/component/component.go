@@ -77,6 +77,17 @@ func assertImpersonationConfiguration[T Component](component T) (ImpersonationCo
 	return nil, false
 }
 
+// Check if given component or its spec implements SuspensionConfiguration (and return it).
+func assertSuspensionConfiguration[T Component](component T) (SuspensionConfiguration, bool) {
+	if suspensionConfiguration, ok := Component(component).(SuspensionConfiguration); ok {
+		return suspensionConfiguration, true
+	}
+	if suspensionConfiguration, ok := getSpec(component).(SuspensionConfiguration); ok {
+		return suspensionConfiguration, true
+	}
+	return nil, false
+}
+
 // Check if given component or its spec implements RequeueConfiguration (and return it).
 func assertRequeueConfiguration[T Component](component T) (RequeueConfiguration, bool) {
 	if requeueConfiguration, ok := Component(component).(RequeueConfiguration); ok {
@@ -174,6 +185,11 @@ func (s *ImpersonationSpec) GetImpersonationUser() string {
 // Implement the ImpersonationConfiguration interface.
 func (s *ImpersonationSpec) GetImpersonationGroups() []string {
 	return nil
+}
+
+// Implement the SuspensionConfiguration interface.
+func (s *SuspensionSpec) IsSuspended() bool {
+	return s.Suspend
 }
 
 // Implement the RequeueConfiguration interface.

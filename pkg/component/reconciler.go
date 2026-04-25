@@ -76,6 +76,7 @@ const (
 	ReadyConditionReasonReady              = "Ready"
 	ReadyConditionReasonError              = "Error"
 	ReadyConditionReasonTimeout            = "Timeout"
+	ReadyConditionReasonSuspended          = "Suspended"
 	ReadyConditionReasonDeletionRetrying   = "DeletionRetrying"
 	ReadyConditionReasonDeletionBlocked    = "DeletionBlocked"
 	ReadyConditionReasonDeletionProcessing = "DeletionProcessing"
@@ -454,6 +455,13 @@ func (r *Reconciler[T]) Reconcile(ctx context.Context, req ctrl.Request) (result
 	if status.ObservedGeneration <= 0 {
 		status.SetState(StatePending, ReadyConditionReasonNew, "First seen")
 		return ctrl.Result{RequeueAfter: time.Millisecond}, nil
+	}
+
+	if component.GetDeletionTimestamp().IsZero() {
+		if suspensionConfiguration, ok := assertSuspensionConfiguration(component); ok && suspensionConfiguration.IsSuspended() {
+			status.SetState(StatePending, ReadyConditionReasonSuspended, "Reconciliation is suspended")
+			return ctrl.Result{RequeueAfter: r.backoff.Next(req, ReadyConditionReasonSuspended)}, nil
+		}
 	}
 
 	// resolve references

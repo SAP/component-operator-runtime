@@ -63,6 +63,14 @@ type ImpersonationConfiguration interface {
 	GetImpersonationGroups() []string
 }
 
+// The SuspensionConfiguration interface is meant to be implemented by components (or their spec) which offer
+// the ability to suspend reconciliation.
+type SuspensionConfiguration interface {
+	// Whether the reconciliation (apply) or the implementing component is supended. If true the component goes
+	// into Pending state with reason Suspended. Note that deletion is not affected by this suspension.
+	IsSuspended() bool
+}
+
 // The RequeueConfiguration interface is meant to be implemented by components (or their spec) which offer
 // tweaking the requeue interval (by default, it would be 10 minutes).
 type RequeueConfiguration interface {
@@ -167,6 +175,16 @@ type ImpersonationSpec struct {
 }
 
 var _ ImpersonationConfiguration = &ImpersonationSpec{}
+
+// +kubebuilder:object:generate=true
+
+// SuspensionSpec defines whether the reconciliation (apply) or the implementing component is suspended.
+// Components providing SuspensionConfiguration may include this into their spec.
+type SuspensionSpec struct {
+	Suspend bool `json:"suspend,omitempty"`
+}
+
+var _ SuspensionConfiguration = &SuspensionSpec{}
 
 // +kubebuilder:object:generate=true
 
