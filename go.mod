@@ -4,6 +4,7 @@ go 1.26.2
 
 require (
 	github.com/Masterminds/sprig/v3 v3.3.0
+	github.com/drone/envsubst v1.0.3
 	github.com/go-git/go-git v4.7.0+incompatible
 	github.com/go-logr/logr v1.4.3
 	github.com/gobwas/glob v0.2.3
