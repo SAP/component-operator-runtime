@@ -122,8 +122,21 @@ type ImpersonationConfiguration interface {
 
 to use different user/groups for the deployment of dependent objects.
 
-Note that, as mentioned above, the interfaces `PlacementConfiguration`, `ClientConfiguration` and `ImpersonationConfiguration` can be implemented by the component
-itself as well as by its spec type. In the theoretical case that both is the case, the implementation on the component level takes higher precedence.
+Sometimes it is desired to suspend the reconciliation of a component. In offer this, the compoent (or its spec) can implement the interface
+
+```go
+package component
+
+// The SuspensionConfiguration interface is meant to be implemented by components (or their spec) which offer
+// the ability to suspend reconciliation.
+type SuspensionConfiguration interface {
+	// Whether the reconciliation (apply) or the implementing component is supended. If true the component goes
+	// into Pending state with reason Suspended. Note that deletion is not affected by this suspension.
+	IsSuspended() bool
+}
+```
+
+Note that, as mentioned above, the interfaces `PlacementConfiguration`, `ClientConfiguration`, `ImpersonationConfiguration` and `SuspensionConfiguration` can be implemented by the component itself as well as by its spec type. In the theoretical case that both implement it, the component takes higher precedence.
 
 ## The Generator interface
 
