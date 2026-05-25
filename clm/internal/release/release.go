@@ -6,6 +6,7 @@ SPDX-License-Identifier: Apache-2.0
 package release
 
 import (
+	"fmt"
 	"strconv"
 	"time"
 
@@ -36,12 +37,23 @@ type Release struct {
 	State             component.State
 }
 
+func NewRelease(namespace string, name string) *Release {
+	return &Release{
+		namespace: namespace,
+		name:      name,
+	}
+}
+
 func (r *Release) GetNamespace() string {
 	return r.namespace
 }
 
 func (r *Release) GetName() string {
 	return r.name
+}
+
+func (r *Release) GetDigest() string {
+	return sha256hex([]byte(fmt.Sprintf("%d", r.Revision)))
 }
 
 func (r *Release) IsDeleting() bool {

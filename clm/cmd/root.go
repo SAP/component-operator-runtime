@@ -64,6 +64,7 @@ func newRootCmd() *cobra.Command {
 		newDeleteCmd(),
 		newStatusCmd(),
 		newListCmd(),
+		newTemplateCmd(),
 	)
 
 	return cmd

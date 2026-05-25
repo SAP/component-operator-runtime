@@ -12,6 +12,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/sap/go-generics/slices"
 	"github.com/spf13/cobra"
 
 	corev1 "k8s.io/api/core/v1"
@@ -24,7 +25,6 @@ import (
 	"github.com/sap/component-operator-runtime/clm/internal/release"
 	"github.com/sap/component-operator-runtime/pkg/component"
 	"github.com/sap/component-operator-runtime/pkg/reconciler"
-	"github.com/sap/go-generics/slices"
 )
 
 const applyUsage = `Apply component manifests to Kubernetes cluster`
@@ -117,7 +117,7 @@ func newApplyCmd() *cobra.Command {
 
 			for {
 				release.State = component.StateProcessing
-				ok, err := reconciler.Apply(context.TODO(), &release.Inventory, objects, namespace, ownerId, fmt.Sprintf("%d", release.Revision))
+				ok, err := reconciler.Apply(context.TODO(), &release.Inventory, objects, namespace, ownerId, release.GetDigest())
 				if err != nil {
 					if !isEphmeralError(err) || errCount >= maxErrCount {
 						return err
