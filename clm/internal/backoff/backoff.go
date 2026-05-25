@@ -20,6 +20,10 @@ func New() *Backoff {
 	return &Backoff{}
 }
 
+func (b *Backoff) Reset() {
+	b.duration = 0
+}
+
 func (b *Backoff) Next() time.Duration {
 	if b.duration < minBackoff {
 		b.duration = minBackoff

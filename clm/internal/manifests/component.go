@@ -5,6 +5,7 @@ SPDX-License-Identifier: Apache-2.0
 
 package manifests
 
+/*
 import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
@@ -58,3 +59,4 @@ func componentFromRelease(release *release.Release, values map[string]any) *Comp
 		values:  values,
 	}
 }
+*/

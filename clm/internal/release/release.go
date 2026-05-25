@@ -36,6 +36,13 @@ type Release struct {
 	State             component.State
 }
 
+func NewRelease(namespace string, name string) *Release {
+	return &Release{
+		namespace: namespace,
+		name:      name,
+	}
+}
+
 func (r *Release) GetNamespace() string {
 	return r.namespace
 }
@@ -45,7 +52,7 @@ func (r *Release) GetName() string {
 }
 
 func (r *Release) IsDeleting() bool {
-	return !r.configMap.DeletionTimestamp.IsZero()
+	return r.configMap != nil && !r.configMap.DeletionTimestamp.IsZero()
 }
 
 func (r *Release) GetCreationTimestamp() *time.Time {

@@ -19,10 +19,13 @@ import (
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/tools/clientcmd"
 	apiregistrationv1 "k8s.io/kube-aggregator/pkg/apis/apiregistration/v1"
+	ctrl "sigs.k8s.io/controller-runtime"
+	kyaml "sigs.k8s.io/yaml"
 
 	"github.com/sap/component-operator-runtime/clm/internal/release"
 	"github.com/sap/component-operator-runtime/internal/clientfactory"
 	"github.com/sap/component-operator-runtime/pkg/cluster"
+	"github.com/sap/component-operator-runtime/pkg/manifests"
 	"github.com/sap/component-operator-runtime/pkg/reconciler"
 )
 
@@ -55,6 +58,31 @@ func getClient(kubeConfigPath string) (cluster.Client, error) {
 	utilruntime.Must(apiextensionsv1.AddToScheme(scheme))
 	utilruntime.Must(apiregistrationv1.AddToScheme(scheme))
 	return clientfactory.NewClientFor(config, scheme, fullName)
+}
+
+func getManager(kubeConfigPath string) (ctrl.Manager, error) {
+}
+
+func getValuesFromSources(sources ...string) (map[string]any, error) {
+	var allValues = make(map[string]any)
+
+	for _, source := range sources {
+		// TODO: suuport URLs
+		path := source
+
+		rawValues, err := os.ReadFile(path)
+		if err != nil {
+			return nil, err
+		}
+
+		var values map[string]any
+		if err := kyaml.Unmarshal(rawValues, &values); err != nil {
+			return nil, err
+		}
+		manifests.MergeMapInto(allValues, values)
+	}
+
+	return allValues, nil
 }
 
 func isEphmeralError(err error) bool {
