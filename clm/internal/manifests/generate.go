@@ -47,39 +47,45 @@ func Generate(manifestSources []string, valuesSources []string, reconcilerName s
 
 	for _, source := range manifestSources {
 		// TODO: support helm, oci URLs
-		path := source
 
-		if info, err := os.Stat(path); err != nil {
+		var fsys fs.FS
+		var path string
+
+		source, err := filepath.Abs(source)
+		if err != nil {
+			return nil, err
+		}
+
+		if info, err := os.Stat(source); err != nil {
 			if os.IsNotExist(err) {
-				return nil, fmt.Errorf("no such file or directory: %s", path)
+				return nil, fmt.Errorf("no such file or directory: %s", source)
 			} else {
 				return nil, err
 			}
-		} else if !info.IsDir() {
+		} else if info.IsDir() {
+			fsys = os.DirFS("/")
+			path = source[1:]
+		} else {
 			tmpdir, err := os.MkdirTemp("", "clm-")
 			if err != nil {
 				return nil, err
 			}
 			defer os.RemoveAll(tmpdir)
-			if _, err := copyFile(path, fmt.Sprintf("%s/%s", tmpdir, "resources.yaml")); err != nil {
+			if _, err := copyFile(source, fmt.Sprintf("%s/%s", tmpdir, "resources.yaml")); err != nil {
 				return nil, err
 			}
-			path = tmpdir
+			fsys = os.DirFS(tmpdir)
+			path = ""
 		}
-		path, err := filepath.Abs(path)
-		if err != nil {
-			return nil, err
-		}
-		fsys := os.DirFS(path)
 
 		var generator manifests.Generator
-		if _, err = fs.Stat(fsys, "Chart.yaml"); err == nil {
-			generator, err = helm.NewHelmGenerator(fsys, "", nil)
+		if _, err = fs.Stat(fsys, filepath.Clean(path+"/Chart.yaml")); err == nil {
+			generator, err = helm.NewHelmGenerator(fsys, path, nil)
 			if err != nil {
 				return nil, err
 			}
 		} else if errors.Is(err, fs.ErrNotExist) {
-			generator, err = kustomize.NewKustomizeGenerator(fsys, "", nil, kustomize.KustomizeGeneratorOptions{})
+			generator, err = kustomize.NewKustomizeGenerator(fsys, path, nil, kustomize.KustomizeGeneratorOptions{})
 			if err != nil {
 				return nil, err
 			}
@@ -88,17 +94,17 @@ func Generate(manifestSources []string, valuesSources []string, reconcilerName s
 		}
 
 		releaseComponent := componentFromRelease(release, allValues)
-		// TODO: what about component digest
+
 		generateCtx := component.NewContext(context.TODO()).
 			WithReconcilerName(reconcilerName).
 			WithLocalClient(clnt).
 			WithClient(clnt).
 			WithComponent(releaseComponent).
-			WithComponentName(releaseComponent.GetName()).
-			WithComponentNamespace(releaseComponent.GetNamespace()).
-			WithComponentDigest("").
-			WithComponentRevision(releaseComponent.GetStatus().Revision)
-		objects, err := generator.Generate(generateCtx, release.GetNamespace(), release.GetName(), types.UnstructurableMap(allValues))
+			WithComponentName(releaseComponent.Name).
+			WithComponentNamespace(releaseComponent.Namespace).
+			WithComponentDigest(releaseComponent.Status.ProcessingDigest).
+			WithComponentRevision(releaseComponent.Status.Revision)
+		objects, err := generator.Generate(generateCtx, releaseComponent.Namespace, releaseComponent.Name, types.UnstructurableMap(allValues))
 		if err != nil {
 			return nil, err
 		}

@@ -6,6 +6,9 @@ SPDX-License-Identifier: Apache-2.0
 package manifests
 
 import (
+	"encoding/json"
+
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/sap/component-operator-runtime/clm/internal/release"
@@ -15,8 +18,19 @@ import (
 
 type Component struct {
 	metav1.PartialObjectMetadata
-	release *release.Release
-	values  map[string]any
+	Spec   ComponentSpec   `json:"spec"`
+	Status ComponentStatus `json:"status"`
+	values map[string]any
+}
+
+type ComponentSpec struct {
+	Values *apiextensionsv1.JSON `json:"values,omitempty"`
+}
+
+type ComponentStatus struct {
+	component.Status      `json:",inline"`
+	LastAttemptedDigest   string `json:"lastAttemptedDigest,omitempty"`
+	LastAttemptedRevision string `json:"lastAttemptedRevision,omitempty"`
 }
 
 var _ component.Component = &Component{}
@@ -26,19 +40,7 @@ func (c *Component) GetSpec() types.Unstructurable {
 }
 
 func (c *Component) GetStatus() *component.Status {
-	return &component.Status{
-		// TODO: populate missing fields
-		// ObservedGeneration
-		// AppliedGeneration
-		// LastObservedAt
-		// LastAppliedAt
-		// ProcessingDigest
-		// ProcessingSince
-		Revision: c.release.Revision,
-		// Conditions
-		State:     c.release.State,
-		Inventory: c.release.Inventory,
-	}
+	return &c.Status.Status
 }
 
 func componentFromRelease(release *release.Release, values map[string]any) *Component {
@@ -54,7 +56,29 @@ func componentFromRelease(release *release.Release, values map[string]any) *Comp
 				Name:      release.GetName(),
 			},
 		},
-		release: release,
-		values:  values,
+		Spec: ComponentSpec{
+			Values: &apiextensionsv1.JSON{
+				Raw: must(json.Marshal(values)),
+			},
+		},
+		Status: ComponentStatus{
+			Status: component.Status{
+				// TODO: populate missing fields
+				// ObservedGeneration
+				// AppliedGeneration
+				// LastObservedAt
+				// LastAppliedAt
+				ProcessingDigest: release.GetDigest(),
+				// ProcessingSince
+				// LastProcessingDigest
+				Revision: release.Revision,
+				// Conditions
+				State:     release.State,
+				Inventory: release.Inventory,
+			},
+			LastAttemptedDigest:   release.GetDigest(),
+			LastAttemptedRevision: release.GetDigest(),
+		},
+		values: values,
 	}
 }

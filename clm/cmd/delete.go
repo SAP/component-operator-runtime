@@ -12,13 +12,13 @@ import (
 	"os"
 	"time"
 
+	"github.com/sap/go-generics/slices"
 	"github.com/spf13/cobra"
 
 	"github.com/sap/component-operator-runtime/clm/internal/backoff"
 	"github.com/sap/component-operator-runtime/clm/internal/release"
 	"github.com/sap/component-operator-runtime/pkg/component"
 	"github.com/sap/component-operator-runtime/pkg/reconciler"
-	"github.com/sap/go-generics/slices"
 )
 
 const deleteUsage = `Delete component from Kubernetes cluster`
