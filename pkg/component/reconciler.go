@@ -70,7 +70,7 @@ import (
 
 const (
 	ReadyConditionReasonNew                = "FirstSeen"
-	ReadyConditionReasonRetrying           = "Reytrying"
+	ReadyConditionReasonRetrying           = "Retrying"
 	ReadyConditionReasonRestarting         = "Restarting"
 	ReadyConditionReasonProcessing         = "Processing"
 	ReadyConditionReasonReady              = "Ready"
