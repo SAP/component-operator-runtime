@@ -723,7 +723,7 @@ func (r *Reconciler[T]) WithPostDeleteHook(hook HookFunc[T]) *Reconciler[T] {
 // as a consequence, mgr.GetScheme() must recognize the core group (v1) and the component type.
 // Note that the manager's client (that is mgr.GetClient()) is used as well, for the following purposes:
 // - it is passed to hooks
-// - is is used to resolved generic references, that is, spec fields implementing the Reference[T] interface.
+// - is is used to resolve generic references, that is, spec fields implementing the Reference[T] interface.
 func (r *Reconciler[T]) SetupWithManagerAndBuilder(mgr ctrl.Manager, blder *ctrl.Builder) error {
 	r.setupMutex.Lock()
 	defer r.setupMutex.Unlock()
