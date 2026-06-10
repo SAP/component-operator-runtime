@@ -19,6 +19,8 @@ import (
 
 const (
 	dataKeyVersion           = "version"
+	dataKeyTargetNamespace   = "targetNamespace"
+	dataKeyTargetName        = "targetName"
 	dataKeyCreationTimestamp = "creationTimestamp"
 	dataKeyUpdateTimestamp   = "updateTimestamp"
 	dataKeyRevision          = "revision"
@@ -29,6 +31,8 @@ const (
 type Release struct {
 	namespace         string
 	name              string
+	targetNamespace   string
+	targetName        string
 	creationTimestamp *time.Time
 	updateTimestamp   *time.Time
 	configMap         *corev1.ConfigMap
@@ -37,10 +41,12 @@ type Release struct {
 	State             component.State
 }
 
-func NewRelease(namespace string, name string) *Release {
+func NewRelease(namespace string, name string, targetNamespace string, targetName string) *Release {
 	return &Release{
-		namespace: namespace,
-		name:      name,
+		namespace:       namespace,
+		name:            name,
+		targetNamespace: targetNamespace,
+		targetName:      targetName,
 	}
 }
 
@@ -50,6 +56,14 @@ func (r *Release) GetNamespace() string {
 
 func (r *Release) GetName() string {
 	return r.name
+}
+
+func (r *Release) GetTargetNamespace() string {
+	return r.targetNamespace
+}
+
+func (r *Release) GetTargetName() string {
+	return r.targetName
 }
 
 func (r *Release) GetDigest() string {
@@ -69,6 +83,18 @@ func (r *Release) GetUpdateTimestamp() *time.Time {
 }
 
 func (r *Release) importData() error {
+	if targetNamespaceData, ok := r.configMap.Data[dataKeyTargetNamespace]; ok {
+		r.targetNamespace = targetNamespaceData
+	} else {
+		r.targetNamespace = r.namespace
+	}
+
+	if targetNameData, ok := r.configMap.Data[dataKeyTargetName]; ok {
+		r.targetName = targetNameData
+	} else {
+		r.targetName = r.name
+	}
+
 	if creationTimestampData, ok := r.configMap.Data[dataKeyCreationTimestamp]; ok {
 		creationTimestamp, err := time.Parse(time.RFC3339, creationTimestampData)
 		if err != nil {
@@ -122,6 +148,9 @@ func (r *Release) exportData() error {
 	}
 
 	r.configMap.Data[dataKeyVersion] = "1"
+
+	r.configMap.Data[dataKeyTargetNamespace] = r.targetNamespace
+	r.configMap.Data[dataKeyTargetName] = r.targetName
 
 	if r.creationTimestamp != nil {
 		r.configMap.Data[dataKeyCreationTimestamp] = r.creationTimestamp.Format(time.RFC3339)
