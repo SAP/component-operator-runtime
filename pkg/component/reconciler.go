@@ -845,7 +845,7 @@ func (r *Reconciler[T]) getClientForComponent(component T) (cluster.Client, erro
 		if len(kubeConfig) > 0 {
 			clnt, err := r.clients.Get(kubeConfig, "", nil)
 			if err != nil {
-				return nil, errors.Wrap(err, "error getting target client")
+				return nil, legacyerrors.Wrap(err, "error getting target client")
 			}
 			return clnt, nil
 		}
