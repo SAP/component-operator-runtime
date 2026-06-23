@@ -3,7 +3,7 @@ SPDX-FileCopyrightText: 2026 SAP SE or an SAP affiliate company and component-op
 SPDX-License-Identifier: Apache-2.0
 */
 
-package manifests_test
+package walk_test
 
 import (
 	"testing"
@@ -14,5 +14,5 @@ import (
 
 func TestPackage(t *testing.T) {
 	RegisterFailHandler(Fail)
-	RunSpecs(t, "Package tests")
+	RunSpecs(t, "Component Suite")
 }
