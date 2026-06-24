@@ -14,5 +14,5 @@ import (
 
 func TestPackage(t *testing.T) {
 	RegisterFailHandler(Fail)
-	RunSpecs(t, "Package tests")
+	RunSpecs(t, "Package Suite: internal/helm")
 }

@@ -14,5 +14,5 @@ import (
 
 func TestPackage(t *testing.T) {
 	RegisterFailHandler(Fail)
-	RunSpecs(t, "Component Suite")
+	RunSpecs(t, "Package Suite: internal/fileutils")
 }

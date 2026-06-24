@@ -3,7 +3,7 @@ SPDX-FileCopyrightText: 2026 SAP SE or an SAP affiliate company and component-op
 SPDX-License-Identifier: Apache-2.0
 */
 
-package walk_test
+package events_test
 
 import (
 	"testing"
@@ -14,5 +14,5 @@ import (
 
 func TestPackage(t *testing.T) {
 	RegisterFailHandler(Fail)
-	RunSpecs(t, "Package Suite: internal/walk")
+	RunSpecs(t, "Package Suite: internal/events")
 }

@@ -15,9 +15,10 @@ import (
 )
 
 type DeduplicatingRecorder struct {
-	recorder record.EventRecorder
-	mutex    sync.Mutex
-	events   map[string]event
+	recorder   record.EventRecorder
+	mutex      sync.Mutex
+	events     map[string]event
+	expiration time.Duration
 }
 
 type event struct {
@@ -25,10 +26,11 @@ type event struct {
 	timestamp time.Time
 }
 
-func NewDeduplicatingRecorder(recorder record.EventRecorder) *DeduplicatingRecorder {
+func NewDeduplicatingRecorder(recorder record.EventRecorder, expiration time.Duration) *DeduplicatingRecorder {
 	return &DeduplicatingRecorder{
-		recorder: recorder,
-		events:   make(map[string]event),
+		recorder:   recorder,
+		events:     make(map[string]event),
+		expiration: expiration,
 	}
 }
 
@@ -57,7 +59,7 @@ func (r *DeduplicatingRecorder) isDuplicate(object client.Object, annotations ma
 	uid := string(object.GetUID())
 	digest := calculateDigest(annotations, eventType, reason, message)
 	now := time.Now()
-	exp := time.Now().Add(-5 * time.Minute)
+	exp := now.Add(-r.expiration)
 
 	r.mutex.Lock()
 	defer r.mutex.Unlock()

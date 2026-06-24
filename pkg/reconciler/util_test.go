@@ -491,19 +491,19 @@ var _ = Describe("testing: util.go", func() {
 				},
 			}
 			unstructuredCrd = &unstructured.Unstructured{
-				Object: map[string]interface{}{
+				Object: map[string]any{
 					"apiVersion": "apiextensions.k8s.io/v1",
 					"kind":       "CustomResourceDefinition",
 				},
 			}
 			unstructuredApiService = &unstructured.Unstructured{
-				Object: map[string]interface{}{
+				Object: map[string]any{
 					"apiVersion": "apiregistration.k8s.io/v1",
 					"kind":       "APIService",
 				},
 			}
 			otherObject = &unstructured.Unstructured{
-				Object: map[string]interface{}{
+				Object: map[string]any{
 					"apiVersion": "v1",
 					"kind":       "ConfigMap",
 				},
@@ -690,13 +690,13 @@ var _ = Describe("testing: util.go", func() {
 
 		BeforeEach(func() {
 			unstructuredObjectWithTypeMeta = &unstructured.Unstructured{
-				Object: map[string]interface{}{
+				Object: map[string]any{
 					"apiVersion": "v1",
 					"kind":       "ConfigMap",
 				},
 			}
 			unstructuredObjectWithoutTypeMeta = &unstructured.Unstructured{
-				Object: map[string]interface{}{},
+				Object: map[string]any{},
 			}
 			structuredObjectWithCorrectTypeMeta = &corev1.ConfigMap{
 				TypeMeta: metav1.TypeMeta{
@@ -713,37 +713,37 @@ var _ = Describe("testing: util.go", func() {
 			structuredObjectWithoutTypeMeta = &corev1.ConfigMap{}
 
 			unstructuredCrd = &unstructured.Unstructured{
-				Object: map[string]interface{}{
+				Object: map[string]any{
 					"apiVersion": "apiextensions.k8s.io/v1",
 					"kind":       "CustomResourceDefinition",
 				},
 			}
 			unstructuredApiService = &unstructured.Unstructured{
-				Object: map[string]interface{}{
+				Object: map[string]any{
 					"apiVersion": "apiregistration.k8s.io/v1",
 					"kind":       "APIService",
 				},
 			}
 
 			unstructuredObjectWithInvalidLabel = &unstructured.Unstructured{
-				Object: map[string]interface{}{
+				Object: map[string]any{
 					"apiVersion": "v1",
 					"kind":       "ConfigMap",
-					"metadata": map[string]interface{}{
+					"metadata": map[string]any{
 						"name": "test",
-						"labels": map[string]interface{}{
+						"labels": map[string]any{
 							"key": 123,
 						},
 					},
 				},
 			}
 			unstructuredObjectWithInvalidAnnotation = &unstructured.Unstructured{
-				Object: map[string]interface{}{
+				Object: map[string]any{
 					"apiVersion": "v1",
 					"kind":       "ConfigMap",
-					"metadata": map[string]interface{}{
+					"metadata": map[string]any{
 						"name": "test",
-						"annotations": map[string]interface{}{
+						"annotations": map[string]any{
 							"key": true,
 						},
 					},

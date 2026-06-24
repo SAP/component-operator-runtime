@@ -204,7 +204,7 @@ func NewReconciler[T Component](name string, resourceGenerator manifests.Generat
 		statusAnalyzer: status.NewStatusAnalyzer(name),
 		options:        options,
 		// TODO: make backoff configurable via options?
-		backoff:   backoff.NewBackoff(10 * time.Second),
+		backoff:   backoff.NewBackoff(backoff.NewDefaultRateLimiter(10 * time.Second)),
 		triggerCh: make(chan event.TypedGenericEvent[apitypes.NamespacedName], triggerBufferSize),
 	}
 }
@@ -753,7 +753,7 @@ func (r *Reconciler[T]) SetupWithManagerAndBuilder(mgr ctrl.Manager, blder *ctrl
 		}
 		r.client = clnt
 	}
-	r.eventRecorder = *events.NewDeduplicatingRecorder(r.client.EventRecorder())
+	r.eventRecorder = *events.NewDeduplicatingRecorder(r.client.EventRecorder(), 5*time.Minute)
 
 	discoveryClient, err := discovery.NewDiscoveryClientForConfigAndClient(config, mgr.GetHTTPClient())
 	if err != nil {

@@ -17,7 +17,7 @@ import (
 
 func TestPackage(t *testing.T) {
 	RegisterFailHandler(Fail)
-	RunSpecs(t, "Component Suite")
+	RunSpecs(t, "Package Suite: pkg/reconciler")
 }
 
 var env *environment.Environment
