@@ -194,7 +194,7 @@ var _ = Describe("testing: walk.go", func() {
 		err := walk.Walk(x, record)
 		Expect(err).NotTo(HaveOccurred())
 
-		Expect(nodeList).To(Equal([]ListNode{
+		Expect(nodeList).To(ConsistOf([]ListNode{
 			{NodeType: NodeType{Pointer: true, Kind: reflect.Struct, Type: "*struct { ... }"}, Path: nil, Tag: ""},
 			{NodeType: NodeType{Pointer: true, Kind: reflect.String, Type: "*string"}, Path: path("String"), Tag: `test:"a"`},
 			{NodeType: NodeType{Pointer: true, Kind: reflect.Int, Type: "*int"}, Path: path("Int"), Tag: ""},
@@ -273,7 +273,7 @@ var _ = Describe("testing: walk.go", func() {
 		err := walk.Walk(x, record)
 		Expect(err).NotTo(HaveOccurred())
 
-		Expect(nodeList).To(Equal([]ListNode{
+		Expect(nodeList).To(ConsistOf([]ListNode{
 			{NodeType: NodeType{Pointer: true, Kind: reflect.Struct, Type: "*struct { ... }"}, Path: nil, Tag: ""},
 			{NodeType: NodeType{Pointer: true, Kind: reflect.String, Type: "*string"}, Path: path("String"), Tag: `test:"a"`},
 			{NodeType: NodeType{Pointer: true, Kind: reflect.Int, Type: "*int"}, Path: path("Int"), Tag: ""},

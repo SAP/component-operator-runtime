@@ -37,11 +37,12 @@ import (
 )
 
 type Environment struct {
-	testenv *envtest.Environment
-	config  *rest.Config
-	scheme  *runtime.Scheme
-	client  client.WithWatch
-	tmpdir  string
+	testenv    *envtest.Environment
+	config     *rest.Config
+	kubeConfig string
+	scheme     *runtime.Scheme
+	client     client.WithWatch
+	tmpdir     string
 }
 
 func Run(stdout io.Writer, stderr io.Writer, logger io.Writer) (_ *Environment, err error) {
@@ -83,6 +84,12 @@ func Run(stdout io.Writer, stderr io.Writer, logger io.Writer) (_ *Environment, 
 		return nil, err
 	}
 
+	kubeConfig := buildKubeConfig(cfg)
+	kubeConfigRaw, err := clientcmd.Write(*kubeConfig)
+	if err != nil {
+		return nil, err
+	}
+
 	scheme := runtime.NewScheme()
 	corev1.AddToScheme(scheme)
 	apiextensionsv1.AddToScheme(scheme)
@@ -94,12 +101,19 @@ func Run(stdout io.Writer, stderr io.Writer, logger io.Writer) (_ *Environment, 
 		return nil, err
 	}
 
-	if err := clientcmd.WriteToFile(*kubeConfig(cfg), fmt.Sprintf("%s/kubeconfig", tmpdir)); err != nil {
+	if err := clientcmd.WriteToFile(*kubeConfig, fmt.Sprintf("%s/kubeconfig", tmpdir)); err != nil {
 		return nil, err
 	}
 	fmt.Fprintf(stdout, "A temporary kubeconfig for the envtest environment can be found here: %s/kubeconfig\n", tmpdir)
 
-	return &Environment{testenv: testenv, config: cfg, scheme: scheme, client: clnt, tmpdir: tmpdir}, nil
+	return &Environment{
+		testenv:    testenv,
+		config:     cfg,
+		kubeConfig: string(kubeConfigRaw),
+		scheme:     scheme,
+		client:     clnt,
+		tmpdir:     tmpdir,
+	}, nil
 }
 
 func (e *Environment) Stop() error {
@@ -112,7 +126,10 @@ func (e *Environment) Config() *rest.Config {
 	return e.config
 }
 
-/*
+func (e *Environment) KubeConfig() string {
+	return e.kubeConfig
+}
+
 func (e *Environment) Scheme() *runtime.Scheme {
 	return e.scheme
 }
@@ -120,7 +137,6 @@ func (e *Environment) Scheme() *runtime.Scheme {
 func (e *Environment) Client() client.Client {
 	return e.client
 }
-*/
 
 func (e *Environment) EnsureObjectExists(obj client.Object, reconcilerName, ownerId string, digest string) (client.Object, error) {
 	obj = obj.DeepCopyObject().(client.Object)

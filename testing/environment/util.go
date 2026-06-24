@@ -21,7 +21,7 @@ func sha256base32(data []byte) string {
 	return strings.ToLower(base32.StdEncoding.WithPadding(base32.NoPadding).EncodeToString(sum[:]))
 }
 
-func kubeConfig(cfg *rest.Config) *clientcmdapi.Config {
+func buildKubeConfig(cfg *rest.Config) *clientcmdapi.Config {
 	apiConfig := clientcmdapi.NewConfig()
 
 	apiConfig.Clusters["envtest"] = clientcmdapi.NewCluster()
