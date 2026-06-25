@@ -104,7 +104,7 @@ func Generate(manifestSources []string, valuesSources []string, reconcilerName s
 			WithComponentNamespace(releaseComponent.Namespace).
 			WithComponentDigest(releaseComponent.Status.ProcessingDigest).
 			WithComponentRevision(releaseComponent.Status.Revision)
-		objects, err := generator.Generate(generateCtx, releaseComponent.Namespace, releaseComponent.Name, types.UnstructurableMap(allValues))
+		objects, err := generator.Generate(generateCtx, releaseComponent.Spec.Namespace, releaseComponent.Spec.Name, types.UnstructurableMap(allValues))
 		if err != nil {
 			return nil, err
 		}

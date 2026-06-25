@@ -22,7 +22,9 @@ import (
 const templateUsage = `Render component manifests to standard output without applying them to the cluster`
 
 type templateOptions struct {
-	valuesSources []string
+	valuesSources   []string
+	targetNamespace string
+	targetName      string
 }
 
 func newTemplateCmd() *cobra.Command {
@@ -42,12 +44,9 @@ func newTemplateCmd() *cobra.Command {
 			manifestSources := args[1:]
 			namespace := c.Flag("namespace").Value.String()
 
-			clnt, err := getClient(c.Flag("kubeconfig").Value.String())
-			if err != nil {
-				return err
-			}
+			clnt, _ := getClient(c.Flag("kubeconfig").Value.String())
 
-			release := release.NewRelease(namespace, name)
+			release := release.NewRelease(namespace, name, options.targetNamespace, options.targetName)
 			release.Revision += 1
 
 			objects, err := manifests.Generate(manifestSources, options.valuesSources, fullName, clnt, release)
@@ -83,6 +82,8 @@ func newTemplateCmd() *cobra.Command {
 
 	flags := cmd.Flags()
 	flags.StringArrayVarP(&options.valuesSources, "values", "f", nil, "Path to values file in yaml format (can be repeated, values will be merged in order of appearance)")
+	flags.StringVar(&options.targetNamespace, "target-namespace", "", "Target deployment namespace for the release (defaults to the release namespace)")
+	flags.StringVar(&options.targetName, "target-name", "", "Target deployment name for the release (defaults to the release name)")
 
 	return cmd
 }
