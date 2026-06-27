@@ -24,7 +24,7 @@ testbin/*
 *.swo
 *~
 .DS_Store
-.vscode
+.vscode/launch.json
 
 # temp stuff
 /tmp

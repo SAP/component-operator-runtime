@@ -19,6 +19,7 @@ import (
 	kyaml "sigs.k8s.io/yaml"
 
 	"github.com/sap/component-operator-runtime/clm/internal/release"
+	"github.com/sap/component-operator-runtime/internal/util"
 )
 
 const statusUsage = `Show component status`
@@ -75,9 +76,9 @@ func newStatusCmd() *cobra.Command {
 				fmt.Fprintf(w, "%s:\t%s\t\n", "Last updated at", details.LastUpdatedAt)
 				w.Flush()
 			case "yaml":
-				fmt.Printf("%s", string(must(kyaml.Marshal(getReleaseDetails(release)))))
+				fmt.Printf("%s", string(util.Must(kyaml.Marshal(getReleaseDetails(release)))))
 			case "json":
-				fmt.Printf("%s\n", string(must(json.MarshalIndent(getReleaseDetails(release), "", "  "))))
+				fmt.Printf("%s\n", string(util.Must(json.MarshalIndent(getReleaseDetails(release), "", "  "))))
 			}
 
 			return nil

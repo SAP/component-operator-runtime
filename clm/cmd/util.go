@@ -26,15 +26,6 @@ import (
 	"github.com/sap/component-operator-runtime/pkg/reconciler"
 )
 
-// TODO: consolidate all the util files into an internal reuse package
-
-func must[T any](x T, err error) T {
-	if err != nil {
-		panic(err)
-	}
-	return x
-}
-
 func getClient(kubeConfigPath string) (cluster.Client, error) {
 	if kubeConfigPath == "" {
 		kubeConfigPath = os.Getenv("KUBECONFIG")

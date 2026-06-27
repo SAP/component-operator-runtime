@@ -12,7 +12,7 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-func TestComponent(t *testing.T) {
+func TestPackage(t *testing.T) {
 	RegisterFailHandler(Fail)
-	RunSpecs(t, "Package tests")
+	RunSpecs(t, "Package suite: pkg/manifests")
 }

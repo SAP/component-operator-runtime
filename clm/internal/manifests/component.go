@@ -12,6 +12,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/sap/component-operator-runtime/clm/internal/release"
+	"github.com/sap/component-operator-runtime/internal/util"
 	"github.com/sap/component-operator-runtime/pkg/component"
 	"github.com/sap/component-operator-runtime/pkg/types"
 )
@@ -58,7 +59,7 @@ func componentFromRelease(release *release.Release, values map[string]any) *Comp
 		},
 		Spec: ComponentSpec{
 			Values: &apiextensionsv1.JSON{
-				Raw: must(json.Marshal(values)),
+				Raw: util.Must(json.Marshal(values)),
 			},
 		},
 		Status: ComponentStatus{

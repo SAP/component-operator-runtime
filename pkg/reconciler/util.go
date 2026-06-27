@@ -6,9 +6,6 @@ SPDX-License-Identifier: Apache-2.0
 package reconciler
 
 import (
-	"crypto/sha256"
-	"encoding/base32"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -25,34 +22,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 
+	"github.com/sap/component-operator-runtime/internal/util"
 	"github.com/sap/component-operator-runtime/pkg/types"
 )
-
-// TODO: consolidate all the util files into an internal reuse package
-
-func must[T any](x T, err error) T {
-	if err != nil {
-		panic(err)
-	}
-	return x
-}
-
-func sha256hex(data []byte) string {
-	sum := sha256.Sum256(data)
-	return hex.EncodeToString(sum[:])
-}
-
-func sha256base32(data []byte) string {
-	sum := sha256.Sum256(data)
-	return strings.ToLower(base32.StdEncoding.WithPadding(base32.NoPadding).EncodeToString(sum[:]))
-}
-
-func checkRange(x int, min int, max int) error {
-	if x < min || x > max {
-		return fmt.Errorf("value %d not in allowed range [%d,%d]", x, min, max)
-	}
-	return nil
-}
 
 func calculateObjectDigest(obj client.Object, componentDigest string, reconcilePolicy ReconcilePolicy) (string, error) {
 	if reconcilePolicy == ReconcilePolicyOnce {
@@ -73,7 +45,7 @@ func calculateObjectDigest(obj client.Object, componentDigest string, reconcileP
 	if err != nil {
 		return "", legacyerrors.Wrapf(err, "error serializing object %s", types.ObjectKeyToString(obj))
 	}
-	digest := sha256hex(raw)
+	digest := util.Sha256hex(raw)
 
 	if reconcilePolicy == ReconcilePolicyOnObjectOrComponentChange {
 		// TODO: this becomes rather long; should we hash it once more?
@@ -83,34 +55,11 @@ func calculateObjectDigest(obj client.Object, componentDigest string, reconcileP
 	return digest, nil
 }
 
-func setLabel(obj client.Object, key string, value string) {
-	labels := obj.GetLabels()
-	if labels == nil {
-		labels = make(map[string]string)
+func checkRange(x int, min int, max int) error {
+	if x < min || x > max {
+		return fmt.Errorf("value %d not in allowed range [%d,%d]", x, min, max)
 	}
-	labels[key] = value
-	obj.SetLabels(labels)
-}
-
-func removeLabel(obj client.Object, key string) {
-	labels := obj.GetLabels()
-	delete(labels, key)
-	obj.SetLabels(labels)
-}
-
-func setAnnotation(obj client.Object, key string, value string) {
-	annotations := obj.GetAnnotations()
-	if annotations == nil {
-		annotations = make(map[string]string)
-	}
-	annotations[key] = value
-	obj.SetAnnotations(annotations)
-}
-
-func removeAnnotation(obj client.Object, key string) {
-	annotations := obj.GetAnnotations()
-	delete(annotations, key)
-	obj.SetAnnotations(annotations)
+	return nil
 }
 
 func isNamespace(key types.ObjectKey) bool {

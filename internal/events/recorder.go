@@ -12,12 +12,15 @@ import (
 
 	"k8s.io/client-go/tools/record"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	"github.com/sap/component-operator-runtime/internal/util"
 )
 
 type DeduplicatingRecorder struct {
-	recorder record.EventRecorder
-	mutex    sync.Mutex
-	events   map[string]event
+	recorder   record.EventRecorder
+	mutex      sync.Mutex
+	events     map[string]event
+	expiration time.Duration
 }
 
 type event struct {
@@ -25,10 +28,11 @@ type event struct {
 	timestamp time.Time
 }
 
-func NewDeduplicatingRecorder(recorder record.EventRecorder) *DeduplicatingRecorder {
+func NewDeduplicatingRecorder(recorder record.EventRecorder, expiration time.Duration) *DeduplicatingRecorder {
 	return &DeduplicatingRecorder{
-		recorder: recorder,
-		events:   make(map[string]event),
+		recorder:   recorder,
+		events:     make(map[string]event),
+		expiration: expiration,
 	}
 }
 
@@ -55,9 +59,9 @@ func (r *DeduplicatingRecorder) AnnotatedEventf(object client.Object, annotation
 
 func (r *DeduplicatingRecorder) isDuplicate(object client.Object, annotations map[string]string, eventType, reason, message string) bool {
 	uid := string(object.GetUID())
-	digest := calculateDigest(annotations, eventType, reason, message)
+	digest := util.CalculateDigest(annotations, eventType, reason, message)
 	now := time.Now()
-	exp := time.Now().Add(-5 * time.Minute)
+	exp := now.Add(-r.expiration)
 
 	r.mutex.Lock()
 	defer r.mutex.Unlock()
