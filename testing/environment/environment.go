@@ -21,6 +21,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/version"
+	"k8s.io/client-go/discovery"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/client-go/util/retry"
@@ -37,12 +39,15 @@ import (
 )
 
 type Environment struct {
-	testenv    *envtest.Environment
-	config     *rest.Config
-	kubeConfig string
-	scheme     *runtime.Scheme
-	client     client.WithWatch
-	tmpdir     string
+	testenv         *envtest.Environment
+	config          *rest.Config
+	kubeConfig      string
+	scheme          *runtime.Scheme
+	client          client.Client
+	discoveryClient discovery.DiscoveryInterface
+	version         *version.Info
+	id              string
+	tmpdir          string
 }
 
 func Run(stdout io.Writer, stderr io.Writer, logger io.Writer) (_ *Environment, err error) {
@@ -96,10 +101,36 @@ func Run(stdout io.Writer, stderr io.Writer, logger io.Writer) (_ *Environment, 
 	apiregistrationv1.AddToScheme(scheme)
 	cstestingv1alpha1.AddToScheme(scheme)
 
-	clnt, err := client.NewWithWatch(cfg, client.Options{Scheme: scheme})
+	httpClient, err := rest.HTTPClientFor(cfg)
 	if err != nil {
 		return nil, err
 	}
+
+	clnt, err := client.New(cfg, client.Options{
+		HTTPClient: httpClient,
+		Scheme:     scheme,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	discoveryClient, err := discovery.NewDiscoveryClientForConfigAndClient(cfg, httpClient)
+	if err != nil {
+		return nil, err
+	}
+
+	version, err := discoveryClient.ServerVersion()
+	if err != nil {
+		return nil, err
+	}
+
+	fmt.Fprintf(stdout, "Kubernetes version: %s\n", version.String())
+
+	kubeSystemNamespace := &corev1.Namespace{}
+	if err := clnt.Get(context.Background(), client.ObjectKey{Name: "kube-system"}, kubeSystemNamespace); err != nil {
+		return nil, err
+	}
+	id := string(kubeSystemNamespace.GetUID())
 
 	if err := clientcmd.WriteToFile(*kubeConfig, fmt.Sprintf("%s/kubeconfig", tmpdir)); err != nil {
 		return nil, err
@@ -107,12 +138,15 @@ func Run(stdout io.Writer, stderr io.Writer, logger io.Writer) (_ *Environment, 
 	fmt.Fprintf(stdout, "A temporary kubeconfig for the envtest environment can be found here: %s/kubeconfig\n", tmpdir)
 
 	return &Environment{
-		testenv:    testenv,
-		config:     cfg,
-		kubeConfig: string(kubeConfigRaw),
-		scheme:     scheme,
-		client:     clnt,
-		tmpdir:     tmpdir,
+		testenv:         testenv,
+		config:          cfg,
+		kubeConfig:      string(kubeConfigRaw),
+		scheme:          scheme,
+		client:          clnt,
+		discoveryClient: discoveryClient,
+		version:         version,
+		id:              id,
+		tmpdir:          tmpdir,
 	}, nil
 }
 
@@ -136,6 +170,18 @@ func (e *Environment) Scheme() *runtime.Scheme {
 
 func (e *Environment) Client() client.Client {
 	return e.client
+}
+
+func (e *Environment) DiscoveryClient() discovery.DiscoveryInterface {
+	return e.discoveryClient
+}
+
+func (e *Environment) Version() *version.Info {
+	return e.version
+}
+
+func (e *Environment) Id() string {
+	return e.id
 }
 
 func (e *Environment) EnsureObjectExists(obj client.Object, reconcilerName, ownerId string, digest string) (client.Object, error) {

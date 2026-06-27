@@ -1,0 +1,5 @@
+includedFiles:
+- ../config
+- ../version
+includedKustomizations:
+- ../bases/default
