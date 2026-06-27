@@ -6,20 +6,9 @@ SPDX-License-Identifier: Apache-2.0
 package environment
 
 import (
-	"crypto/sha256"
-	"encoding/base32"
-	"strings"
-
 	"k8s.io/client-go/rest"
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 )
-
-// TODO: consolidate all the util files into an internal reuse package
-
-func sha256base32(data []byte) string {
-	sum := sha256.Sum256(data)
-	return strings.ToLower(base32.StdEncoding.WithPadding(base32.NoPadding).EncodeToString(sum[:]))
-}
 
 func buildKubeConfig(cfg *rest.Config) *clientcmdapi.Config {
 	apiConfig := clientcmdapi.NewConfig()

@@ -273,7 +273,7 @@ func (r *Reconciler) Apply(ctx context.Context, inventory *[]*InventoryItem, obj
 	var err error
 	log := log.FromContext(ctx)
 
-	hashedOwnerId := sha256base32([]byte(ownerId))
+	hashedOwnerId := util.Sha256base32([]byte(ownerId))
 
 	// perform some initial validation
 	for _, object := range objects {
@@ -308,9 +308,9 @@ func (r *Reconciler) Apply(ctx context.Context, inventory *[]*InventoryItem, obj
 
 	// perform cleanup on object manifests
 	for _, object := range objects {
-		removeLabel(object, r.labelKeyOwnerId)
-		removeAnnotation(object, r.annotationKeyOwnerId)
-		removeAnnotation(object, r.annotationKeyDigest)
+		util.RemoveLabel(object, r.labelKeyOwnerId)
+		util.RemoveAnnotation(object, r.annotationKeyOwnerId)
+		util.RemoveAnnotation(object, r.annotationKeyDigest)
 	}
 
 	// validate type and set namespace for namespaced objects which have no namespace set
@@ -404,36 +404,36 @@ func (r *Reconciler) Apply(ctx context.Context, inventory *[]*InventoryItem, obj
 
 	// define getter functions for later usage
 	getAdoptionPolicy := func(object client.Object) AdoptionPolicy {
-		// note: this must() is ok because we checked the generated objects above, and this function will be called for these objects only
-		return must(r.getAdoptionPolicy(object))
+		// note: this Must() is ok because we checked the generated objects above, and this function will be called for these objects only
+		return util.Must(r.getAdoptionPolicy(object))
 	}
 	getReconcilePolicy := func(object client.Object) ReconcilePolicy {
-		// note: this must() is ok because we checked the generated objects above, and this function will be called for these objects only
-		return must(r.getReconcilePolicy(object))
+		// note: this Must() is ok because we checked the generated objects above, and this function will be called for these objects only
+		return util.Must(r.getReconcilePolicy(object))
 	}
 	getUpdatePolicy := func(object client.Object) UpdatePolicy {
-		// note: this must() is ok because we checked the generated objects above, and this function will be called for these objects only
-		return must(r.getUpdatePolicy(object))
+		// note: this Must() is ok because we checked the generated objects above, and this function will be called for these objects only
+		return util.Must(r.getUpdatePolicy(object))
 	}
 	getDeletePolicy := func(object client.Object) DeletePolicy {
-		// note: this must() is ok because we checked the generated objects above, and this function will be called for these objects only
-		return must(r.getDeletePolicy(object))
+		// note: this Must() is ok because we checked the generated objects above, and this function will be called for these objects only
+		return util.Must(r.getDeletePolicy(object))
 	}
 	getReapplyInterval := func(object client.Object) time.Duration {
-		// note: this must() is ok because we checked the generated objects above, and this function will be called for these objects only
-		return must(r.getReapplyInterval(object))
+		// note: this Must() is ok because we checked the generated objects above, and this function will be called for these objects only
+		return util.Must(r.getReapplyInterval(object))
 	}
 	getApplyOrder := func(object client.Object) int {
-		// note: this must() is ok because we checked the generated objects above, and this function will be called for these objects only
-		return must(r.getApplyOrder(object))
+		// note: this Must() is ok because we checked the generated objects above, and this function will be called for these objects only
+		return util.Must(r.getApplyOrder(object))
 	}
 	getPurgeOrder := func(object client.Object) int {
-		// note: this must() is ok because we checked the generated objects above, and this function will be called for these objects only
-		return must(r.getPurgeOrder(object))
+		// note: this Must() is ok because we checked the generated objects above, and this function will be called for these objects only
+		return util.Must(r.getPurgeOrder(object))
 	}
 	getDeleteOrder := func(object client.Object) int {
-		// note: this must() is ok because we checked the generated objects above, and this function will be called for these objects only
-		return must(r.getDeleteOrder(object))
+		// note: this Must() is ok because we checked the generated objects above, and this function will be called for these objects only
+		return util.Must(r.getDeleteOrder(object))
 	}
 
 	// perform further validations of object set
@@ -733,9 +733,9 @@ func (r *Reconciler) Apply(ctx context.Context, inventory *[]*InventoryItem, obj
 					return false, legacyerrors.Wrapf(err, "error reading object %s", item)
 				}
 
-				setLabel(object, r.labelKeyOwnerId, hashedOwnerId)
-				setAnnotation(object, r.annotationKeyOwnerId, ownerId)
-				setAnnotation(object, r.annotationKeyDigest, item.Digest)
+				util.SetLabel(object, r.labelKeyOwnerId, hashedOwnerId)
+				util.SetAnnotation(object, r.annotationKeyOwnerId, ownerId)
+				util.SetAnnotation(object, r.annotationKeyDigest, item.Digest)
 
 				updatePolicy := getUpdatePolicy(object)
 				reapplyInterval := getReapplyInterval(object)
@@ -940,7 +940,7 @@ func (r *Reconciler) Apply(ctx context.Context, inventory *[]*InventoryItem, obj
 func (r *Reconciler) Delete(ctx context.Context, inventory *[]*InventoryItem, ownerId string) (bool, error) {
 	log := log.FromContext(ctx)
 
-	hashedOwnerId := sha256base32([]byte(ownerId))
+	hashedOwnerId := util.Sha256base32([]byte(ownerId))
 
 	// delete objects and maintain inventory;
 	// objects are deleted in waves according to their delete order;
@@ -1035,7 +1035,7 @@ func (r *Reconciler) Delete(ctx context.Context, inventory *[]*InventoryItem, ow
 // which are not contained in the inventory. There is one exception of this rule: if all objects in the inventory have their
 // deletion policy set to Orphan or OrphanOnDelete, then the deletion of the component is immediately allowed.
 func (r *Reconciler) IsDeletionAllowed(ctx context.Context, inventory *[]*InventoryItem, ownerId string) (bool, string, error) {
-	hashedOwnerId := sha256base32([]byte(ownerId))
+	hashedOwnerId := util.Sha256base32([]byte(ownerId))
 
 	for _, t := range r.additionalManagedTypes {
 		gk := schema.GroupKind(t)
@@ -1240,8 +1240,8 @@ func (r *Reconciler) updateObject(ctx context.Context, object client.Object, exi
 				{"op": "replace", "path": "/metadata/managedFields", "value": managedFields},
 				{"op": "replace", "path": "/metadata/resourceVersion", "value": object.GetResourceVersion()},
 			}
-			// note: this must() is ok because marshalling the patch should always work
-			if err := r.client.Patch(ctx, obj, client.RawPatch(apitypes.JSONPatchType, must(json.Marshal(preparePatch))), client.FieldOwner(r.fieldOwner)); err != nil {
+			// note: this Must() is ok because marshalling the patch should always work
+			if err := r.client.Patch(ctx, obj, client.RawPatch(apitypes.JSONPatchType, util.Must(json.Marshal(preparePatch))), client.FieldOwner(r.fieldOwner)); err != nil {
 				return err
 			}
 			object.SetResourceVersion(obj.GetResourceVersion())
@@ -1519,8 +1519,8 @@ func (r *Reconciler) isTypeUsed(ctx context.Context, gk schema.GroupKind, hashed
 		list.SetGroupVersionKind(gvk)
 		labelSelector := labels.Everything()
 		if onlyForeign {
-			// note: this must() is ok because the label selector string is static, and correct
-			labelSelector = must(labels.Parse(r.labelKeyOwnerId + "!=" + hashedOwnerId))
+			// note: this Must() is ok because the label selector string is static, and correct
+			labelSelector = util.Must(labels.Parse(r.labelKeyOwnerId + "!=" + hashedOwnerId))
 		}
 		if err := r.client.List(ctx, list, &client.ListOptions{LabelSelector: labelSelector, Limit: 1}); err != nil {
 			return false, err
@@ -1544,8 +1544,8 @@ func (r *Reconciler) isCrdUsed(ctx context.Context, crd *apiextensionsv1.CustomR
 	list.SetGroupVersionKind(gvk)
 	labelSelector := labels.Everything()
 	if onlyForeign {
-		// note: this must() is ok because the label selector string is static, and correct
-		labelSelector = must(labels.Parse(r.labelKeyOwnerId + "!=" + hashedOwnerId))
+		// note: this Must() is ok because the label selector string is static, and correct
+		labelSelector = util.Must(labels.Parse(r.labelKeyOwnerId + "!=" + hashedOwnerId))
 	}
 	if err := r.client.List(ctx, list, &client.ListOptions{LabelSelector: labelSelector, Limit: 1}); err != nil {
 		return false, err
@@ -1567,8 +1567,8 @@ func (r *Reconciler) isApiServiceUsed(ctx context.Context, apiService *apiregist
 	}
 	labelSelector := labels.Everything()
 	if onlyForeign {
-		// note: this must() is ok because the label selector string is static, and correct
-		labelSelector = must(labels.Parse(r.labelKeyOwnerId + "!=" + hashedOwnerId))
+		// note: this Must() is ok because the label selector string is static, and correct
+		labelSelector = util.Must(labels.Parse(r.labelKeyOwnerId + "!=" + hashedOwnerId))
 	}
 	for _, kind := range kinds {
 		gvk := schema.GroupVersionKind{

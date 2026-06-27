@@ -12,6 +12,8 @@ import (
 
 	"k8s.io/client-go/tools/record"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	"github.com/sap/component-operator-runtime/internal/util"
 )
 
 type DeduplicatingRecorder struct {
@@ -57,7 +59,7 @@ func (r *DeduplicatingRecorder) AnnotatedEventf(object client.Object, annotation
 
 func (r *DeduplicatingRecorder) isDuplicate(object client.Object, annotations map[string]string, eventType, reason, message string) bool {
 	uid := string(object.GetUID())
-	digest := calculateDigest(annotations, eventType, reason, message)
+	digest := util.CalculateDigest(annotations, eventType, reason, message)
 	now := time.Now()
 	exp := now.Add(-r.expiration)
 

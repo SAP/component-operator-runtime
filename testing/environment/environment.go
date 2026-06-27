@@ -34,6 +34,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
+	"github.com/sap/component-operator-runtime/internal/util"
 	"github.com/sap/component-operator-runtime/pkg/types"
 	cstestingv1alpha1 "github.com/sap/component-operator-runtime/testing/environment/apis/testing.cs.sap.com/v1alpha1"
 )
@@ -198,7 +199,7 @@ func (e *Environment) EnsureObjectExists(obj client.Object, reconcilerName, owne
 	if digest != "" && annotations[fmt.Sprintf("%s/%s", reconcilerName, types.AnnotationKeySuffixDigest)] != digest {
 		return nil, fmt.Errorf("object %s/%s does not have the expected component digest", obj.GetNamespace(), obj.GetName())
 	}
-	if ownerId != "" && labels[fmt.Sprintf("%s/%s", reconcilerName, types.LabelKeySuffixOwnerId)] != sha256base32([]byte(ownerId)) {
+	if ownerId != "" && labels[fmt.Sprintf("%s/%s", reconcilerName, types.LabelKeySuffixOwnerId)] != util.Sha256base32([]byte(ownerId)) {
 		return nil, fmt.Errorf("object %s/%s does not have the expected owner label", obj.GetNamespace(), obj.GetName())
 	}
 	return obj, nil
