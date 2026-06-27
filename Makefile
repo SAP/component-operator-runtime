@@ -29,7 +29,7 @@ vet: ## Run go vet against code
 	go vet ./...
 
 .PHONY: test
-test: generate fmt vet ## Run tests
+test: generate fmt vet envtest ## Run tests
 	KUBEBUILDER_ASSETS="$(LOCALBIN)/k8s/current" go test ./internal/... ./pkg/... -coverprofile cover.out
 
 ##@ Build
