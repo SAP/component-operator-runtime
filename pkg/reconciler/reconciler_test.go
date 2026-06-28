@@ -17,7 +17,7 @@ import (
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	apiregistrationsv1 "k8s.io/kube-aggregator/pkg/apis/apiregistration/v1"
+	apiregistrationv1 "k8s.io/kube-aggregator/pkg/apis/apiregistration/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 
@@ -91,7 +91,7 @@ var _ = Describe("testing: reconciler.go", func() {
 		scheme = runtime.NewScheme()
 		corev1.AddToScheme(scheme)
 		apiextensionsv1.AddToScheme(scheme)
-		apiregistrationsv1.AddToScheme(scheme)
+		apiregistrationv1.AddToScheme(scheme)
 		cstestingv1alpha1.AddToScheme(scheme)
 
 		clnt, err = clientfactory.NewClientFor(env.Config(), scheme, reconcilerName)

@@ -8,9 +8,10 @@ package backoff_test
 import (
 	"time"
 
+	"k8s.io/client-go/util/workqueue"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"k8s.io/client-go/util/workqueue"
 
 	"github.com/sap/component-operator-runtime/internal/backoff"
 )

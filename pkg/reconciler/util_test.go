@@ -16,7 +16,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	apitypes "k8s.io/apimachinery/pkg/types"
-	apiregistrationsv1 "k8s.io/kube-aggregator/pkg/apis/apiregistration/v1"
+	apiregistrationv1 "k8s.io/kube-aggregator/pkg/apis/apiregistration/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -261,8 +261,8 @@ var _ = Describe("testing: util.go", func() {
 
 		var structuredCrd1 *apiextensionsv1.CustomResourceDefinition
 		var structuredCrd2 *apiextensionsv1.CustomResourceDefinition
-		var structuredApiService1 *apiregistrationsv1.APIService
-		var structuredApiService2 *apiregistrationsv1.APIService
+		var structuredApiService1 *apiregistrationv1.APIService
+		var structuredApiService2 *apiregistrationv1.APIService
 		var unstructuredCrd client.Object
 		var unstructuredApiService client.Object
 		var otherObject client.Object
@@ -280,13 +280,13 @@ var _ = Describe("testing: util.go", func() {
 					Kind:       "CustomResourceDefinition",
 				},
 			}
-			structuredApiService1 = &apiregistrationsv1.APIService{
+			structuredApiService1 = &apiregistrationv1.APIService{
 				TypeMeta: metav1.TypeMeta{
 					APIVersion: "apiregistration.k8s.io/v1",
 					Kind:       "APIService",
 				},
 			}
-			structuredApiService2 = &apiregistrationsv1.APIService{
+			structuredApiService2 = &apiregistrationv1.APIService{
 				TypeMeta: metav1.TypeMeta{
 					APIVersion: "apiregistration.k8s.io/v1",
 					Kind:       "APIService",
@@ -319,7 +319,7 @@ var _ = Describe("testing: util.go", func() {
 		})
 
 		It("should detect APIServices", func() {
-			Expect(getApiServices([]client.Object{structuredCrd1, structuredCrd2, structuredApiService1, structuredApiService2, otherObject})).To(Equal([]*apiregistrationsv1.APIService{structuredApiService1, structuredApiService2}))
+			Expect(getApiServices([]client.Object{structuredCrd1, structuredCrd2, structuredApiService1, structuredApiService2, otherObject})).To(Equal([]*apiregistrationv1.APIService{structuredApiService1, structuredApiService2}))
 			Expect(getApiServices([]client.Object{otherObject})).To(BeEmpty())
 			Expect(getApiServices([]client.Object{})).To(BeEmpty())
 		})
@@ -337,7 +337,7 @@ var _ = Describe("testing: util.go", func() {
 	Describe("testing: getManagedTypes()", func() {
 
 		var crd *apiextensionsv1.CustomResourceDefinition
-		var apiService *apiregistrationsv1.APIService
+		var apiService *apiregistrationv1.APIService
 		var otherObject *corev1.ConfigMap
 
 		BeforeEach(func() {
@@ -353,12 +353,12 @@ var _ = Describe("testing: util.go", func() {
 					},
 				},
 			}
-			apiService = &apiregistrationsv1.APIService{
+			apiService = &apiregistrationv1.APIService{
 				TypeMeta: metav1.TypeMeta{
 					APIVersion: "apiregistration.k8s.io/v1",
 					Kind:       "APIService",
 				},
-				Spec: apiregistrationsv1.APIServiceSpec{
+				Spec: apiregistrationv1.APIServiceSpec{
 					Group:   "group",
 					Version: "v1",
 				},
