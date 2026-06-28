@@ -14,5 +14,5 @@ import (
 
 func TestPackage(t *testing.T) {
 	RegisterFailHandler(Fail)
-	RunSpecs(t, "Package suite: pkg/manifests")
+	RunSpecs(t, "Package Suite: pkg/manifests")
 }

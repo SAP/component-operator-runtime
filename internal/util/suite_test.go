@@ -14,5 +14,5 @@ import (
 
 func TestPackage(t *testing.T) {
 	RegisterFailHandler(Fail)
-	RunSpecs(t, "Package Suite: pkg/reconciler")
+	RunSpecs(t, "Package Suite: pkg/util")
 }
