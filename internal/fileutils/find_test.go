@@ -42,6 +42,7 @@ var _ = Describe("testing: find.go", func() {
 			"d/d/a.y",
 			"d/d/a.x",
 			"d/d/b.x",
+			"e/e/e/c.y",
 		}
 		symlinks = []string{
 			"d/la.y",
