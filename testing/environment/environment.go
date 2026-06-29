@@ -21,6 +21,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	apitypes "k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/version"
 	"k8s.io/client-go/discovery"
 	"k8s.io/client-go/rest"
@@ -128,7 +129,7 @@ func Run(stdout io.Writer, stderr io.Writer, logger io.Writer) (_ *Environment, 
 	fmt.Fprintf(stdout, "Kubernetes version: %s\n", version.String())
 
 	kubeSystemNamespace := &corev1.Namespace{}
-	if err := clnt.Get(context.Background(), client.ObjectKey{Name: "kube-system"}, kubeSystemNamespace); err != nil {
+	if err := clnt.Get(context.Background(), apitypes.NamespacedName{Name: "kube-system"}, kubeSystemNamespace); err != nil {
 		return nil, err
 	}
 	id := string(kubeSystemNamespace.GetUID())
