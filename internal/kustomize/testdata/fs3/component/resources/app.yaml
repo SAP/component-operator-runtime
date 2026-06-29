@@ -1,0 +1,24 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ name }}
+  labels:
+    app:
+      {{- include "commonLabels" . | nindent 6 }}
+spec:
+  replicas: {{ include "replicas" . }}
+  selector:
+    matchLabels:
+      {{- include "selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "selectorLabels" . | nindent 8 }}
+    spec:
+      containers:
+      - name: main
+        image: {{ include "image" . }}
+      env:
+      - name: LOG_LEVEL
+        value: {{ include "logLevel" . }}

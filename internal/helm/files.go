@@ -13,6 +13,8 @@ import (
 	"github.com/gobwas/glob"
 
 	kyaml "sigs.k8s.io/yaml"
+
+	"github.com/sap/component-operator-runtime/internal/util"
 )
 
 type Files map[string][]byte
@@ -71,8 +73,8 @@ func (f Files) AsConfig() string {
 		configData[path.Base(name)] = string(data)
 	}
 
-	// note: this must() is ok because the map can always be serialized
-	return string(must(kyaml.Marshal(configData)))
+	// note: this Must() is ok because the map can always be serialized
+	return string(util.Must(kyaml.Marshal(configData)))
 }
 
 func (f Files) AsSecrets() string {
@@ -82,8 +84,8 @@ func (f Files) AsSecrets() string {
 		secretData[path.Base(name)] = base64.StdEncoding.EncodeToString(data)
 	}
 
-	// note: this must() is ok because the map can always be serialized
-	return string(must(kyaml.Marshal(secretData)))
+	// note: this Must() is ok because the map can always be serialized
+	return string(util.Must(kyaml.Marshal(secretData)))
 }
 
 func isIgnored(name string) bool {

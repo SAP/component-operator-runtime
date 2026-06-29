@@ -2,6 +2,9 @@
 SHELL = /usr/bin/env bash
 .SHELLFLAGS = -o pipefail -ec
 
+# K8s version used by envtest
+ENVTEST_K8S_VERSION = 1.35.0
+
 .PHONY: all
 all: scaffold clm
 
@@ -26,8 +29,8 @@ vet: ## Run go vet against code
 	go vet ./...
 
 .PHONY: test
-test: generate fmt vet ## Run tests
-	go test ./internal/... ./pkg/...
+test: generate fmt vet envtest ## Run tests
+	KUBEBUILDER_ASSETS="$(LOCALBIN)/k8s/current" go test ./internal/... ./pkg/... -coverprofile cover.out
 
 ##@ Build
 
@@ -69,6 +72,25 @@ controller-gen: $(LOCALBIN) ## Install controller-gen
 	mv $(LOCALBIN)/controller-gen $(LOCALBIN)/controller-gen-$$VERSION && \
 	ln -s controller-gen-$$VERSION $(LOCALBIN)/controller-gen; \
 	fi
+
+.PHONY: setup-envtest
+setup-envtest: $(LOCALBIN) ## Install setup-envtest
+	@go mod download sigs.k8s.io/controller-runtime/tools/setup-envtest && \
+	VERSION=$$(go list -m -f '{{.Version}}' sigs.k8s.io/controller-runtime/tools/setup-envtest) && \
+	if [ ! -L $(LOCALBIN)/setup-envtest ] || [ "$$(readlink $(LOCALBIN)/setup-envtest)" != "setup-envtest-$$VERSION" ]; then \
+	echo "Installing setup-envtest $$VERSION" && \
+	rm -f $(LOCALBIN)/setup-envtest && \
+	GOBIN=$(LOCALBIN) go install $$(go list -m -f '{{.Dir}}' sigs.k8s.io/controller-runtime/tools/setup-envtest) && \
+	mv $(LOCALBIN)/setup-envtest $(LOCALBIN)/setup-envtest-$$VERSION && \
+	ln -s setup-envtest-$$VERSION $(LOCALBIN)/setup-envtest; \
+	fi
+
+.PHONY: envtest
+envtest: setup-envtest ## Install envtest binaries
+	@ENVTESTDIR=$$($(LOCALBIN)/setup-envtest use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path) && \
+	chmod -R u+w $$ENVTESTDIR && \
+	rm -f $(LOCALBIN)/k8s/current && \
+	ln -s $$ENVTESTDIR $(LOCALBIN)/k8s/current
 
 # Set the year for SPDX header updates (default: current year)
 YEAR ?= $(shell date +%Y)

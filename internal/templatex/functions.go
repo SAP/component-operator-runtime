@@ -28,6 +28,8 @@ import (
 	kyaml "sigs.k8s.io/yaml"
 )
 
+// TODO: review the usage of the cast.To* function; they seem to be a little unsafe (e.g. with range overflows)
+
 // template FuncMap generator
 func FuncMap() template.FuncMap {
 	return template.FuncMap{

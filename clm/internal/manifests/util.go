@@ -11,15 +11,6 @@ import (
 	"os"
 )
 
-// TODO: consolidate all the util files into an internal reuse package
-
-func must[T any](x T, err error) T {
-	if err != nil {
-		panic(err)
-	}
-	return x
-}
-
 func copyFile(src, dst string) (int64, error) {
 	sourceFileStat, err := os.Stat(src)
 	if err != nil {

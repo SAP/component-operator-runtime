@@ -79,6 +79,26 @@ type Kustomization struct {
 	kustomizations []*Kustomization
 }
 
+// ParseKustomization() returns the parsed content of kustomizationPath in fsys; if kustomizationPath is empty or '.', then the whole fsys
+// is read. If fsys is nil, then the local filesystem / is used. When traversing kustomizationPath, only regular files are considered,
+// symlinks are not followed. By default, all files except .component-config.yaml and .component-ignore are considered as templates,
+// and the resulting path of the rendered file is set to the path of the template file, relative to kustomizationPath.
+// The effective options are the result of merging .component-config.yaml in kustomizationPath with the given options; thus .component-config.yaml
+// takes precedence over the given options. If .component-config.yaml is not present, then the given options are used as-is.
+// If a templateSuffix is specified in options, then only files with that suffix are considered as templates, and the suffix is stripped
+// from the resulting output filename. In all cases, templates can be called by their name from other templates (e.g. using the include function),
+// and the name of the template is the path of the file, relative to kustomizationPath (not stripping the template suffix if present).
+// All files under kustomizationPath are accessible through the readFile, existsFile and listFiles template functions.
+// Files outside kustomizationPath can be made available for readFile, existsFile and listFiles by listing them as includedFiles in the effective options.
+// Note that the paths in includedFiles must be relative to kustomizationPath, and must not be subpaths of kustomizationPath.
+// If kustomizationPath contains a .kustomization.yaml referencing other kustomizations, then the according kustomization directories
+// must be declared as kustomizations in the effective options, as relative paths to kustomizationPath. Note that such sub-kustomizations
+// are parsed with empty options; that is, neither the options supplied to this kustomization, nor the content of .compponent-config.yaml in this
+// kustomizationPath are passed to the sub-kustomization. Of course the sub-kustomization can contain its own .component-config.yaml.
+// Alternative template delimiters (other than {{ and }}) can be specified in the effective options. If no alternative delimiters are specified,
+// then the default delimiters are used. All files in kustomizationPath (plus those in includedFiles) are subject to the given decryptor,
+// if prsesent.
+
 // TODO: add a way to pass custom template functions
 
 func ParseKustomization(fsys fs.FS, kustomizationPath string, options KustomizationOptions) (*Kustomization, error) {
@@ -166,7 +186,7 @@ func parseKustomization(fsys fs.FS, kustomizationPath string, options Kustomizat
 		if filepath.Base(name) == componentConfigFilename || filepath.Base(name) == componentIgnoreFilename {
 			continue
 		}
-		if ignore != nil && ignore.Match(filepath.SplitList(name), false) {
+		if ignore != nil && ignore.Match(strings.Split(name, "/"), false) {
 			continue
 		}
 		if strings.HasSuffix(name, *options.TemplateSuffix) {
@@ -192,7 +212,7 @@ func parseKustomization(fsys fs.FS, kustomizationPath string, options Kustomizat
 		}
 	}
 
-	// TODO: check that k.nonTemplates and k.templates are disjoint
+	// TODO: check that k.nonTemplates and k.templates are disjoint (which can only happen if options.TemplateSuffix is specified)
 
 	for _, path := range options.IncludedFiles {
 		if filepath.IsAbs(path) {
@@ -220,7 +240,8 @@ func parseKustomization(fsys fs.FS, kustomizationPath string, options Kustomizat
 						return nil, err
 					}
 				}
-				k.files[path] = raw
+				// TODO: is this the right way to adjust the file path?
+				k.files[path+file[len(absolutePath):]] = raw
 			}
 		} else {
 			raw, err := fs.ReadFile(fsys, absolutePath)
@@ -459,7 +480,7 @@ func readIgnore(fsys fs.FS, path string) (gitignore.Matcher, error) {
 	}
 	defer ignoreFile.Close()
 
-	domain := filepath.SplitList(path)
+	domain := strings.Split(path, "/")
 	domain = domain[0 : len(domain)-1]
 	scanner := bufio.NewScanner(ignoreFile)
 	for scanner.Scan() {
@@ -491,5 +512,5 @@ func normalizeApiResources(apiResources []metav1.APIResource) []metav1.APIResour
 }
 
 func isSubdirectory(subdir string, dir string) bool {
-	return subdir == dir || strings.HasPrefix(subdir, dir+string(filepath.Separator))
+	return subdir == dir || strings.HasPrefix(subdir, dir+"/")
 }

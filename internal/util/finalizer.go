@@ -25,6 +25,6 @@ func UpdateFinalizers(ctx context.Context, clnt client.Client, obj client.Object
 			"finalizers":      obj.GetFinalizers(),
 		},
 	}
-	// note: this must() is ok because marshalling finalizers should always work
-	return clnt.Patch(ctx, obj, client.RawPatch(apitypes.MergePatchType, must(json.Marshal(finalizerPatch))), client.FieldOwner(fieldOwner))
+	// note: this Must() is ok because marshalling finalizers should always work
+	return clnt.Patch(ctx, obj, client.RawPatch(apitypes.MergePatchType, Must(json.Marshal(finalizerPatch))), client.FieldOwner(fieldOwner))
 }

@@ -17,6 +17,7 @@ import (
 
 	"github.com/sap/component-operator-runtime/clm/internal/manifests"
 	"github.com/sap/component-operator-runtime/clm/internal/release"
+	"github.com/sap/component-operator-runtime/internal/util"
 )
 
 const templateUsage = `Render component manifests to standard output without applying them to the cluster`
@@ -56,7 +57,7 @@ func newTemplateCmd() *cobra.Command {
 			}
 
 			for _, object := range objects {
-				fmt.Printf("---\n%s", must(kyaml.Marshal(object)))
+				fmt.Printf("---\n%s", util.Must(kyaml.Marshal(object)))
 			}
 
 			return nil
