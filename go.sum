@@ -169,6 +169,8 @@ github.com/onsi/ginkgo/v2 v2.29.0 h1:rfh+ZFjgJhYWRoIqVf3Uwx/W20yLrcrE2h2GmYVRaag
 github.com/onsi/ginkgo/v2 v2.29.0/go.mod h1:+aXOY+vzZ5mu2iI2HpTZUPmM//oQfsNFX6gU9kNcA44=
 github.com/onsi/ginkgo/v2 v2.31.0 h1:GtuJos5DFUV9EerYJo8RhYxosYNGvOdDE5haKq6Grfs=
 github.com/onsi/ginkgo/v2 v2.31.0/go.mod h1:+aXOY+vzZ5mu2iI2HpTZUPmM//oQfsNFX6gU9kNcA44=
+github.com/onsi/ginkgo/v2 v2.32.0 h1:Hw7s2pVrQo/8Yz5N77qdnpHaoc+c6cC9WIV1Jce+J6E=
+github.com/onsi/ginkgo/v2 v2.32.0/go.mod h1:+aXOY+vzZ5mu2iI2HpTZUPmM//oQfsNFX6gU9kNcA44=
 github.com/onsi/gomega v1.41.0 h1:OwKp4pXNgVxf6sCplzYo794OFNuoL2q2SBMU5NSWOjA=
 github.com/onsi/gomega v1.41.0/go.mod h1:M/Uqpu/8qTjtzCLUA2zJHX9Iilrau25x1PdoSRbWh5A=
 github.com/onsi/gomega v1.42.0 h1:CJby8u36xb7v34W78F8WKvqTQP7PCMIPB78IVDB73l4=
@@ -203,6 +205,8 @@ github.com/sap/go-generics v0.2.63 h1:LCr6C2LJi65lLLFXK0yiYpF5ews9N24oIAz7pK/6J7
 github.com/sap/go-generics v0.2.63/go.mod h1:VgQx6yybDpJgxju7rC/gjmr3BDJIuZSbCb68rtMyB+o=
 github.com/sap/go-generics v0.2.64 h1:ermnZpLIbexv28qfQ6NWJbij1HxYzx8vYCt5JuNpDJU=
 github.com/sap/go-generics v0.2.64/go.mod h1:71WD2/ZzFVRxh5UnYb7VaszpWf8LziqNdM/+RN0OZXc=
+github.com/sap/go-generics v0.2.65 h1:VTauyr/2mxT45S891iCW0MWdAniOuMR1rYUs5AHyg3o=
+github.com/sap/go-generics v0.2.65/go.mod h1:BsM47v/Sw2n5Z6z9pasQWVxW+OE79GpPR3hZJGeSI7Q=
 github.com/sergi/go-diff v1.0.0/go.mod h1:0CfEIISq7TuYL3j771MWULgwwjU+GofnZX9QAmXWZgo=
 github.com/sergi/go-diff v1.4.0 h1:n/SP9D5ad1fORl+llWyN+D6qoUETXNZARKjyY2/KVCw=
 github.com/sergi/go-diff v1.4.0/go.mod h1:A0bzQcvG0E7Rwjx0REVgAGH58e96+X0MeOfepqsbeW4=
