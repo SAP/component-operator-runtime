@@ -24,7 +24,9 @@ type Component struct {
 }
 
 type ComponentSpec struct {
-	Values *apiextensionsv1.JSON `json:"values,omitempty"`
+	Namespace string                `json:"namespace,omitempty"`
+	Name      string                `json:"name,omitempty"`
+	Values    *apiextensionsv1.JSON `json:"values,omitempty"`
 }
 
 type ComponentStatus struct {
@@ -57,6 +59,8 @@ func componentFromRelease(release *release.Release, values map[string]any) *Comp
 			},
 		},
 		Spec: ComponentSpec{
+			Namespace: release.GetTargetNamespace(),
+			Name:      release.GetTargetName(),
 			Values: &apiextensionsv1.JSON{
 				Raw: must(json.Marshal(values)),
 			},

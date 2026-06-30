@@ -73,12 +73,14 @@ func (c *Client) List(ctx context.Context, namespace string) ([]*Release, error)
 	return releases, nil
 }
 
-func (c *Client) Create(ctx context.Context, namespace string, name string) (*Release, error) {
+func (c *Client) Create(ctx context.Context, namespace string, name string, targetNamespace string, targetName string) (*Release, error) {
 	now := time.Now()
 
 	release := &Release{
 		namespace:         namespace,
 		name:              name,
+		targetNamespace:   targetNamespace,
+		targetName:        targetName,
 		creationTimestamp: &now,
 		updateTimestamp:   &now,
 		configMap: &corev1.ConfigMap{

@@ -66,12 +66,14 @@ func newListCmd() *cobra.Command {
 			switch options.outputFormat {
 			case "table":
 				w := tabwriter.NewWriter(os.Stdout, 0, 0, 3, ' ', 0)
-				fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t\n", "NAMESPACE", "NAME", "REVISION", "STATE", "OBJECTS", "READY", "COMPLETED", "CREATED", "UPDATED")
+				fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t\n", "NAMESPACE", "NAME", "TARGET NAMESPACE", "TARGET NAME", "REVISION", "STATE", "OBJECTS", "READY", "COMPLETED", "CREATED", "UPDATED")
 				for _, release := range releases {
 					details := getReleaseDetails(release)
-					fmt.Fprintf(w, "%s\t%s\t%d\t%s\t%d\t%d\t%d\t%s\t%s\t\n",
+					fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%d\t%s\t%d\t%d\t%d\t%s\t%s\t\n",
 						details.Namespace,
 						details.Name,
+						details.TargetNamespace,
+						details.TargetName,
 						details.Revision,
 						details.State,
 						details.NumAllObjects,
