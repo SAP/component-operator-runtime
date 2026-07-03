@@ -138,7 +138,7 @@ func (g *KustomizeGenerator) Generate(ctx context.Context, namespace string, nam
 		ComponentRevision: componentRevision,
 		Namespace:         namespace,
 		Name:              name,
-		Parameters:        parameters.ToUnstructured(),
+		Values:            parameters.ToUnstructured(),
 	}, fsys); err != nil {
 		return nil, err
 	}

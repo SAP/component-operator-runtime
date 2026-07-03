@@ -46,6 +46,18 @@ const (
 )
 
 type KustomizationOptions struct {
+	// If defined, only files with the given suffix are considered as templates
+	TemplateSuffix *string
+	// If defined, the given left delimiter will be used to parse go templates; otherwise, defaults to '{{'
+	LeftTemplateDelimiter *string
+	// If defined, the given right delimiter will be used to parse go templates; otherwise, defaults to '}}'
+	RightTemplateDelimiter *string
+	// If defined, used to decrypt files
+	Decryptor manifests.Decryptor
+}
+
+type KustomizationConfiguration struct {
+	// If defined, only files with the given suffix are considered as templates
 	TemplateSuffix *string
 	// If defined, the given left delimiter will be used to parse go templates; otherwise, defaults to '{{'
 	LeftTemplateDelimiter *string
@@ -55,8 +67,8 @@ type KustomizationOptions struct {
 	IncludedFiles []string
 	// If defined, paths to referenced kustomizations
 	IncludedKustomizations []string
-	// If defined, used to decrypt files
-	Decryptor manifests.Decryptor
+	// If defined, default values for the templates
+	Values map[string]any
 }
 
 type RenderContext struct {
@@ -68,7 +80,7 @@ type RenderContext struct {
 	ComponentRevision int64
 	Namespace         string
 	Name              string
-	Parameters        map[string]any
+	Values            map[string]any
 }
 
 type Kustomization struct {
@@ -76,6 +88,7 @@ type Kustomization struct {
 	files          map[string][]byte
 	nonTemplates   map[string][]byte
 	templates      map[string]*template.Template
+	values         map[string]any
 	kustomizations []*Kustomization
 }
 
@@ -111,16 +124,6 @@ func ParseKustomization(fsys fs.FS, kustomizationPath string, options Kustomizat
 }
 
 func parseKustomization(fsys fs.FS, kustomizationPath string, options KustomizationOptions, visitedKustomizationPaths []string) (*Kustomization, error) {
-	if options.TemplateSuffix == nil {
-		options.TemplateSuffix = new("")
-	}
-	if options.LeftTemplateDelimiter == nil {
-		options.LeftTemplateDelimiter = new("")
-	}
-	if options.RightTemplateDelimiter == nil {
-		options.RightTemplateDelimiter = new("")
-	}
-
 	if fsys == nil {
 		fsys = os.DirFS("/")
 		absoluteKustomizationPath, err := filepath.Abs(kustomizationPath)
@@ -145,20 +148,22 @@ func parseKustomization(fsys fs.FS, kustomizationPath string, options Kustomizat
 		return nil, fmt.Errorf("path %s is not a directory", kustomizationPath)
 	}
 
-	k := Kustomization{
-		path:         kustomizationPath,
-		files:        make(map[string][]byte),
-		nonTemplates: make(map[string][]byte),
-		templates:    make(map[string]*template.Template),
-	}
-
-	if err := readOptions(fsys, filepath.Clean(filepath.Join(kustomizationPath, componentConfigFilename)), &options); err != nil {
+	config, err := readConfig(fsys, filepath.Clean(filepath.Join(kustomizationPath, componentConfigFilename)), &options)
+	if err != nil {
 		return nil, err
 	}
 
 	ignore, err := readIgnore(fsys, filepath.Clean(filepath.Join(kustomizationPath, componentIgnoreFilename)))
 	if err != nil {
 		return nil, err
+	}
+
+	k := Kustomization{
+		path:         kustomizationPath,
+		files:        make(map[string][]byte),
+		nonTemplates: make(map[string][]byte),
+		templates:    make(map[string]*template.Template),
+		values:       config.Values,
 	}
 
 	var t *template.Template
@@ -189,10 +194,10 @@ func parseKustomization(fsys fs.FS, kustomizationPath string, options Kustomizat
 		if ignore != nil && ignore.Match(strings.Split(name, "/"), false) {
 			continue
 		}
-		if strings.HasSuffix(name, *options.TemplateSuffix) {
+		if strings.HasSuffix(name, *config.TemplateSuffix) {
 			if t == nil {
 				t = template.New(name)
-				t.Delims(*options.LeftTemplateDelimiter, *options.RightTemplateDelimiter)
+				t.Delims(*config.LeftTemplateDelimiter, *config.RightTemplateDelimiter)
 				t.Option("missingkey=zero").
 					Funcs(sprig.TxtFuncMap()).
 					Funcs(templatex.FuncMap()).
@@ -206,7 +211,7 @@ func parseKustomization(fsys fs.FS, kustomizationPath string, options Kustomizat
 			if _, err := t.Parse(string(raw)); err != nil {
 				return nil, err
 			}
-			k.templates[strings.TrimSuffix(name, *options.TemplateSuffix)] = t
+			k.templates[strings.TrimSuffix(name, *config.TemplateSuffix)] = t
 		} else {
 			k.nonTemplates[name] = raw
 		}
@@ -214,7 +219,7 @@ func parseKustomization(fsys fs.FS, kustomizationPath string, options Kustomizat
 
 	// TODO: check that k.nonTemplates and k.templates are disjoint (which can only happen if options.TemplateSuffix is specified)
 
-	for _, path := range options.IncludedFiles {
+	for _, path := range config.IncludedFiles {
 		if filepath.IsAbs(path) {
 			return nil, fmt.Errorf("include path (%s) must not be absolute", path)
 		}
@@ -258,7 +263,7 @@ func parseKustomization(fsys fs.FS, kustomizationPath string, options Kustomizat
 		}
 	}
 
-	for _, path := range options.IncludedKustomizations {
+	for _, path := range config.IncludedKustomizations {
 		if filepath.IsAbs(path) {
 			return nil, fmt.Errorf("include path (%s) must be absolute", path)
 		}
@@ -293,7 +298,7 @@ func (k *Kustomization) Render(context RenderContext, fsys kustfsys.FileSystem) 
 	}
 	serverGroupsWithResources = normalizeServerGroupsWithResources(serverGroupsWithResources)
 
-	data := context.Parameters
+	data := manifests.MergeMaps(k.values, context.Values)
 
 	for n, f := range k.nonTemplates {
 		if err := fsys.WriteFile(filepath.Join(k.path, n), f); err != nil {
@@ -452,20 +457,39 @@ func generateKustomization(fsys kustfsys.FileSystem, kustomizationPath string) (
 	return rawKustomization, nil
 }
 
-func readOptions(fsys fs.FS, path string, options *KustomizationOptions) error {
-	rawOptions, err := fs.ReadFile(fsys, path)
-	if err != nil {
-		if errors.Is(err, fs.ErrNotExist) {
-			return nil
+func readConfig(fsys fs.FS, path string, options *KustomizationOptions) (*KustomizationConfiguration, error) {
+	config := &KustomizationConfiguration{}
+
+	if rawConfig, err := fs.ReadFile(fsys, path); err == nil {
+		if err := kyaml.Unmarshal(rawConfig, config); err != nil {
+			return nil, err
 		}
-		return err
+	} else {
+		if !errors.Is(err, fs.ErrNotExist) {
+			return nil, err
+		}
 	}
 
-	if err := kyaml.Unmarshal(rawOptions, options); err != nil {
-		return err
+	if config.TemplateSuffix == nil {
+		config.TemplateSuffix = options.TemplateSuffix
+	}
+	if config.TemplateSuffix == nil {
+		config.TemplateSuffix = new("")
+	}
+	if config.LeftTemplateDelimiter == nil {
+		config.LeftTemplateDelimiter = options.LeftTemplateDelimiter
+	}
+	if config.LeftTemplateDelimiter == nil {
+		config.LeftTemplateDelimiter = new("")
+	}
+	if config.RightTemplateDelimiter == nil {
+		config.RightTemplateDelimiter = options.RightTemplateDelimiter
+	}
+	if config.RightTemplateDelimiter == nil {
+		config.RightTemplateDelimiter = new("")
 	}
 
-	return nil
+	return config, nil
 }
 
 func readIgnore(fsys fs.FS, path string) (gitignore.Matcher, error) {

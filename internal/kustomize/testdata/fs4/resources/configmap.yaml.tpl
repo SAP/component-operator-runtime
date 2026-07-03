@@ -4,4 +4,6 @@ kind: ConfigMap
 metadata:
   name: {% name >>
 data:
-  foo: bar
+  foo: {% .foo >>
+  bar: {% .bar >>
+  baz: {% .baz >>
