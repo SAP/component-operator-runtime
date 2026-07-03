@@ -85,6 +85,7 @@ Here:
 - `kustomizationPath` is the directory containing the (potentially templatized) kustomatization; if `fsys` was provided, this has to be a relative path; otherwise, it will be interpreted with respect to the OS filesystem (as an absolute path, or relative to the current working directory of the controller).
 - `clnt` should be a client for the local cluster (i.e. the cluster where the component object exists).
 - `options` allows to tweak the generator:
+
   ```go
   package kustomize
   
@@ -101,25 +102,30 @@ Here:
   }
   ```
 
-  The generator options can be overridden on source level by creating a file `.component-config.yaml` in the specified `kustomizationPath`; the file can contain JSON or YAML, compatible with the  `KustomizationsOptions` struct:
+In addition, the generator can be tuned on source level by creating a file `.component-config.yaml` in the specified `kustomizationPath`; the file can contain JSON or YAML, compatible with the  `KustomizationsOptions` struct:
 
-  ```go
-  package kustomize
+```go
+package kustomize
 
-  type KustomizationOptions struct {
-    TemplateSuffix *string
-    // If defined, the given left delimiter will be used to parse go templates; otherwise, defaults to '{{'
-    LeftTemplateDelimiter *string
-    // If defined, the given right delimiter will be used to parse go templates; otherwise, defaults to '}}'
-    RightTemplateDelimiter *string
-    // If defined, paths to referenced files or directories outside kustomizationPath
-    IncludedFiles []string
-    // If defined, paths to referenced kustomizations
-    IncludedKustomizations []string
-    // If defined, used to decrypt files
-    Decryptor manifests.Decryptor
-  }
-  ```
+type KustomizationConfiguration struct {
+  // If defined, only files with the given suffix are considered as templates
+  TemplateSuffix *string
+  // If defined, the given left delimiter will be used to parse go templates;
+  // otherwise, defaults to '{{'
+  LeftTemplateDelimiter *string
+  // If defined, the given right delimiter will be used to parse go templates;
+  // otherwise, defaults to '}}'
+  RightTemplateDelimiter *string
+  // If defined, paths to referenced files or directories outside kustomizationPath
+  IncludedFiles []string
+  // If defined, paths to referenced kustomizations
+  IncludedKustomizations []string
+  // If defined, default values for the templates
+  Values map[string]any
+}
+```
+
+Some properties may appear both in options and `.component-config.yaml`; in that case, the config file takes precedence.
 
 By default, the specified kustomization cannot reference files or paths on `fsys` outside `kustomizationPath`.
 By default, all `.yaml` or `.yml` files in `kustomizationPath`, and its subdirectories, are subject to templating, and are considered if a `kustomization.yaml` is auto-generated. It is possible to exclude certain files from templating by creating a file `.component-ignore` in `kustomizationPath`; this `.component-ignore` file uses the common `.gitignore` syntax. Note that excluded files are still visible to the `readFile` template function. Furthermore, additional file outside the `kustomizationPath` can be referenced if the according paths are declared in `.component-config.yaml` as:
