@@ -264,7 +264,7 @@ func NewReconciler(name string, clnt cluster.Client, options ReconcilerOptions) 
 // This method will change the passed inventory (add or remove elements, change elements). If Apply() returns true, then all objects are successfully reconciled;
 // otherwise, if it returns false, the caller should re-call it periodically, until it returns true. In any case, the passed inventory should match the state of the
 // inventory after the previous invocation of Apply(); usually, the caller saves the inventory after calling Apply(), and loads it before calling Apply().
-// The namespace and ownerId arguments should not be changed across subsequent invocations of Apply(); the supplied componentDigest is included into the
+// The namespace and ownerId arguments must not be changed after the first invocation of Apply(); the supplied componentDigest is included into the
 // digest of dependent objects if the effective reconcile policy is ReconcilePolicyOnObjectOrComponentChange (such that in this case, a change of componentDigest
 // triggers an immediate reconciliation of all dependent objects).
 //
@@ -273,7 +273,7 @@ func (r *Reconciler) Apply(ctx context.Context, inventory *[]*InventoryItem, obj
 	var err error
 	log := log.FromContext(ctx)
 
-	hashedOwnerId := sha256base32([]byte(ownerId))
+	hashedOwnerId := util.Sha256base32([]byte(ownerId))
 
 	// perform some initial validation
 	for _, object := range objects {
@@ -308,12 +308,13 @@ func (r *Reconciler) Apply(ctx context.Context, inventory *[]*InventoryItem, obj
 
 	// perform cleanup on object manifests
 	for _, object := range objects {
-		removeLabel(object, r.labelKeyOwnerId)
-		removeAnnotation(object, r.annotationKeyOwnerId)
-		removeAnnotation(object, r.annotationKeyDigest)
+		util.RemoveLabel(object, r.labelKeyOwnerId)
+		util.RemoveAnnotation(object, r.annotationKeyOwnerId)
+		util.RemoveAnnotation(object, r.annotationKeyDigest)
 	}
 
 	// validate type and set namespace for namespaced objects which have no namespace set
+	// TODO: this could be moved into normalizeObjects (which would require the rest mapper to be passed there)
 	for _, object := range objects {
 		// note: due to the normalization done before, every object will now have a valid object kind set
 		gvk := object.GetObjectKind().GroupVersionKind()
@@ -362,9 +363,10 @@ func (r *Reconciler) Apply(ctx context.Context, inventory *[]*InventoryItem, obj
 	// TODO: should we allow at all that api services and according instances are deployed together?
 
 	// check that there are no duplicate objects
+	// TODO: this could be moved to normalizeObjects()
 	objectKeys := sets.New[string]()
 	for _, object := range objects {
-		objectKey := types.ObjectKeyToString(object)
+		objectKey := fmt.Sprintf("%s %s/%s", object.GetObjectKind().GroupVersionKind().GroupKind(), object.GetNamespace(), object.GetName())
 		if sets.Contains(objectKeys, objectKey) {
 			return false, fmt.Errorf("duplicate object %s", objectKey)
 		}
@@ -402,36 +404,36 @@ func (r *Reconciler) Apply(ctx context.Context, inventory *[]*InventoryItem, obj
 
 	// define getter functions for later usage
 	getAdoptionPolicy := func(object client.Object) AdoptionPolicy {
-		// note: this must() is ok because we checked the generated objects above, and this function will be called for these objects only
-		return must(r.getAdoptionPolicy(object))
+		// note: this Must() is ok because we checked the generated objects above, and this function will be called for these objects only
+		return util.Must(r.getAdoptionPolicy(object))
 	}
 	getReconcilePolicy := func(object client.Object) ReconcilePolicy {
-		// note: this must() is ok because we checked the generated objects above, and this function will be called for these objects only
-		return must(r.getReconcilePolicy(object))
+		// note: this Must() is ok because we checked the generated objects above, and this function will be called for these objects only
+		return util.Must(r.getReconcilePolicy(object))
 	}
 	getUpdatePolicy := func(object client.Object) UpdatePolicy {
-		// note: this must() is ok because we checked the generated objects above, and this function will be called for these objects only
-		return must(r.getUpdatePolicy(object))
+		// note: this Must() is ok because we checked the generated objects above, and this function will be called for these objects only
+		return util.Must(r.getUpdatePolicy(object))
 	}
 	getDeletePolicy := func(object client.Object) DeletePolicy {
-		// note: this must() is ok because we checked the generated objects above, and this function will be called for these objects only
-		return must(r.getDeletePolicy(object))
+		// note: this Must() is ok because we checked the generated objects above, and this function will be called for these objects only
+		return util.Must(r.getDeletePolicy(object))
 	}
 	getReapplyInterval := func(object client.Object) time.Duration {
-		// note: this must() is ok because we checked the generated objects above, and this function will be called for these objects only
-		return must(r.getReapplyInterval(object))
+		// note: this Must() is ok because we checked the generated objects above, and this function will be called for these objects only
+		return util.Must(r.getReapplyInterval(object))
 	}
 	getApplyOrder := func(object client.Object) int {
-		// note: this must() is ok because we checked the generated objects above, and this function will be called for these objects only
-		return must(r.getApplyOrder(object))
+		// note: this Must() is ok because we checked the generated objects above, and this function will be called for these objects only
+		return util.Must(r.getApplyOrder(object))
 	}
 	getPurgeOrder := func(object client.Object) int {
-		// note: this must() is ok because we checked the generated objects above, and this function will be called for these objects only
-		return must(r.getPurgeOrder(object))
+		// note: this Must() is ok because we checked the generated objects above, and this function will be called for these objects only
+		return util.Must(r.getPurgeOrder(object))
 	}
 	getDeleteOrder := func(object client.Object) int {
-		// note: this must() is ok because we checked the generated objects above, and this function will be called for these objects only
-		return must(r.getDeleteOrder(object))
+		// note: this Must() is ok because we checked the generated objects above, and this function will be called for these objects only
+		return util.Must(r.getDeleteOrder(object))
 	}
 
 	// perform further validations of object set
@@ -731,9 +733,9 @@ func (r *Reconciler) Apply(ctx context.Context, inventory *[]*InventoryItem, obj
 					return false, legacyerrors.Wrapf(err, "error reading object %s", item)
 				}
 
-				setLabel(object, r.labelKeyOwnerId, hashedOwnerId)
-				setAnnotation(object, r.annotationKeyOwnerId, ownerId)
-				setAnnotation(object, r.annotationKeyDigest, item.Digest)
+				util.SetLabel(object, r.labelKeyOwnerId, hashedOwnerId)
+				util.SetAnnotation(object, r.annotationKeyOwnerId, ownerId)
+				util.SetAnnotation(object, r.annotationKeyDigest, item.Digest)
 
 				updatePolicy := getUpdatePolicy(object)
 				reapplyInterval := getReapplyInterval(object)
@@ -770,6 +772,7 @@ func (r *Reconciler) Apply(ctx context.Context, inventory *[]*InventoryItem, obj
 						return false, legacyerrors.Wrapf(err, "error checking status of object %s", item)
 					}
 					if existingObject.GetDeletionTimestamp().IsZero() && existingStatus == status.CurrentStatus {
+						// TODO: this is never reached, is it?
 						item.Phase = PhaseReady
 					} else {
 						// TODO: is it wise to not change item.Phase here?
@@ -822,7 +825,7 @@ func (r *Reconciler) Apply(ctx context.Context, inventory *[]*InventoryItem, obj
 
 	// delete redundant objects and maintain inventory;
 	// objects are deleted in waves according to their delete order;
-	// that means, only if all redundant objects of a wave are gone , the next
+	// that means, only if all redundant objects of a wave are gone, the next
 	// wave will be processed; within each wave, objects which are instances of managed
 	// types are deleted before all other objects, and namespaces will only be deleted
 	// if they are not used by any object in the inventory (note that this may cause deadlocks)
@@ -937,7 +940,7 @@ func (r *Reconciler) Apply(ctx context.Context, inventory *[]*InventoryItem, obj
 func (r *Reconciler) Delete(ctx context.Context, inventory *[]*InventoryItem, ownerId string) (bool, error) {
 	log := log.FromContext(ctx)
 
-	hashedOwnerId := sha256base32([]byte(ownerId))
+	hashedOwnerId := util.Sha256base32([]byte(ownerId))
 
 	// delete objects and maintain inventory;
 	// objects are deleted in waves according to their delete order;
@@ -1032,7 +1035,7 @@ func (r *Reconciler) Delete(ctx context.Context, inventory *[]*InventoryItem, ow
 // which are not contained in the inventory. There is one exception of this rule: if all objects in the inventory have their
 // deletion policy set to Orphan or OrphanOnDelete, then the deletion of the component is immediately allowed.
 func (r *Reconciler) IsDeletionAllowed(ctx context.Context, inventory *[]*InventoryItem, ownerId string) (bool, string, error) {
-	hashedOwnerId := sha256base32([]byte(ownerId))
+	hashedOwnerId := util.Sha256base32([]byte(ownerId))
 
 	for _, t := range r.additionalManagedTypes {
 		gk := schema.GroupKind(t)
@@ -1237,8 +1240,8 @@ func (r *Reconciler) updateObject(ctx context.Context, object client.Object, exi
 				{"op": "replace", "path": "/metadata/managedFields", "value": managedFields},
 				{"op": "replace", "path": "/metadata/resourceVersion", "value": object.GetResourceVersion()},
 			}
-			// note: this must() is ok because marshalling the patch should always work
-			if err := r.client.Patch(ctx, obj, client.RawPatch(apitypes.JSONPatchType, must(json.Marshal(preparePatch))), client.FieldOwner(r.fieldOwner)); err != nil {
+			// note: this Must() is ok because marshalling the patch should always work
+			if err := r.client.Patch(ctx, obj, client.RawPatch(apitypes.JSONPatchType, util.Must(json.Marshal(preparePatch))), client.FieldOwner(r.fieldOwner)); err != nil {
 				return err
 			}
 			object.SetResourceVersion(obj.GetResourceVersion())
@@ -1305,7 +1308,7 @@ func (r *Reconciler) deleteObject(ctx context.Context, key types.ObjectKey, exis
 	}
 	switch {
 	case isCrd(key):
-		for i := 1; i <= 2; i++ {
+		for i := 1; i <= 3; i++ {
 			crd := &apiextensionsv1.CustomResourceDefinition{}
 			if err := r.client.Get(ctx, apitypes.NamespacedName{Name: key.GetName()}, crd); err != nil {
 				return client.IgnoreNotFound(err)
@@ -1318,10 +1321,10 @@ func (r *Reconciler) deleteObject(ctx context.Context, key types.ObjectKey, exis
 				return fmt.Errorf("error deleting custom resource definition %s, existing instances found", types.ObjectKeyToString(key))
 			}
 			if ok := controllerutil.RemoveFinalizer(crd, r.finalizer); ok {
-				// note: 409 error is very likely here (because of concurrent updates happening through the api server); this is why we retry once
+				// note: 409 error is very likely here (because of concurrent updates happening through the api server); this is why we retry a couple of times
 				if err := util.UpdateFinalizers(ctx, r.client, crd, r.fieldOwner); err != nil {
-					if i == 1 && apierrors.IsConflict(err) {
-						log.V(1).Info("error while updating CustomResourcedefinition (409 conflict); doing one retry", "error", err.Error())
+					if i < 3 && apierrors.IsConflict(err) {
+						log.V(1).Info("error while updating CustomResourcedefinition (409 conflict); retrying", "error", err.Error())
 						continue
 					}
 					return err
@@ -1330,7 +1333,7 @@ func (r *Reconciler) deleteObject(ctx context.Context, key types.ObjectKey, exis
 			break
 		}
 	case isApiService(key):
-		for i := 1; i <= 2; i++ {
+		for i := 1; i <= 3; i++ {
 			apiService := &apiregistrationv1.APIService{}
 			if err := r.client.Get(ctx, apitypes.NamespacedName{Name: key.GetName()}, apiService); err != nil {
 				return client.IgnoreNotFound(err)
@@ -1343,10 +1346,10 @@ func (r *Reconciler) deleteObject(ctx context.Context, key types.ObjectKey, exis
 				return fmt.Errorf("error deleting api service %s, existing instances found", types.ObjectKeyToString(key))
 			}
 			if ok := controllerutil.RemoveFinalizer(apiService, r.finalizer); ok {
-				// note: 409 error is very likely here (because of concurrent updates happening through the api server); this is why we retry once
+				// note: 409 error is very likely here (because of concurrent updates happening through the api server); this is why we retry a couple of times
 				if err := util.UpdateFinalizers(ctx, r.client, apiService, r.fieldOwner); err != nil {
-					if i == 1 && apierrors.IsConflict(err) {
-						log.V(1).Info("error while updating APIService (409 conflict); doing one retry", "error", err.Error())
+					if i < 3 && apierrors.IsConflict(err) {
+						log.V(1).Info("error while updating APIService (409 conflict); retrying", "error", err.Error())
 						continue
 					}
 					return err
@@ -1516,8 +1519,8 @@ func (r *Reconciler) isTypeUsed(ctx context.Context, gk schema.GroupKind, hashed
 		list.SetGroupVersionKind(gvk)
 		labelSelector := labels.Everything()
 		if onlyForeign {
-			// note: this must() is ok because the label selector string is static, and correct
-			labelSelector = must(labels.Parse(r.labelKeyOwnerId + "!=" + hashedOwnerId))
+			// note: this Must() is ok because the label selector string is static, and correct
+			labelSelector = util.Must(labels.Parse(r.labelKeyOwnerId + "!=" + hashedOwnerId))
 		}
 		if err := r.client.List(ctx, list, &client.ListOptions{LabelSelector: labelSelector, Limit: 1}); err != nil {
 			return false, err
@@ -1541,8 +1544,8 @@ func (r *Reconciler) isCrdUsed(ctx context.Context, crd *apiextensionsv1.CustomR
 	list.SetGroupVersionKind(gvk)
 	labelSelector := labels.Everything()
 	if onlyForeign {
-		// note: this must() is ok because the label selector string is static, and correct
-		labelSelector = must(labels.Parse(r.labelKeyOwnerId + "!=" + hashedOwnerId))
+		// note: this Must() is ok because the label selector string is static, and correct
+		labelSelector = util.Must(labels.Parse(r.labelKeyOwnerId + "!=" + hashedOwnerId))
 	}
 	if err := r.client.List(ctx, list, &client.ListOptions{LabelSelector: labelSelector, Limit: 1}); err != nil {
 		return false, err
@@ -1564,8 +1567,8 @@ func (r *Reconciler) isApiServiceUsed(ctx context.Context, apiService *apiregist
 	}
 	labelSelector := labels.Everything()
 	if onlyForeign {
-		// note: this must() is ok because the label selector string is static, and correct
-		labelSelector = must(labels.Parse(r.labelKeyOwnerId + "!=" + hashedOwnerId))
+		// note: this Must() is ok because the label selector string is static, and correct
+		labelSelector = util.Must(labels.Parse(r.labelKeyOwnerId + "!=" + hashedOwnerId))
 	}
 	for _, kind := range kinds {
 		gvk := schema.GroupVersionKind{

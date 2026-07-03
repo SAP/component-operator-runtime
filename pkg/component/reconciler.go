@@ -54,13 +54,8 @@ import (
 )
 
 // TODO: in general add more retry to overcome 409 update errors (also etcd storage errors because of missed precondition on delete)
-// TODO: emitting events to deployment target may fail if corresponding rbac privileges are missing; either this should be pre-discovered or we
-// should stop emitting events to remote targets at all; howerver pre-discovering is difficult (may vary from object to object); one option could
-// be to send events only if we are cluster-admin
 // TODO: allow to override namespace auto-creation on a per-object level?
-// TODO: run admission webhooks (if present) in reconcile (e.g. as post-read hook)
 // TODO: improve overall log output
-// TODO: finalizer and fieldowner should be made more configurable (instead of just using the reconciler name)
 // TODO: finalizer should have the standard format prefix/finalizer
 // TODO: currently, the reconciler always claims/owns dependent objects entirely; but due to server-side-apply it can happen that
 // only parts of an object are managed: other parts/fiels might be managed by other actors (or even other components); how to handle such cases?
@@ -204,7 +199,7 @@ func NewReconciler[T Component](name string, resourceGenerator manifests.Generat
 		statusAnalyzer: status.NewStatusAnalyzer(name),
 		options:        options,
 		// TODO: make backoff configurable via options?
-		backoff:   backoff.NewBackoff(10 * time.Second),
+		backoff:   backoff.NewBackoff(backoff.NewDefaultRateLimiter(10 * time.Second)),
 		triggerCh: make(chan event.TypedGenericEvent[apitypes.NamespacedName], triggerBufferSize),
 	}
 }
@@ -753,7 +748,7 @@ func (r *Reconciler[T]) SetupWithManagerAndBuilder(mgr ctrl.Manager, blder *ctrl
 		}
 		r.client = clnt
 	}
-	r.eventRecorder = *events.NewDeduplicatingRecorder(r.client.EventRecorder())
+	r.eventRecorder = *events.NewDeduplicatingRecorder(r.client.EventRecorder(), 5*time.Minute)
 
 	discoveryClient, err := discovery.NewDiscoveryClientForConfigAndClient(config, mgr.GetHTTPClient())
 	if err != nil {

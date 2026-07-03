@@ -1,0 +1,7 @@
+foo: "{{ .foo }}"
+componentDigest: "{{ componentDigest }}"
+componentRevision: {{ componentRevision }}
+componentState: "{{ component.Status.State }}"
+kubernetesVersion: "{{ kubernetesVersion }}"
+localClusterId: "{{ mustLocalLookup "v1" "Namespace" "" "kube-system" | dig "metadata" "uid" "" }}"
+targetClusterId: "{{ mustLookup "v1" "Namespace" "" "kube-system" | dig "metadata" "uid" "" }}"

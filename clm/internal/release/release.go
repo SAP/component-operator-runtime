@@ -13,6 +13,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	kyaml "sigs.k8s.io/yaml"
 
+	"github.com/sap/component-operator-runtime/internal/util"
 	"github.com/sap/component-operator-runtime/pkg/component"
 	"github.com/sap/component-operator-runtime/pkg/reconciler"
 )
@@ -53,7 +54,7 @@ func (r *Release) GetName() string {
 }
 
 func (r *Release) GetDigest() string {
-	return sha256hex([]byte(fmt.Sprintf("%d", r.Revision)))
+	return util.Sha256hex([]byte(fmt.Sprintf("%d", r.Revision)))
 }
 
 func (r *Release) IsDeleting() bool {
