@@ -26,6 +26,7 @@ import (
 
 // KustomizeGeneratorOptions allows to tweak the behavior of the kustomize generator.
 type KustomizeGeneratorOptions struct {
+	// If defined, only files with the given suffix are considered as templates
 	TemplateSuffix *string
 	// If defined, the given left delimiter will be used to parse go templates; otherwise, defaults to '{{'
 	LeftTemplateDelimiter *string
@@ -138,7 +139,7 @@ func (g *KustomizeGenerator) Generate(ctx context.Context, namespace string, nam
 		ComponentRevision: componentRevision,
 		Namespace:         namespace,
 		Name:              name,
-		Parameters:        parameters.ToUnstructured(),
+		Values:            parameters.ToUnstructured(),
 	}, fsys); err != nil {
 		return nil, err
 	}

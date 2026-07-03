@@ -1,1 +1,4 @@
 rightTemplateDelimiter: ">>"
+values:
+  bar: DefaultBar
+  baz: DefaultBaz

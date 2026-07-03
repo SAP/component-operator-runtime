@@ -124,7 +124,10 @@ var _ = Describe("testing: kustomization.go", func() {
 				Namespace: namespace,
 			},
 			Spec: ComponentSpec{
-				Values: serializeValues(map[string]any{}),
+				Values: serializeValues(map[string]any{
+					"foo": "Foo",
+					"bar": "Bar",
+				}),
 			},
 			Status: component.Status{},
 		}
@@ -137,11 +140,14 @@ var _ = Describe("testing: kustomization.go", func() {
 		Expect(countFiles(fsys)).To(Equal(4))
 
 		Expect(fsys.ReadFile("files/content.txt")).To(ContainSubstring("{{ name }}"))
-		Expect(fsys.ReadFile("README")).To(Equal([]byte("The foo is: bar")))
+		Expect(fsys.ReadFile("README")).To(Equal([]byte("The foo is: Foo")))
 
 		objects, err := runKustomize(fsys, kustomizationPath)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(objects).To(HaveLen(1))
+		Expect(objects[0].Object["data"]).To(HaveKeyWithValue("foo", "Foo"))
+		Expect(objects[0].Object["data"]).To(HaveKeyWithValue("bar", "Bar"))
+		Expect(objects[0].Object["data"]).To(HaveKeyWithValue("baz", "DefaultBaz"))
 	})
 
 	It("should handle template functions correctly", func() {
@@ -238,7 +244,7 @@ func parseAndRender(fspath string, kustomizationPath string, options kustomize.K
 		ComponentRevision: component.Status.Revision,
 		Namespace:         component.Namespace,
 		Name:              component.Name,
-		Parameters:        values,
+		Values:            values,
 	}, fsys)
 	if err != nil {
 		return nil, err
