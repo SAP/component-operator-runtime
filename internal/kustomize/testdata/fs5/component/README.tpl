@@ -1,0 +1,1 @@
+The foo is: {% (include "resources/configmap.yaml.tpl" . | fromYaml).data.foo >>

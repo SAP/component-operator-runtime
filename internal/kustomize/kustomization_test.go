@@ -113,7 +113,7 @@ var _ = Describe("testing: kustomization.go", func() {
 		Expect(objects).To(HaveLen(3))
 	})
 
-	It("should handle options, .component-config.yaml and .component-ignore correctly", func() {
+	It("should handle options, .component-config.yaml and .component-ignore correctly (without kustomization path)", func() {
 		basePath := "testdata/fs4"
 		kustomizationPath := "."
 		name := "test-4"
@@ -150,10 +150,47 @@ var _ = Describe("testing: kustomization.go", func() {
 		Expect(objects[0].Object["data"]).To(HaveKeyWithValue("baz", "DefaultBaz"))
 	})
 
-	It("should handle template functions correctly", func() {
+	It("should handle options, .component-config.yaml and .component-ignore correctly (with kustomization path)", func() {
 		basePath := "testdata/fs5"
-		kustomizationPath := "."
+		kustomizationPath := "component"
 		name := "test-5"
+
+		component := &Component{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      name,
+				Namespace: namespace,
+			},
+			Spec: ComponentSpec{
+				Values: serializeValues(map[string]any{
+					"foo": "Foo",
+					"bar": "Bar",
+				}),
+			},
+			Status: component.Status{},
+		}
+		fsys, err := parseAndRender(basePath, kustomizationPath, kustomize.KustomizationOptions{
+			TemplateSuffix:         new(".tpl"),
+			LeftTemplateDelimiter:  new("{%"),
+			RightTemplateDelimiter: new("%}"),
+		}, component)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(countFiles(fsys)).To(Equal(4))
+
+		Expect(fsys.ReadFile("component/files/content.txt")).To(ContainSubstring("{{ name }}"))
+		Expect(fsys.ReadFile("component/README")).To(Equal([]byte("The foo is: Foo")))
+
+		objects, err := runKustomize(fsys, kustomizationPath)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(objects).To(HaveLen(1))
+		Expect(objects[0].Object["data"]).To(HaveKeyWithValue("foo", "Foo"))
+		Expect(objects[0].Object["data"]).To(HaveKeyWithValue("bar", "Bar"))
+		Expect(objects[0].Object["data"]).To(HaveKeyWithValue("baz", "DefaultBaz"))
+	})
+
+	It("should handle template functions correctly", func() {
+		basePath := "testdata/fs6"
+		kustomizationPath := "."
+		name := "test-6"
 
 		component := &Component{
 			ObjectMeta: metav1.ObjectMeta{
@@ -195,9 +232,9 @@ var _ = Describe("testing: kustomization.go", func() {
 	})
 
 	It("should parse and render an encrypted kustomization", func() {
-		basePath := "testdata/fs6"
+		basePath := "testdata/fs7"
 		kustomizationPath := "."
-		name := "test-6"
+		name := "test-7"
 
 		component := &Component{
 			ObjectMeta: metav1.ObjectMeta{
