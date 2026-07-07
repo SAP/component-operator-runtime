@@ -148,12 +148,12 @@ func parseKustomization(fsys fs.FS, kustomizationPath string, options Kustomizat
 		return nil, fmt.Errorf("path %s is not a directory", kustomizationPath)
 	}
 
-	config, err := readConfig(fsys, filepath.Clean(filepath.Join(kustomizationPath, componentConfigFilename)), &options)
+	config, err := readConfig(fsys, filepath.Join(kustomizationPath, componentConfigFilename), &options)
 	if err != nil {
 		return nil, err
 	}
 
-	ignore, err := readIgnore(fsys, filepath.Clean(filepath.Join(kustomizationPath, componentIgnoreFilename)))
+	ignore, err := readIgnore(fsys, filepath.Join(kustomizationPath, componentIgnoreFilename))
 	if err != nil {
 		return nil, err
 	}
@@ -223,7 +223,7 @@ func parseKustomization(fsys fs.FS, kustomizationPath string, options Kustomizat
 		if filepath.IsAbs(path) {
 			return nil, fmt.Errorf("include path (%s) must not be absolute", path)
 		}
-		absolutePath := filepath.Clean(filepath.Join(kustomizationPath, path))
+		absolutePath := filepath.Join(kustomizationPath, path)
 		if isSubdirectory(absolutePath, kustomizationPath) {
 			return nil, fmt.Errorf("include path (%s) must not be in the kustomization path (%s)", path, kustomizationPath)
 		}
@@ -267,7 +267,7 @@ func parseKustomization(fsys fs.FS, kustomizationPath string, options Kustomizat
 		if filepath.IsAbs(path) {
 			return nil, fmt.Errorf("include path (%s) must be absolute", path)
 		}
-		absolutePath := filepath.Clean(filepath.Join(kustomizationPath, path))
+		absolutePath := filepath.Join(kustomizationPath, path)
 		if isSubdirectory(absolutePath, kustomizationPath) {
 			// this is actually redundant; the same is checked through via visitedKustomizationPaths when calling parseKustomization();
 			// but we keep it to maintain symmetry with the IncludedFiles handling, and because of the better error message
@@ -504,13 +504,11 @@ func readIgnore(fsys fs.FS, path string) (gitignore.Matcher, error) {
 	}
 	defer ignoreFile.Close()
 
-	domain := strings.Split(path, "/")
-	domain = domain[0 : len(domain)-1]
 	scanner := bufio.NewScanner(ignoreFile)
 	for scanner.Scan() {
 		s := scanner.Text()
 		if !strings.HasPrefix(s, "#") && len(strings.TrimSpace(s)) > 0 {
-			patterns = append(patterns, gitignore.ParsePattern(s, domain))
+			patterns = append(patterns, gitignore.ParsePattern(s, nil))
 		}
 	}
 
