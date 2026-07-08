@@ -1,6 +1,6 @@
 module github.com/sap/component-operator-runtime
 
-go 1.26.4
+go 1.26.5
 
 require (
 	github.com/Masterminds/sprig/v3 v3.3.0
@@ -30,7 +30,7 @@ require (
 	sigs.k8s.io/controller-tools v0.20.1
 	sigs.k8s.io/kustomize/api v0.21.1
 	sigs.k8s.io/kustomize/kyaml v0.21.1
-	sigs.k8s.io/structured-merge-diff/v6 v6.4.1
+	sigs.k8s.io/structured-merge-diff/v6 v6.4.2
 	sigs.k8s.io/yaml v1.6.0
 )
 
