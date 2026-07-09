@@ -7,8 +7,6 @@ description: >
   How to get started
 ---
 
-# test
-
 In this short tutorial you will learn how to scaffold a Kubernetes component operator using component-operator-runtime,
 and how to start with the implementation of the operator.
 
