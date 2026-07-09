@@ -24,6 +24,7 @@ import (
 	apitypes "k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/version"
 	"k8s.io/client-go/discovery"
+	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/client-go/util/retry"
@@ -98,7 +99,7 @@ func Run(stdout io.Writer, stderr io.Writer, logger io.Writer) (_ *Environment, 
 	}
 
 	scheme := runtime.NewScheme()
-	corev1.AddToScheme(scheme)
+	clientgoscheme.AddToScheme(scheme)
 	apiextensionsv1.AddToScheme(scheme)
 	apiregistrationv1.AddToScheme(scheme)
 	cstestingv1alpha1.AddToScheme(scheme)
