@@ -64,6 +64,8 @@ github.com/go-git/go-git v4.7.0+incompatible h1:+W9rgGY4DOKKdX2x6HxSR7HNeTxqiKrO
 github.com/go-git/go-git v4.7.0+incompatible/go.mod h1:6+421e08gnZWn30y26Vchf7efgYLe4dl5OQbBSUXShE=
 github.com/go-logr/logr v1.4.3 h1:CjnDlHq8ikf6E492q6eKboGOC0T8CDaOvkHCIg8idEI=
 github.com/go-logr/logr v1.4.3/go.mod h1:9T104GzyrTigFIr8wt5mBrctHMim0Nb2HLGrmQ40KvY=
+github.com/go-logr/logr v1.4.4 h1:tG4xh9yMsRCAiodLVTxyrkzSZ9+o0L1Kg/+cPVcbP/8=
+github.com/go-logr/logr v1.4.4/go.mod h1:9T104GzyrTigFIr8wt5mBrctHMim0Nb2HLGrmQ40KvY=
 github.com/go-logr/stdr v1.2.2 h1:hSWxHoqTgW2S2qGc0LTAI563KZ5YKYRhT3MFKZMbjag=
 github.com/go-logr/stdr v1.2.2/go.mod h1:mMo/vtBO5dYbehREoey6XUKy/eSumjCCveDpRre4VKE=
 github.com/go-logr/zapr v1.3.0 h1:XGdV8XW8zdwFiwOA2Dryh1gj2KRQyOOoNmBy4EplIcQ=
@@ -214,6 +216,8 @@ github.com/sap/go-generics v0.2.65 h1:VTauyr/2mxT45S891iCW0MWdAniOuMR1rYUs5AHyg3
 github.com/sap/go-generics v0.2.65/go.mod h1:BsM47v/Sw2n5Z6z9pasQWVxW+OE79GpPR3hZJGeSI7Q=
 github.com/sap/go-generics v0.2.66 h1:pgP0ggpP15uZBUCfE7kMygk96MaN89XQmK3ghBVqAKU=
 github.com/sap/go-generics v0.2.66/go.mod h1:DAXERYSdB/u0kt/+EOUWMgR7h98s8NbJh46Vz2c4ZpE=
+github.com/sap/go-generics v0.2.67 h1:/SRScIERHVqdLJTO/fCDeQJ8Z5kfsiTUiIP5DEsAN7U=
+github.com/sap/go-generics v0.2.67/go.mod h1:DAXERYSdB/u0kt/+EOUWMgR7h98s8NbJh46Vz2c4ZpE=
 github.com/sergi/go-diff v1.0.0/go.mod h1:0CfEIISq7TuYL3j771MWULgwwjU+GofnZX9QAmXWZgo=
 github.com/sergi/go-diff v1.4.0 h1:n/SP9D5ad1fORl+llWyN+D6qoUETXNZARKjyY2/KVCw=
 github.com/sergi/go-diff v1.4.0/go.mod h1:A0bzQcvG0E7Rwjx0REVgAGH58e96+X0MeOfepqsbeW4=
