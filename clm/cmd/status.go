@@ -67,6 +67,8 @@ func newStatusCmd() *cobra.Command {
 				w := tabwriter.NewWriter(os.Stdout, 0, 0, 3, ' ', 0)
 				fmt.Fprintf(w, "%s:\t%s\t\n", "Namespace", details.Namespace)
 				fmt.Fprintf(w, "%s:\t%s\t\n", "Name", details.Name)
+				fmt.Fprintf(w, "%s:\t%s\t\n", "Target Namespace", details.TargetNamespace)
+				fmt.Fprintf(w, "%s:\t%s\t\n", "Target Name", details.TargetName)
 				fmt.Fprintf(w, "%s:\t%d\t\n", "Revision", details.Revision)
 				fmt.Fprintf(w, "%s:\t%s\t\n", "State", details.State)
 				fmt.Fprintf(w, "%s:\t%d\t\n", "Number of objects", details.NumAllObjects)
