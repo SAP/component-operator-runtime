@@ -1,0 +1,32 @@
+# Hugo build artifacts
+/public/
+/resources/_gen/
+/assets/jsconfig.json
+hugo_stats.json
+
+# Temporary lock file while building
+/.hugo_build.lock
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Node modules (if using npm/yarn for asset processing)
+node_modules/
+
+# Logs
+*.log
+
+# Local configuration
+.env
+.env.local
+
+# Temporary stuff
+/tmp
