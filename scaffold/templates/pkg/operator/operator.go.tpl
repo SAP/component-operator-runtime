@@ -23,8 +23,8 @@ package operator
 
 import (
 	"flag"
+	"fmt"
 
-	legacyerrors "github.com/pkg/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
@@ -114,7 +114,7 @@ func (o *Operator) Setup(mgr ctrl.Manager) error {
 	// Replace this by a real resource generator (e.g. HelmGenerator or KustomizeGenerator, or your own one).
 	resourceGenerator, err := manifests.NewDummyGenerator()
 	if err != nil {
-		return legacyerrors.Wrap(err, "error initializing resource generator")
+		return fmt.Errorf("error initializing resource generator: %w", err)
 	}
 
 	if err := component.NewReconciler[*operator{{ .groupVersion }}.{{ .kind }}](
@@ -122,7 +122,7 @@ func (o *Operator) Setup(mgr ctrl.Manager) error {
 		resourceGenerator,
 		component.ReconcilerOptions{},
 	).SetupWithManager(mgr); err != nil {
-		return legacyerrors.Wrapf(err, "unable to create controller")
+		return fmt.Errorf("unable to create controller: %w", err)
 	}
 
 	{{- if or .validatingWebhookEnabled .mutatingWebhookEnabled }}
