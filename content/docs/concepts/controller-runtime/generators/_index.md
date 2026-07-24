@@ -43,10 +43,20 @@ generators:
 
 Both are passed to `component.NewReconciler[T]()` as the `resourceGenerator` argument.
 
-Additional contextual information (such as a client for the deployment target) can be
-retrieved inside `Generate()` from the passed `context.Context` via the accessor
-functions in package `pkg/component`, for example `component.ClientFromContext()` and
-`component.LocalClientFromContext()`.
+Additional contextual information can be retrieved inside `Generate()` from the passed
+`context.Context` via the accessor functions in package `pkg/component`. Each of them
+returns an error if the requested value is not present in the context:
+
+| Function | Returns | Description |
+|----------|---------|-------------|
+| `ReconcilerNameFromContext(ctx)` | `string` | The name of the reconciler driving the reconciliation. |
+| `LocalClientFromContext(ctx)` | `cluster.Client` | Client for the cluster the component object lives in. |
+| `ClientFromContext(ctx)` | `cluster.Client` | Client for the deployment target cluster (may differ from the local client for remote deployments). |
+| `ComponentFromContext(ctx)` | `Component` | The component object currently being reconciled. |
+| `ComponentNameFromContext(ctx)` | `string` | The name of the component being reconciled. |
+| `ComponentNamespaceFromContext(ctx)` | `string` | The namespace of the component being reconciled. |
+| `ComponentDigestFromContext(ctx)` | `string` | The digest computed for the component's current state. |
+| `ComponentRevisionFromContext(ctx)` | `int64` | The revision counter of the component being reconciled. |
 
 Generators may optionally implement the `SchemeBuilder` interface
 

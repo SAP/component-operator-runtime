@@ -57,6 +57,7 @@ functions, plus functions like `include`, `tpl`, `lookup`, and the following:
 | `readFile <path string>` | Read the given file, relative to the kustomization directory. |
 | `componentDigest` | Return the digest of the component (considering spec, annotations, and references such as secrets). |
 | `componentRevision` | Return the revision of the component; a counter increased whenever a new digest is applied to the cluster. |
+| `component`| Returns the current component object as a whole, as golang struct. |
 | `namespace` | Return the deployment namespace as passed to the generator. |
 | `name` | Return the deployment name as passed to the generator. |
 | `kubernetesVersion` | Return a `*version.Info` [struct](https://pkg.go.dev/k8s.io/apimachinery/pkg/version#Info) with Kubernetes version details about the target. |
