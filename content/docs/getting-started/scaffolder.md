@@ -109,9 +109,16 @@ And start the operator
 ./bin/manager
 ```
 
+It's possible now to apply some `Gizmo` instance:
+
+```bash
+kubectl apply -f examples/sample.yaml
+```
+
 If you are using Visual Studio Code, you can use the generated `./vscode/launch.json` to start the operator from vscode. Note that this requires to copy the kubeconfig into the `./tmp` directory:
 
 ```bash
+mkdir -p tmp
 cp $KUBECONFIG tmp/kubeconfig
 ```
 
@@ -174,6 +181,7 @@ func (g *Generator) Generate(ctx context.Context, namespace string, name string,
 	spec := parameters.(*operatorv1alpha1.GizmoSpec)
 	_ = spec
 
+	// define dependent objects here ...
 	return []client.Object{}, nil
 }
 ```
@@ -181,6 +189,18 @@ func (g *Generator) Generate(ctx context.Context, namespace string, name string,
 And replace the ` manifests.NewDummyGenerator()` invocation above by `generator.New()`.
 
 Now you have full control and can construct your dependent objects in whatever way you want.
+
+Whenever types in `./api` are changed, you should re-run
+
+```bash
+make generate manifests
+```
+
+and re-apply the CRDs to the cluster:
+
+```bash
+kubectl apply -f crds
+```
 
 ### Embed an Existing Helm Chart
 

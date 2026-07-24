@@ -102,7 +102,7 @@ namespace. `SOURCE` can be one or more local directories or YAML files.
 # Apply a downloaded Helm chart with a custom values file
 # helm pull oci://ghcr.io/stefanprodan/charts/podinfo --untar --untardir /tmp
 # echo "replicaCount: 2" > /tmp/podinfo-values.yaml
-clm -n podinfo apply --create-namespace podinfo /tmp/podinfo -f podinfo-values.yaml
+clm -n podinfo apply --create-namespace podinfo /tmp/podinfo -f /tmp/podinfo-values.yaml
 
 # Apply a plain YAML file
 # curl -f -L -o /tmp/cert-manager.yaml https://github.com/cert-manager/cert-manager/releases/download/v1.21.0/cert-manager.yaml
