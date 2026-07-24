@@ -57,7 +57,7 @@ func Generate(manifestSources []string, valuesSources []string, reconcilerName s
 		}
 
 		if info, err := os.Stat(source); err != nil {
-			if os.IsNotExist(err) {
+			if errors.Is(err, fs.ErrNotExist) {
 				return nil, fmt.Errorf("no such file or directory: %s", source)
 			} else {
 				return nil, err
@@ -75,7 +75,7 @@ func Generate(manifestSources []string, valuesSources []string, reconcilerName s
 				return nil, err
 			}
 			fsys = os.DirFS(tmpdir)
-			path = ""
+			path = "."
 		}
 
 		var generator manifests.Generator
