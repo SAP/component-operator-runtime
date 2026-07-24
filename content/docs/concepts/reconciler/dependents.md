@@ -121,7 +121,7 @@ See [Enhanced Status Detection](../status-detection/).
 Whether the reconciler emits Kubernetes events on the object (such as created, updated,
 or deleted) while managing it. Set to `true` to suppress events for this particular
 object. This is the per-object counterpart of the reconciler-wide
-`ReconcilerOptions.DisableEvents`; if events are already disabled globally, this
+`ReconcilerOptions.EnableEvents`; if events are already disabled globally, this
 annotation has no additional effect.
 
 See [Reconciler Options](../overview/#reconcileroptions).

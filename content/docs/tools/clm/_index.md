@@ -37,8 +37,8 @@ subcommands, and `clm <subcommand> -h` for the details of an individual subcomma
 
 `clm` auto-detects the format of each source directory or file:
 
-| Source  | Generator used |
-|--------|-----------|----------------|
+| Source | Generator used |
+|--------|----------------|
 | Directory containing `Chart.yaml` | [Helm Generator](../../concepts/controller-runtime/generators/helm/) |
 | Any other directory | [Kustomize Generator](../../concepts/controller-runtime/generators/kustomize/) |
 | Single file | [Kustomize Generator](../../concepts/controller-runtime/generators/kustomize/) |

@@ -19,7 +19,7 @@ on GitHub.
 
 When reporting a bug, include:
 
-- A clear description of the problem and the expected behaviour.
+- A clear description of the problem and the expected behavior.
 - The version of component-operator-runtime you are building against (the
   `github.com/sap/component-operator-runtime` entry in your `go.mod`).
 - The Go and Kubernetes versions you are using.

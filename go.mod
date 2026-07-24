@@ -1,4 +1,4 @@
-module github.com/sap/component-operator
+module github.com/sap/component-operator-runtime
 
 go 1.26.3
 
