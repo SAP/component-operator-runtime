@@ -33,7 +33,7 @@ proxy = "direct"
 
 [params]
   github_repo = "https://github.com/sap/component-operator-runtime"
-  github_branch = "main"
+  github_branch = "website"
   offlineSearch = true
   copyright = "SAP Cloud Solutions - DevOps"
 
