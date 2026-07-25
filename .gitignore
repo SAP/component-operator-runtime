@@ -28,9 +28,3 @@ testbin/*
 
 # temp stuff
 /tmp
-
-# Hugo artifacts
-.hugo_build.lock
-/website/resources
-/website/node_modules
-/website/public
