@@ -14,6 +14,73 @@ title: "Component Operator Runtime"
       Build Kubernetes Component Operators
     </p>
     
+    <div class="hero-code-row" style="display: flex; flex-wrap: wrap; gap: 1.5rem; justify-content: center; align-items: stretch; max-width: 100%; margin: 0 auto 3rem auto;">
+      <div class="hero-code" onclick="window.location.href='docs/concepts/controller-runtime/components/'" style="width: 29.16rem; max-width: 100%; box-sizing: border-box; text-align: left; background: rgba(8, 20, 38, 0.55); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); border: 1px solid rgba(120, 170, 255, 0.25); border-radius: 12px; box-shadow: 0 16px 40px rgba(0, 0, 0, 0.45); overflow: hidden;">
+        <pre style="margin: 0; padding: 0.729rem 0.8748rem; overflow-x: auto; background: transparent;"><code class="hero-go"><span class="c">// Component is the central interface that component operators have to implement.</span>
+<span class="k">type</span> <span class="t">Component</span> <span class="k">interface</span> {
+    client.<span class="t">Object</span>
+    <span class="c">// Return a read-only accessor to the component's spec.</span>
+    <span class="f">GetSpec</span>() types.<span class="t">Unstructurable</span>
+    <span class="c">// Return a read-write (usually a pointer) accessor to the component's status,</span>
+    <span class="f">GetStatus</span>() *<span class="t">Status</span>
+}
+
+<span class="c">// Reconciler provides the implementation of controller-runtime's Reconciler interface,</span>
+<span class="c">// for a given Component type T.</span>
+<span class="k">type</span> <span class="t">Reconciler</span>[<span class="t">T</span> <span class="t">Component</span>] <span class="k">struct</span> {
+    <span class="c">// ...</span>
+}
+
+<span class="c">// Reconcile the given component by applying its dependent resources to the target cluster.</span>
+<span class="k">func</span> (r *<span class="t">Reconciler</span>[<span class="t">T</span>]) <span class="f">Reconcile</span>(ctx context.<span class="t">Context</span>, req ctrl.<span class="t">Request</span>) (ctrl.<span class="t">Result</span>, <span class="t">error</span>) {
+    <span class="c">// ...</span>
+}</code></pre>
+      </div>
+      <div class="hero-code" onclick="window.location.href='docs/concepts/controller-runtime/generators/'" style="width: 29.16rem; max-width: 100%; box-sizing: border-box; text-align: left; background: rgba(8, 20, 38, 0.55); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); border: 1px solid rgba(120, 170, 255, 0.25); border-radius: 12px; box-shadow: 0 16px 40px rgba(0, 0, 0, 0.45); overflow: hidden;">
+        <pre style="margin: 0; padding: 0.729rem 0.8748rem; overflow-x: auto; background: transparent;"><code class="hero-go"><span class="c">// Resource generator interface.</span>
+<span class="k">type</span> <span class="t">Generator</span> <span class="k">interface</span> {
+    <span class="c">// Generate manifests of the dependent resources.</span>
+    <span class="f">Generate</span>(ctx context.<span class="t">Context</span>, namespace <span class="t">string</span>, name <span class="t">string</span>,
+        parameters types.<span class="t">Unstructurable</span>) ([]client.<span class="t">Object</span>, <span class="t">error</span>)
+}
+
+<span class="c">// Create a new HelmGenerator.</span>
+<span class="k">func</span> <span class="f">NewHelmGenerator</span>(fsys fs.<span class="t">FS</span>, chartPath <span class="t">string</span>) (*<span class="t">HelmGenerator</span>, <span class="t">error</span>) {
+    <span class="c">// ...</span>
+}
+
+<span class="c">// Create a new KustomizeGenerator.</span>
+<span class="k">func</span> <span class="f">NewKustomizeGenerator</span>(fsys fs.<span class="t">FS</span>, kustomizationPath <span class="t">string</span>,
+    options <span class="t">KustomizeGeneratorOptions</span>) (*<span class="t">KustomizeGenerator</span>, <span class="t">error</span>) {
+    <span class="c">// ...</span>
+}</code></pre>
+      </div>
+      <div class="hero-code" onclick="window.location.href='docs/concepts/reconciler/'" style="width: 29.16rem; max-width: 100%; box-sizing: border-box; text-align: left; background: rgba(8, 20, 38, 0.55); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); border: 1px solid rgba(120, 170, 255, 0.25); border-radius: 12px; box-shadow: 0 16px 40px rgba(0, 0, 0, 0.45); overflow: hidden;">
+        <pre style="margin: 0; padding: 0.729rem 0.8748rem; overflow-x: auto; background: transparent;"><code class="hero-go"><span class="c">// The low-level Reconciler manages specified objects in the given target cluster.</span>
+<span class="k">type</span> <span class="t">Reconciler</span> <span class="k">struct</span> {
+    <span class="c">// ...</span>
+}
+
+<span class="c">// Apply given object manifests to the target cluster and maintain inventory.</span>
+<span class="k">func</span> (r *<span class="t">Reconciler</span>) <span class="f">Apply</span>(ctx context.<span class="t">Context</span>, inventory *[]*<span class="t">InventoryItem</span>, objects []client.<span class="t">Object</span>,
+    namespace <span class="t">string</span>, ownerId <span class="t">string</span>, componentDigest <span class="t">string</span>) (<span class="t">bool</span>, <span class="t">error</span>) {
+    <span class="c">// ...</span>
+}
+
+<span class="c">// Delete objects stored in the inventory from the target cluster and maintain inventory.</span>
+<span class="k">func</span> (r *<span class="t">Reconciler</span>) <span class="f">Delete</span>(ctx context.<span class="t">Context</span>, inventory *[]*<span class="t">InventoryItem</span>,
+    ownerId <span class="t">string</span>) (<span class="t">bool</span>, <span class="t">error</span>) {
+    <span class="c">// ...</span>
+}
+
+<span class="c">// Check if the object set defined by inventory is ready for deletion.</span>
+<span class="k">func</span> (r *<span class="t">Reconciler</span>) <span class="f">IsDeletionAllowed</span>(ctx context.<span class="t">Context</span>, inventory *[]*<span class="t">InventoryItem</span>,
+    ownerId <span class="t">string</span>) (<span class="t">bool</span>, <span class="t">string</span>, <span class="t">error</span>) {
+    <span class="c">// ...</span>
+}</code></pre>
+      </div>
+    </div>
+    
     <div class="scroll-arrow" style="margin-top: 4rem; animation: bounce 2s infinite;">
       <a href="#features" style="text-decoration: none;">
         <i class="fa-solid fa-circle-chevron-down" style="color: #e0f2ff; font-size: 3rem;"></i>
@@ -23,6 +90,44 @@ title: "Component Operator Runtime"
 </div>
 
 <style>
+.hero-go {
+  font-family: 'SFMono-Regular', 'Menlo', 'Consolas', 'Courier New', monospace;
+  font-size: 0.4374rem;
+  line-height: 1.25 !important;
+  color: #c9d1d9;
+  white-space: pre;
+}
+
+.hero-code pre,
+.hero-code code {
+  line-height: 1.25 !important;
+  margin: 0 !important;
+}
+
+.hero-code {
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+
+.hero-code:hover {
+  transform: scale(1.4);
+  z-index: 3;
+  position: relative;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
+  cursor: pointer;
+}
+
+.hero-go .c { color: #8b949e; font-style: italic; }
+.hero-go .k { color: #ff7b72; }
+.hero-go .t { color: #79c0ff; }
+.hero-go .f { color: #d2a8ff; }
+
+.hero-code pre::-webkit-scrollbar { height: 8px; }
+.hero-code pre::-webkit-scrollbar-thumb { background: rgba(120, 170, 255, 0.3); border-radius: 4px; }
+
+@media (max-width: 640px) {
+  .hero-go { font-size: 0.3645rem; }
+}
+
 @keyframes bounce {
   0%, 20%, 50%, 80%, 100% {
     transform: translateY(0);
