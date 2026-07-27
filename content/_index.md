@@ -16,6 +16,7 @@ title: "Component Operator Runtime"
     
     <div class="hero-code-row" style="display: flex; flex-wrap: wrap; gap: 1.5rem; justify-content: center; align-items: stretch; max-width: 100%; margin: 0 auto 3rem auto;">
       <div class="hero-code" onclick="window.location.href='docs/concepts/controller-runtime/components/'" style="width: 29.16rem; max-width: 100%; box-sizing: border-box; text-align: left; background: rgba(8, 20, 38, 0.55); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); border: 1px solid rgba(120, 170, 255, 0.25); border-radius: 12px; box-shadow: 0 16px 40px rgba(0, 0, 0, 0.45); overflow: hidden;">
+        <div class="hero-code-title">Reconcile Generic Components</div>
         <pre style="margin: 0; padding: 0.729rem 0.8748rem; overflow-x: auto; background: transparent;"><code class="hero-go"><span class="c">// Component is the central interface that component operators have to implement.</span>
 <span class="k">type</span> <span class="t">Component</span> <span class="k">interface</span> {
     client.<span class="t">Object</span>
@@ -37,6 +38,7 @@ title: "Component Operator Runtime"
 }</code></pre>
       </div>
       <div class="hero-code" onclick="window.location.href='docs/concepts/controller-runtime/generators/'" style="width: 29.16rem; max-width: 100%; box-sizing: border-box; text-align: left; background: rgba(8, 20, 38, 0.55); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); border: 1px solid rgba(120, 170, 255, 0.25); border-radius: 12px; box-shadow: 0 16px 40px rgba(0, 0, 0, 0.45); overflow: hidden;">
+        <div class="hero-code-title">Generate Manifests</div>
         <pre style="margin: 0; padding: 0.729rem 0.8748rem; overflow-x: auto; background: transparent;"><code class="hero-go"><span class="c">// Resource generator interface.</span>
 <span class="k">type</span> <span class="t">Generator</span> <span class="k">interface</span> {
     <span class="c">// Generate manifests of the dependent resources.</span>
@@ -56,6 +58,7 @@ title: "Component Operator Runtime"
 }</code></pre>
       </div>
       <div class="hero-code" onclick="window.location.href='docs/concepts/reconciler/'" style="width: 29.16rem; max-width: 100%; box-sizing: border-box; text-align: left; background: rgba(8, 20, 38, 0.55); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); border: 1px solid rgba(120, 170, 255, 0.25); border-radius: 12px; box-shadow: 0 16px 40px rgba(0, 0, 0, 0.45); overflow: hidden;">
+        <div class="hero-code-title">Apply and Delete Dependents</div>
         <pre style="margin: 0; padding: 0.729rem 0.8748rem; overflow-x: auto; background: transparent;"><code class="hero-go"><span class="c">// The low-level Reconciler manages specified objects in the given target cluster.</span>
 <span class="k">type</span> <span class="t">Reconciler</span> <span class="k">struct</span> {
     <span class="c">// ...</span>
@@ -114,6 +117,21 @@ title: "Component Operator Runtime"
   position: relative;
   box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
   cursor: pointer;
+}
+
+.hero-code-title {
+  padding: 0.5rem 0.8748rem;
+  background: rgba(255, 255, 255, 0.05);
+  border-bottom: 1px solid rgba(120, 170, 255, 0.2);
+  color: #cfe0ff;
+  font-size: 0.55rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  font-family: 'SFMono-Regular', 'Menlo', 'Consolas', 'Courier New', monospace;
+}
+
+@media (max-width: 640px) {
+  .hero-code-title { font-size: 0.46rem; }
 }
 
 .hero-go .c { color: #8b949e; font-style: italic; }
