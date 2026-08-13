@@ -14,10 +14,10 @@ title: "Component Operator Runtime"
       Build Kubernetes Component Operators
     </p>
     
-    <div class="hero-code-row" style="display: flex; flex-wrap: wrap; gap: 1.5rem; justify-content: center; align-items: stretch; max-width: 100%; margin: 0 auto 3rem auto;">
-      <div class="hero-code" onclick="window.location.href='docs/concepts/controller-runtime/components/'" style="width: 29.16rem; max-width: 100%; box-sizing: border-box; text-align: left; background: rgba(8, 20, 38, 0.55); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); border: 1px solid rgba(120, 170, 255, 0.25); border-radius: 12px; box-shadow: 0 16px 40px rgba(0, 0, 0, 0.45); overflow: hidden;">
+    <div class="hero-code-row">
+      <div class="hero-code" onclick="window.location.href='docs/concepts/controller-runtime/components/'">
         <div class="hero-code-title">Reconcile Generic Components</div>
-        <pre style="margin: 0; padding: 0.729rem 0.8748rem; overflow-x: auto; background: transparent;"><code class="hero-go"><span class="c">// Component is the central interface that component operators have to implement.</span>
+        <pre><code class="hero-go"><span class="c">// Component is the central interface that component operators have to implement.</span>
 <span class="k">type</span> <span class="t">Component</span> <span class="k">interface</span> {
     client.<span class="t">Object</span>
     <span class="c">// Return a read-only accessor to the component's spec.</span>
@@ -37,9 +37,9 @@ title: "Component Operator Runtime"
     <span class="c">// ...</span>
 }</code></pre>
       </div>
-      <div class="hero-code" onclick="window.location.href='docs/concepts/controller-runtime/generators/'" style="width: 29.16rem; max-width: 100%; box-sizing: border-box; text-align: left; background: rgba(8, 20, 38, 0.55); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); border: 1px solid rgba(120, 170, 255, 0.25); border-radius: 12px; box-shadow: 0 16px 40px rgba(0, 0, 0, 0.45); overflow: hidden;">
+      <div class="hero-code" onclick="window.location.href='docs/concepts/controller-runtime/generators/'">
         <div class="hero-code-title">Generate Manifests</div>
-        <pre style="margin: 0; padding: 0.729rem 0.8748rem; overflow-x: auto; background: transparent;"><code class="hero-go"><span class="c">// Resource generator interface.</span>
+        <pre><code class="hero-go"><span class="c">// Resource generator interface.</span>
 <span class="k">type</span> <span class="t">Generator</span> <span class="k">interface</span> {
     <span class="c">// Generate manifests of the dependent resources.</span>
     <span class="f">Generate</span>(ctx context.<span class="t">Context</span>, namespace <span class="t">string</span>, name <span class="t">string</span>,
@@ -57,9 +57,9 @@ title: "Component Operator Runtime"
     <span class="c">// ...</span>
 }</code></pre>
       </div>
-      <div class="hero-code" onclick="window.location.href='docs/concepts/reconciler/'" style="width: 29.16rem; max-width: 100%; box-sizing: border-box; text-align: left; background: rgba(8, 20, 38, 0.55); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); border: 1px solid rgba(120, 170, 255, 0.25); border-radius: 12px; box-shadow: 0 16px 40px rgba(0, 0, 0, 0.45); overflow: hidden;">
+      <div class="hero-code" onclick="window.location.href='docs/concepts/reconciler/'">
         <div class="hero-code-title">Apply and Delete Dependents</div>
-        <pre style="margin: 0; padding: 0.729rem 0.8748rem; overflow-x: auto; background: transparent;"><code class="hero-go"><span class="c">// The low-level Reconciler manages specified objects in the given target cluster.</span>
+        <pre><code class="hero-go"><span class="c">// The low-level Reconciler manages specified objects in the given target cluster.</span>
 <span class="k">type</span> <span class="t">Reconciler</span> <span class="k">struct</span> {
     <span class="c">// ...</span>
 }
@@ -93,9 +93,28 @@ title: "Component Operator Runtime"
 </div>
 
 <style>
+/*
+ * --u is a single "unit" length that drives the whole hero code row: font size,
+ * card width, gaps and paddings are all expressed as multiples of it. It scales
+ * with the viewport width (capped at 7px) so the three cards shrink together and
+ * stay on one line on wide screens. Once the viewport gets too narrow (see the
+ * max-width: 1100px media query below) the row switches to a single, vertically
+ * stacked column with a readable font instead of shrinking further.
+ */
+.hero-code-row {
+  --u: clamp(3px, calc((100vw - 40px) / 215), 7px);
+  display: flex;
+  flex-wrap: wrap;
+  gap: calc(var(--u) * 3.43);
+  justify-content: center;
+  align-items: stretch;
+  max-width: 100%;
+  margin: 0 auto 3rem auto;
+}
+
 .hero-go {
   font-family: 'SFMono-Regular', 'Menlo', 'Consolas', 'Courier New', monospace;
-  font-size: 0.4374rem;
+  font-size: var(--u);
   line-height: 1.25 !important;
   color: #c9d1d9;
   white-space: pre;
@@ -107,31 +126,46 @@ title: "Component Operator Runtime"
   margin: 0 !important;
 }
 
+.hero-code pre {
+  padding: calc(var(--u) * 1.667) calc(var(--u) * 2);
+  overflow-x: auto;
+  background: transparent;
+}
+
 .hero-code {
+  width: calc(var(--u) * 66.67);
+  max-width: 100%;
+  box-sizing: border-box;
+  text-align: left;
+  background: rgba(8, 20, 38, 0.55);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid rgba(120, 170, 255, 0.25);
+  border-radius: 12px;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.45);
+  overflow: hidden;
   transition: transform 0.3s ease, box-shadow 0.3s ease;
 }
 
-.hero-code:hover {
-  transform: scale(1.4);
-  z-index: 3;
-  position: relative;
-  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
-  cursor: pointer;
+@media (hover: hover) and (pointer: fine) {
+  .hero-code:hover {
+    transform: scale(1.4);
+    z-index: 3;
+    position: relative;
+    box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
+    cursor: pointer;
+  }
 }
 
 .hero-code-title {
-  padding: 0.5rem 0.8748rem;
+  padding: calc(var(--u) * 1.143) calc(var(--u) * 2);
   background: rgba(255, 255, 255, 0.05);
   border-bottom: 1px solid rgba(120, 170, 255, 0.2);
   color: #cfe0ff;
-  font-size: 0.55rem;
+  font-size: calc(var(--u) * 1.257);
   font-weight: 600;
   letter-spacing: 0.02em;
   font-family: 'SFMono-Regular', 'Menlo', 'Consolas', 'Courier New', monospace;
-}
-
-@media (max-width: 640px) {
-  .hero-code-title { font-size: 0.46rem; }
 }
 
 .hero-go .c { color: #8b949e; font-style: italic; }
@@ -142,8 +176,58 @@ title: "Component Operator Runtime"
 .hero-code pre::-webkit-scrollbar { height: 8px; }
 .hero-code pre::-webkit-scrollbar-thumb { background: rgba(120, 170, 255, 0.3); border-radius: 4px; }
 
-@media (max-width: 640px) {
-  .hero-go { font-size: 0.3645rem; }
+/*
+ * Below 1100px three side-by-side cards would force the shared font too small,
+ * so switch the row to a single vertical column of full-width cards with a
+ * comfortably readable font.
+ */
+@media (max-width: 1100px) {
+  .hero-code-row {
+    flex-direction: column;
+    flex-wrap: nowrap;
+    align-items: center;
+    gap: 1.5rem;
+    margin-bottom: 2.5rem;
+    width: min(52rem, calc(100vw - 40px));
+  }
+  .hero-code {
+    width: 100%;
+    max-width: 52rem;
+  }
+  .hero-go { font-size: 0.8rem; }
+  .hero-code pre { padding: 0.75rem 1rem; }
+  .hero-code-title { font-size: 0.95rem; padding: 0.6rem 1rem; }
+}
+
+@media (max-width: 768px) {
+  .hero-section {
+    min-height: auto !important;
+    padding: 3rem 1rem !important;
+  }
+  .hero-content img {
+    max-width: 130px !important;
+    margin-bottom: 1.5rem !important;
+  }
+  .hero-content h1 {
+    font-size: 2rem !important;
+    margin-bottom: 1rem !important;
+  }
+  .hero-content p {
+    font-size: 1.1rem !important;
+    margin-bottom: 2rem !important;
+  }
+  .hero-code-row {
+    gap: 1rem !important;
+    margin-bottom: 2rem !important;
+  }
+  /* Slightly smaller font on phones, where cards are already full width. */
+  .hero-go { font-size: 0.75rem !important; }
+  .hero-code pre { padding: 0.75rem 1rem !important; }
+  .hero-code-title { font-size: 0.85rem !important; padding: 0.6rem 1rem !important; }
+  .scroll-arrow { margin-top: 2rem !important; }
+  .scroll-arrow i { font-size: 2.25rem !important; }
+  .feature-tiles { padding: 2.5rem 1rem !important; gap: 1.25rem !important; }
+  .tile { padding: 1.5rem !important; }
 }
 
 @keyframes bounce {
