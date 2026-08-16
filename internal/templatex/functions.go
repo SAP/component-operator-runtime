@@ -15,6 +15,7 @@ import (
 	"strconv"
 	"strings"
 	"text/template"
+	"time"
 
 	"github.com/sap/go-generics/slices"
 	"github.com/spf13/cast"
@@ -26,6 +27,8 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	kyaml "sigs.k8s.io/yaml"
+
+	"github.com/sap/component-operator-runtime/pkg/types"
 )
 
 // TODO: review the usage of the cast.To* function; they seem to be a little unsafe (e.g. with range overflows)
@@ -50,6 +53,7 @@ func FuncMap() template.FuncMap {
 		"fromJsonArray":            fromJsonArray,
 		"mustFromJsonArray":        fromJsonArray,
 		"required":                 required,
+		"failRetriable":            failRetriable,
 		"bitwiseShiftLeft":         bitwiseShiftLeft,
 		"bitwiseShiftRight":        bitwiseShiftRight,
 		"bitwiseAnd":               bitwiseAnd,
@@ -165,6 +169,15 @@ func required(warn string, data any) (any, error) {
 		}
 	}
 	return data, nil
+}
+
+func failRetriable(after string, msg string) (string, error) {
+	retryAfter, err := time.ParseDuration(after)
+	if err != nil {
+		// TODO: we could even panic here ...
+		return "", err
+	}
+	return "", types.NewRetriableError(errors.New(msg), &retryAfter)
 }
 
 func bitwiseShiftLeft(by any, arg any) (uint64, error) {
