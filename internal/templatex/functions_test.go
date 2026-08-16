@@ -18,6 +18,8 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	. "github.com/onsi/gomega/gcustom"
+
+	"github.com/sap/component-operator-runtime/pkg/types"
 )
 
 var _ = Describe("testing: functions.go", func() {
@@ -310,6 +312,21 @@ var _ = Describe("testing: functions.go", func() {
 			res, err := required("input is required", inp)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(res == inp).To(BeTrue())
+		})
+
+	})
+
+	Describe("testing: failRetriable", func() {
+
+		It("should return a retriable error", func() {
+			res, err := failRetriable("5s", "test error")
+			Expect(res).To(Equal(""))
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(Equal("test error"))
+			Expect(err).To(BeAssignableToTypeOf(types.RetriableError{}))
+			retryAfter := err.(types.RetriableError).RetryAfter()
+			Expect(retryAfter).NotTo(BeNil())
+			Expect(*retryAfter).To(Equal(5 * time.Second))
 		})
 
 	})
