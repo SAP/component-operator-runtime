@@ -34,6 +34,7 @@ functions, plus functions like `include`, `tpl`, `lookup`, and the following:
 | `fromJsonArray <input string>` | Parse JSON string to array. |
 | `mustFromJsonArray <input string>` | Same as `fromJsonArray`. |
 | `required <warn string, input any>` | Fail with the given error message if the input is `nil` or converts to an empty string. |
+| `failRetriable <after string, msg string>` | Fail with the given error message, but, other thany by `fail`, raise a `RetriableError`. | 
 | `bitwiseShiftLeft <by any, input any>` | Perform a bitwise left shift on the input by the given number of places. |
 | `bitwiseShiftRight <by any, input any>` | Perform a bitwise right shift on the input by the given number of places. |
 | `bitwiseAnd <input ...any>` | Perform a bitwise logical 'and' on the inputs. |
