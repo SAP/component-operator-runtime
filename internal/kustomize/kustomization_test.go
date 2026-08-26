@@ -221,7 +221,8 @@ var _ = Describe("testing: kustomization.go", func() {
 		Expect(result["componentDigest"]).To(BeEquivalentTo(component.Status.ProcessingDigest))
 		Expect(result["componentRevision"]).To(BeEquivalentTo(component.Status.Revision))
 		Expect(result["componentState"]).To(BeEquivalentTo(component.Status.State))
-		Expect(result["kubernetesVersion"]).To(Equal(targetEnv.Version().String()))
+		Expect(result["localKubernetesVersion"]).To(Equal(localEnv.Version().String()))
+		Expect(result["targetKubernetesVersion"]).To(Equal(targetEnv.Version().String()))
 		// TODO: add a test for the apiResources function
 		Expect(result["localClusterId"]).To(Equal(localEnv.Id()))
 		Expect(result["targetClusterId"]).To(Equal(targetEnv.Id()))
@@ -273,15 +274,16 @@ func parseAndRender(fspath string, kustomizationPath string, options kustomize.K
 	}
 
 	err = kustomization.Render(kustomize.RenderContext{
-		LocalClient:       localEnv.Client(),
-		Client:            targetEnv.Client(),
-		DiscoveryClient:   targetEnv.DiscoveryClient(),
-		Component:         component,
-		ComponentDigest:   component.Status.ProcessingDigest,
-		ComponentRevision: component.Status.Revision,
-		Namespace:         component.Namespace,
-		Name:              component.Name,
-		Values:            values,
+		LocalClient:          localEnv.Client(),
+		LocalDiscoveryClient: localEnv.DiscoveryClient(),
+		Client:               targetEnv.Client(),
+		DiscoveryClient:      targetEnv.DiscoveryClient(),
+		Component:            component,
+		ComponentDigest:      component.Status.ProcessingDigest,
+		ComponentRevision:    component.Status.Revision,
+		Namespace:            component.Namespace,
+		Name:                 component.Name,
+		Values:               values,
 	}, fsys)
 	if err != nil {
 		return nil, err

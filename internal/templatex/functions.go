@@ -53,6 +53,7 @@ func FuncMap() template.FuncMap {
 		"fromJsonArray":            fromJsonArray,
 		"mustFromJsonArray":        fromJsonArray,
 		"required":                 required,
+		"selectBy":                 selectBy,
 		"failRetriable":            failRetriable,
 		"bitwiseShiftLeft":         bitwiseShiftLeft,
 		"bitwiseShiftRight":        bitwiseShiftRight,
@@ -169,6 +170,21 @@ func required(warn string, data any) (any, error) {
 		}
 	}
 	return data, nil
+}
+
+func selectBy(key string, value any, data []any) map[string]any {
+	for _, x := range data {
+		if x, ok := x.(map[string]any); ok {
+			if v, ok := x[key]; ok {
+				if v, ok := v.(string); ok {
+					if v == value {
+						return x
+					}
+				}
+			}
+		}
+	}
+	return nil
 }
 
 func failRetriable(after string, msg string) (string, error) {

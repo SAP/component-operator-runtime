@@ -54,6 +54,8 @@ type KustomizationOptions struct {
 	RightTemplateDelimiter *string
 	// If defined, used to decrypt files
 	Decryptor manifests.Decryptor
+	// If defined, used to provide additional template functions
+	AdditionalTemplateFuncs template.FuncMap
 }
 
 type KustomizationConfiguration struct {
@@ -72,15 +74,16 @@ type KustomizationConfiguration struct {
 }
 
 type RenderContext struct {
-	LocalClient       client.Client
-	Client            client.Client
-	DiscoveryClient   discovery.DiscoveryInterface
-	Component         component.Component
-	ComponentDigest   string
-	ComponentRevision int64
-	Namespace         string
-	Name              string
-	Values            map[string]any
+	LocalClient          client.Client
+	LocalDiscoveryClient discovery.DiscoveryInterface
+	Client               client.Client
+	DiscoveryClient      discovery.DiscoveryInterface
+	Component            component.Component
+	ComponentDigest      string
+	ComponentRevision    int64
+	Namespace            string
+	Name                 string
+	Values               map[string]any
 }
 
 type Kustomization struct {
@@ -111,8 +114,6 @@ type Kustomization struct {
 // Alternative template delimiters (other than {{ and }}) can be specified in the effective options. If no alternative delimiters are specified,
 // then the default delimiters are used. All files in kustomizationPath (plus those in includedFiles) are subject to the given decryptor,
 // if prsesent.
-
-// TODO: add a way to pass custom template functions
 
 func ParseKustomization(fsys fs.FS, kustomizationPath string, options KustomizationOptions) (*Kustomization, error) {
 	kustomization, err := parseKustomization(fsys, kustomizationPath, options, nil)
@@ -199,12 +200,13 @@ func parseKustomization(fsys fs.FS, kustomizationPath string, options Kustomizat
 				t = template.New(name)
 				t.Delims(*config.LeftTemplateDelimiter, *config.RightTemplateDelimiter)
 				t.Option("missingkey=zero").
+					Funcs(options.AdditionalTemplateFuncs).
 					Funcs(sprig.TxtFuncMap()).
 					Funcs(templatex.FuncMap()).
 					Funcs(templatex.FuncMapForTemplate(nil)).
 					Funcs(templatex.FuncMapForLocalClient(nil)).
 					Funcs(templatex.FuncMapForClient(nil)).
-					Funcs(funcMapForContext(nil, nil, nil, nil, "", 0, "", ""))
+					Funcs(funcMapForContext(nil, nil, nil, nil, nil, nil, "", 0, "", ""))
 			} else {
 				t = t.New(name)
 			}
@@ -288,6 +290,16 @@ func (k *Kustomization) Path() string {
 }
 
 func (k *Kustomization) Render(context RenderContext, fsys kustfsys.FileSystem) error {
+	localServerVersion, err := context.LocalDiscoveryClient.ServerVersion()
+	if err != nil {
+		return err
+	}
+	_, localServerGroupsWithResources, err := context.LocalDiscoveryClient.ServerGroupsAndResources()
+	if err != nil {
+		return err
+	}
+	localServerGroupsWithResources = normalizeServerGroupsWithResources(localServerGroupsWithResources)
+
 	serverVersion, err := context.DiscoveryClient.ServerVersion()
 	if err != nil {
 		return err
@@ -317,7 +329,7 @@ func (k *Kustomization) Render(context RenderContext, fsys kustfsys.FileSystem) 
 				Funcs(templatex.FuncMapForTemplate(t0)).
 				Funcs(templatex.FuncMapForLocalClient(context.LocalClient)).
 				Funcs(templatex.FuncMapForClient(context.Client)).
-				Funcs(funcMapForContext(k.files, serverVersion, serverGroupsWithResources, context.Component, context.ComponentDigest, context.ComponentRevision, context.Namespace, context.Name))
+				Funcs(funcMapForContext(k.files, localServerVersion, localServerGroupsWithResources, serverVersion, serverGroupsWithResources, context.Component, context.ComponentDigest, context.ComponentRevision, context.Namespace, context.Name))
 		}
 		var buf bytes.Buffer
 		// TODO: templates (accidentally or intentionally) could modify data, or even some of the objects supplied through builtin functions;
@@ -357,20 +369,22 @@ func (k *Kustomization) Render(context RenderContext, fsys kustfsys.FileSystem) 
 	return nil
 }
 
-func funcMapForContext(files map[string][]byte, serverInfo *version.Info, serverGroupsWithResources []*metav1.APIResourceList, component component.Component, componentDigest string, componentRevision int64, namespace string, name string) template.FuncMap {
+func funcMapForContext(files map[string][]byte, localServerInfo *version.Info, localServerGroupsWithResources []*metav1.APIResourceList, serverInfo *version.Info, serverGroupsWithResources []*metav1.APIResourceList, component component.Component, componentDigest string, componentRevision int64, namespace string, name string) template.FuncMap {
 	return template.FuncMap{
 		// TODO: maybe it would it be better to convert component to unstructured;
 		// then calling methods would no longer be possible, and attributes would be in lowercase
-		"listFiles":         makeFuncListFiles(files),
-		"existsFile":        makeFuncExistsFile(files),
-		"readFile":          makeFuncReadFile(files),
-		"component":         makeFuncData(component),
-		"componentDigest":   func() string { return componentDigest },
-		"componentRevision": func() int64 { return componentRevision },
-		"namespace":         func() string { return namespace },
-		"name":              func() string { return name },
-		"kubernetesVersion": func() *version.Info { return serverInfo },
-		"apiResources":      func() []*metav1.APIResourceList { return serverGroupsWithResources },
+		"listFiles":              makeFuncListFiles(files),
+		"existsFile":             makeFuncExistsFile(files),
+		"readFile":               makeFuncReadFile(files),
+		"component":              makeFuncData(component),
+		"componentDigest":        func() string { return componentDigest },
+		"componentRevision":      func() int64 { return componentRevision },
+		"namespace":              func() string { return namespace },
+		"name":                   func() string { return name },
+		"localKubernetesVersion": func() *version.Info { return localServerInfo },
+		"localApiResources":      func() []*metav1.APIResourceList { return localServerGroupsWithResources },
+		"kubernetesVersion":      func() *version.Info { return serverInfo },
+		"apiResources":           func() []*metav1.APIResourceList { return serverGroupsWithResources },
 	}
 }
 
@@ -510,6 +524,9 @@ func readIgnore(fsys fs.FS, path string) (gitignore.Matcher, error) {
 		if !strings.HasPrefix(s, "#") && len(strings.TrimSpace(s)) > 0 {
 			patterns = append(patterns, gitignore.ParsePattern(s, nil))
 		}
+	}
+	if err := scanner.Err(); err != nil {
+		return nil, err
 	}
 
 	return gitignore.NewMatcher(patterns), nil
