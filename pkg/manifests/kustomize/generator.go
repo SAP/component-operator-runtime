@@ -10,6 +10,7 @@ import (
 	"context"
 	"io"
 	"io/fs"
+	"text/template"
 
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	utilyaml "k8s.io/apimachinery/pkg/util/yaml"
@@ -34,6 +35,8 @@ type KustomizeGeneratorOptions struct {
 	RightTemplateDelimiter *string
 	// If defined, used to decrypt files
 	Decryptor manifests.Decryptor
+	// If defined, used to provide additional template functions
+	AdditionalTemplateFuncs template.FuncMap
 }
 
 // KustomizeGenerator is a Generator implementation that basically renders a given Kustomization.
@@ -46,8 +49,6 @@ type KustomizeGenerator struct {
 
 var _ manifests.Generator = &KustomizeGenerator{}
 
-// TODO: add a way to pass custom template functions
-
 // Create a new KustomizeGenerator.
 // The client parameter is deprecated (ignored) and will be removed in a future release.
 // If fsys is nil, the local operating system filesystem will be used, and kustomizationPath can be an absolute or relative path (in the latter case it will be considered
@@ -56,10 +57,11 @@ var _ manifests.Generator = &KustomizeGenerator{}
 // to fence symbolic links. An empty kustomizationPath will be treated like ".".
 func NewKustomizeGenerator(fsys fs.FS, kustomizationPath string, _ client.Client, options KustomizeGeneratorOptions) (*KustomizeGenerator, error) {
 	kustomization, err := kustomize.ParseKustomization(fsys, kustomizationPath, kustomize.KustomizationOptions{
-		TemplateSuffix:         options.TemplateSuffix,
-		LeftTemplateDelimiter:  options.LeftTemplateDelimiter,
-		RightTemplateDelimiter: options.RightTemplateDelimiter,
-		Decryptor:              options.Decryptor,
+		TemplateSuffix:          options.TemplateSuffix,
+		LeftTemplateDelimiter:   options.LeftTemplateDelimiter,
+		RightTemplateDelimiter:  options.RightTemplateDelimiter,
+		Decryptor:               options.Decryptor,
+		AdditionalTemplateFuncs: options.AdditionalTemplateFuncs,
 	})
 	if err != nil {
 		return nil, err
@@ -131,15 +133,16 @@ func (g *KustomizeGenerator) Generate(ctx context.Context, namespace string, nam
 	}
 
 	if err := g.kustomization.Render(kustomize.RenderContext{
-		LocalClient:       localClient,
-		Client:            clnt,
-		DiscoveryClient:   clnt.DiscoveryClient(),
-		Component:         component,
-		ComponentDigest:   componentDigest,
-		ComponentRevision: componentRevision,
-		Namespace:         namespace,
-		Name:              name,
-		Values:            parameters.ToUnstructured(),
+		LocalClient:          localClient,
+		LocalDiscoveryClient: localClient.DiscoveryClient(),
+		Client:               clnt,
+		DiscoveryClient:      clnt.DiscoveryClient(),
+		Component:            component,
+		ComponentDigest:      componentDigest,
+		ComponentRevision:    componentRevision,
+		Namespace:            namespace,
+		Name:                 name,
+		Values:               parameters.ToUnstructured(),
 	}, fsys); err != nil {
 		return nil, err
 	}
