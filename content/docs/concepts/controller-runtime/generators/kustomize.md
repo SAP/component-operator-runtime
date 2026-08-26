@@ -34,6 +34,7 @@ functions, plus functions like `include`, `tpl`, `lookup`, and the following:
 | `fromJsonArray <input string>` | Parse JSON string to array. |
 | `mustFromJsonArray <input string>` | Same as `fromJsonArray`. |
 | `required <warn string, input any>` | Fail with the given error message if the input is `nil` or converts to an empty string. |
+| `selectBy <key string, value string, data []any>` | find the first element in the input list which is a `map[string]any` and has a key/value matching the input; return `nil` if none found. |
 | `failRetriable <after string, msg string>` | Fail with the given error message, but, other thany by `fail`, raise a `RetriableError`. | 
 | `bitwiseShiftLeft <by any, input any>` | Perform a bitwise left shift on the input by the given number of places. |
 | `bitwiseShiftRight <by any, input any>` | Perform a bitwise right shift on the input by the given number of places. |
@@ -61,8 +62,10 @@ functions, plus functions like `include`, `tpl`, `lookup`, and the following:
 | `component`| Returns the current component object as a whole, as golang struct. |
 | `namespace` | Return the deployment namespace as passed to the generator. |
 | `name` | Return the deployment name as passed to the generator. |
-| `kubernetesVersion` | Return a `*version.Info` [struct](https://pkg.go.dev/k8s.io/apimachinery/pkg/version#Info) with Kubernetes version details about the target. |
-| `apiResources` | Return a slice of `[]*metav1.APIResourceList` [structs](https://pkg.go.dev/k8s.io/apimachinery/pkg/apis/meta/v1#APIResourceList) with API discovery details about the target. |
+| `kubernetesVersion` | Return a `*version.Info` [struct](https://pkg.go.dev/k8s.io/apimachinery/pkg/version#Info) with Kubernetes version details about the target cluster. |
+| `apiResources` | Return a slice of `[]*metav1.APIResourceList` [structs](https://pkg.go.dev/k8s.io/apimachinery/pkg/apis/meta/v1#APIResourceList) with API discovery details about the target cluster. |
+| `localKubernetesVersion` | Return a `*version.Info` [struct](https://pkg.go.dev/k8s.io/apimachinery/pkg/version#Info) with Kubernetes version details about the local cluster. |
+| `localApiResources` | Return a slice of `[]*metav1.APIResourceList` [structs](https://pkg.go.dev/k8s.io/apimachinery/pkg/apis/meta/v1#APIResourceList) with API discovery details about the local cluster. |
 
 Notes:
 
@@ -102,6 +105,8 @@ func NewKustomizeGenerator(fsys fs.FS, kustomizationPath string, clnt client.Cli
   	RightTemplateDelimiter *string
   	// If defined, used to decrypt files.
   	Decryptor manifests.Decryptor
+	// If defined, used to provide additional template functions
+	AdditionalTemplateFuncs template.FuncMap
   }
   ```
 
