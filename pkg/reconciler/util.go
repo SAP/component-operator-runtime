@@ -237,12 +237,13 @@ func sortObjectsForApply[T client.Object](s []T, orderFunc func(client.Object) i
 		"RuntimeClass.node.k8s.io":                                    -2,
 		"PriorityClass.scheduling.k8s.io":                             -2,
 		"StorageClass.storage.k8s.io":                                 -2,
-		"ConfigMap":                                                   -1,
-		"Secret":                                                      -1,
+		"ServiceAccount":                                              -2,
 		"ClusterRole.rbac.authorization.k8s.io":                       -2,
 		"Role.rbac.authorization.k8s.io":                              -2,
 		"ClusterRoleBinding.rbac.authorization.k8s.io":                -1,
 		"RoleBinding.rbac.authorization.k8s.io":                       -1,
+		"ConfigMap":                                                   -1,
+		"Secret":                                                      -1,
 		"APIService.apiregistration.k8s.io":                           1,
 	}
 	f := func(x T, y T) bool {
@@ -262,14 +263,19 @@ func sortObjectsForDelete(inventory []*InventoryItem) []*InventoryItem {
 		// TODO: should webhook configurations be deleted before order-zero objects?
 		"ValidatingWebhookConfiguration.admissionregistration.k8s.io": 1,
 		"MutatingWebhookConfiguration.admissionregistration.k8s.io":   1,
-		"Service":                         2,
-		"ConfigMap":                       2,
-		"Secret":                          2,
-		"Namespace":                       3,
-		"IngressClass.networking.k8s.io":  4,
-		"RuntimeClass.node.k8s.io":        4,
-		"PriorityClass.scheduling.k8s.io": 4,
-		"StorageClass.storage.k8s.io":     4,
+		"Service":                               2,
+		"ConfigMap":                             2,
+		"Secret":                                2,
+		"ServiceAccount":                        2,
+		"ClusterRole.rbac.authorization.k8s.io": 2,
+		"Role.rbac.authorization.k8s.io":        2,
+		"ClusterRoleBinding.rbac.authorization.k8s.io": 2,
+		"RoleBinding.rbac.authorization.k8s.io":        2,
+		"Namespace":                                    3,
+		"IngressClass.networking.k8s.io":               4,
+		"RuntimeClass.node.k8s.io":                     4,
+		"PriorityClass.scheduling.k8s.io":              4,
+		"StorageClass.storage.k8s.io":                  4,
 	}
 	f := func(x *InventoryItem, y *InventoryItem) bool {
 		orderx := x.DeleteOrder
