@@ -18,6 +18,7 @@ type ChartMetadata struct {
 	Type         string            `json:"type,omitempty"`
 	AppVersion   string            `json:"appVersion,omitempty"`
 	Dependencies []ChartDependency `json:"dependencies,omitempty"`
+	Annotations  map[string]string `json:"annotations,omitempty"`
 }
 
 const (
