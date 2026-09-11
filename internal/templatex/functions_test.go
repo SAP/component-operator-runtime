@@ -8,12 +8,15 @@ package templatex
 import (
 	"context"
 	"fmt"
+	"strings"
 	"text/template"
 	"time"
 
+	authenticationv1 "k8s.io/api/authentication/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	apitypes "k8s.io/apimachinery/pkg/types"
+	kyaml "sigs.k8s.io/yaml"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -427,6 +430,96 @@ var _ = Describe("testing: functions.go", func() {
 		It("should fail with invalid IPv4 address", func() {
 			_, err := formatIPv4Address("bla")
 			Expect(err).To(HaveOccurred())
+		})
+
+	})
+
+	Describe("testing: httpRequest", func() {
+
+		It("should do an http get request correctly", func() {
+			code, _, body, err := httpRequest("GET", "", "", "", nil, nil, "http://ifconfig.me/ip")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(code).To(Equal(200))
+			Expect(body).NotTo(BeEmpty())
+		})
+
+		It("should do an https get request correctly", func() {
+			code, _, body, err := httpRequest("GET", "", "", "", nil, nil, "https://ifconfig.me/ip")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(code).To(Equal(200))
+			Expect(body).NotTo(BeEmpty())
+		})
+
+		It("should do an https get request with custom ca and client key correctly", func() {
+			cfg := env.Config()
+			url := strings.TrimSuffix(cfg.Host, "/")
+			caData := string(cfg.CAData)
+			keyData := string(cfg.KeyData)
+			certData := string(cfg.CertData)
+
+			code, headers, body, err := httpRequest("GET", caData, keyData, certData, nil, nil, fmt.Sprintf("%s/api/v1/namespaces", url))
+			Expect(err).NotTo(HaveOccurred())
+			Expect(code).To(Equal(200))
+			Expect(headers).To(HaveKeyWithValue("Content-Type", "application/json"))
+			Expect(body).NotTo(BeEmpty())
+		})
+
+		It("should do an https post request with custom ca and client key, fetch a token, and us it instead for authentication", func() {
+			cfg := env.Config()
+			url := strings.TrimSuffix(cfg.Host, "/")
+			caData := string(cfg.CAData)
+			keyData := string(cfg.KeyData)
+			certData := string(cfg.CertData)
+
+			namespace, err := env.CreateNamespace()
+			Expect(err).NotTo(HaveOccurred())
+			serviceAccount := "testing"
+			err = env.CreateObject(&corev1.ServiceAccount{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      serviceAccount,
+					Namespace: namespace,
+				},
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			code, headers, body, err := httpRequest("POST", caData, keyData, certData, nil, []byte("{}"), fmt.Sprintf("%s/api/v1/namespaces/%s/serviceaccounts/%s/token", url, namespace, serviceAccount))
+			Expect(err).NotTo(HaveOccurred())
+			Expect(code).To(Equal(201))
+			Expect(headers).To(HaveKeyWithValue("Content-Type", "application/json"))
+			Expect(body).NotTo(BeEmpty())
+			tokenRequest := &authenticationv1.TokenRequest{}
+			err = kyaml.Unmarshal(body, tokenRequest)
+			Expect(err).NotTo(HaveOccurred())
+			token := tokenRequest.Status.Token
+			Expect(token).NotTo(BeEmpty())
+
+			code, headers, body, err = httpRequest("GET", caData, "", "", map[string]any{"Authorization": fmt.Sprintf("Bearer %s", "invalid")}, nil, fmt.Sprintf("%s/api", url))
+			Expect(err).NotTo(HaveOccurred())
+			Expect(code).To(Equal(401))
+
+			code, headers, body, err = httpRequest("GET", caData, "", "", map[string]any{"Authorization": fmt.Sprintf("Bearer %s", token)}, nil, fmt.Sprintf("%s/api", url))
+			Expect(err).NotTo(HaveOccurred())
+			Expect(code).To(Equal(200))
+			Expect(headers).To(HaveKeyWithValue("Content-Type", "application/json"))
+			Expect(body).NotTo(BeEmpty())
+		})
+
+	})
+
+	Describe("testing: httpGet", func() {
+
+		It("should do an http request correctly", func() {
+			code, _, body, err := httpGet("http://ifconfig.me/ip")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(code).To(Equal(200))
+			Expect(body).NotTo(BeEmpty())
+		})
+
+		It("should do an https request correctly", func() {
+			code, _, body, err := httpGet("https://ifconfig.me/ip")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(code).To(Equal(200))
+			Expect(body).NotTo(BeEmpty())
 		})
 
 	})
