@@ -437,17 +437,17 @@ var _ = Describe("testing: functions.go", func() {
 	Describe("testing: httpRequest", func() {
 
 		It("should do an http get request correctly", func() {
-			code, _, body, err := httpRequest("GET", "", "", "", nil, nil, "http://ifconfig.me/ip")
+			resp, err := httpRequest("GET", "", "", "", nil, nil, "http://ifconfig.me/ip")
 			Expect(err).NotTo(HaveOccurred())
-			Expect(code).To(Equal(200))
-			Expect(body).NotTo(BeEmpty())
+			Expect(resp.StatusCode).To(Equal(200))
+			Expect(resp.Body).NotTo(BeEmpty())
 		})
 
 		It("should do an https get request correctly", func() {
-			code, _, body, err := httpRequest("GET", "", "", "", nil, nil, "https://ifconfig.me/ip")
+			resp, err := httpRequest("GET", "", "", "", nil, nil, "https://ifconfig.me/ip")
 			Expect(err).NotTo(HaveOccurred())
-			Expect(code).To(Equal(200))
-			Expect(body).NotTo(BeEmpty())
+			Expect(resp.StatusCode).To(Equal(200))
+			Expect(resp.Body).NotTo(BeEmpty())
 		})
 
 		It("should do an https get request with custom ca and client key correctly", func() {
@@ -457,11 +457,11 @@ var _ = Describe("testing: functions.go", func() {
 			keyData := string(cfg.KeyData)
 			certData := string(cfg.CertData)
 
-			code, headers, body, err := httpRequest("GET", caData, keyData, certData, nil, nil, fmt.Sprintf("%s/api/v1/namespaces", url))
+			resp, err := httpRequest("GET", caData, keyData, certData, nil, nil, fmt.Sprintf("%s/api/v1/namespaces", url))
 			Expect(err).NotTo(HaveOccurred())
-			Expect(code).To(Equal(200))
-			Expect(headers).To(HaveKeyWithValue("Content-Type", "application/json"))
-			Expect(body).NotTo(BeEmpty())
+			Expect(resp.StatusCode).To(Equal(200))
+			Expect(resp.Headers).To(HaveKeyWithValue("Content-Type", "application/json"))
+			Expect(resp.Body).NotTo(BeEmpty())
 		})
 
 		It("should do an https post request with custom ca and client key, fetch a token, and us it instead for authentication", func() {
@@ -482,26 +482,26 @@ var _ = Describe("testing: functions.go", func() {
 			})
 			Expect(err).NotTo(HaveOccurred())
 
-			code, headers, body, err := httpRequest("POST", caData, keyData, certData, nil, []byte("{}"), fmt.Sprintf("%s/api/v1/namespaces/%s/serviceaccounts/%s/token", url, namespace, serviceAccount))
+			resp, err := httpRequest("POST", caData, keyData, certData, nil, []byte("{}"), fmt.Sprintf("%s/api/v1/namespaces/%s/serviceaccounts/%s/token", url, namespace, serviceAccount))
 			Expect(err).NotTo(HaveOccurred())
-			Expect(code).To(Equal(201))
-			Expect(headers).To(HaveKeyWithValue("Content-Type", "application/json"))
-			Expect(body).NotTo(BeEmpty())
+			Expect(resp.StatusCode).To(Equal(201))
+			Expect(resp.Headers).To(HaveKeyWithValue("Content-Type", "application/json"))
+			Expect(resp.Body).NotTo(BeEmpty())
 			tokenRequest := &authenticationv1.TokenRequest{}
-			err = kyaml.Unmarshal(body, tokenRequest)
+			err = kyaml.Unmarshal(resp.Body, tokenRequest)
 			Expect(err).NotTo(HaveOccurred())
 			token := tokenRequest.Status.Token
 			Expect(token).NotTo(BeEmpty())
 
-			code, headers, body, err = httpRequest("GET", caData, "", "", map[string]any{"Authorization": fmt.Sprintf("Bearer %s", "invalid")}, nil, fmt.Sprintf("%s/api", url))
+			resp, err = httpRequest("GET", caData, "", "", map[string]any{"Authorization": fmt.Sprintf("Bearer %s", "invalid")}, nil, fmt.Sprintf("%s/api", url))
 			Expect(err).NotTo(HaveOccurred())
-			Expect(code).To(Equal(401))
+			Expect(resp.StatusCode).To(Equal(401))
 
-			code, headers, body, err = httpRequest("GET", caData, "", "", map[string]any{"Authorization": fmt.Sprintf("Bearer %s", token)}, nil, fmt.Sprintf("%s/api", url))
+			resp, err = httpRequest("GET", caData, "", "", map[string]any{"Authorization": fmt.Sprintf("Bearer %s", token)}, nil, fmt.Sprintf("%s/api", url))
 			Expect(err).NotTo(HaveOccurred())
-			Expect(code).To(Equal(200))
-			Expect(headers).To(HaveKeyWithValue("Content-Type", "application/json"))
-			Expect(body).NotTo(BeEmpty())
+			Expect(resp.StatusCode).To(Equal(200))
+			Expect(resp.Headers).To(HaveKeyWithValue("Content-Type", "application/json"))
+			Expect(resp.Body).NotTo(BeEmpty())
 		})
 
 	})
@@ -509,16 +509,14 @@ var _ = Describe("testing: functions.go", func() {
 	Describe("testing: httpGet", func() {
 
 		It("should do an http request correctly", func() {
-			code, _, body, err := httpGet("http://ifconfig.me/ip")
+			body, err := httpGet("http://ifconfig.me/ip")
 			Expect(err).NotTo(HaveOccurred())
-			Expect(code).To(Equal(200))
 			Expect(body).NotTo(BeEmpty())
 		})
 
 		It("should do an https request correctly", func() {
-			code, _, body, err := httpGet("https://ifconfig.me/ip")
+			body, err := httpGet("https://ifconfig.me/ip")
 			Expect(err).NotTo(HaveOccurred())
-			Expect(code).To(Equal(200))
 			Expect(body).NotTo(BeEmpty())
 		})
 

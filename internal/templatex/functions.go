@@ -291,7 +291,12 @@ func formatIPv4Address(data any) (string, error) {
 	return fmt.Sprintf("%d.%d.%d.%d", i&0xFF000000>>24, i&0x0FF0000>>16, i&0x00FF00>>8, i&0x000000FF), nil
 }
 
-func httpRequest(method string, caBundle string, clientKey string, clientCert string, headers map[string]any, body []byte, url string) (int, map[string]any, []byte, error) {
+func httpRequest(method string, caBundle string, clientKey string, clientCert string, headers map[string]any, body []byte, url string) (response struct {
+	StatusCode int
+	Status     string
+	Headers    map[string]any
+	Body       []byte
+}, err error) {
 	tr := &http.Transport{
 		DialContext: (&net.Dialer{
 			Timeout:   30 * time.Second,
@@ -309,10 +314,10 @@ func httpRequest(method string, caBundle string, clientKey string, clientCert st
 		}
 		caCertPool, err := x509.SystemCertPool()
 		if err != nil {
-			return -1, nil, nil, err
+			return response, err
 		}
 		if !caCertPool.AppendCertsFromPEM([]byte(caBundle)) {
-			return -1, nil, nil, fmt.Errorf("failed to append CA bundle")
+			return response, fmt.Errorf("failed to append CA bundle")
 		}
 		tr.TLSClientConfig.RootCAs = caCertPool
 	}
@@ -322,7 +327,7 @@ func httpRequest(method string, caBundle string, clientKey string, clientCert st
 		}
 		cert, err := tls.X509KeyPair([]byte(clientCert), []byte(clientKey))
 		if err != nil {
-			return -1, nil, nil, err
+			return response, err
 		}
 		tr.TLSClientConfig.Certificates = []tls.Certificate{cert}
 	}
@@ -335,7 +340,7 @@ func httpRequest(method string, caBundle string, clientKey string, clientCert st
 	}
 	req, err := http.NewRequest(method, url, b)
 	if err != nil {
-		return -1, nil, nil, err
+		return response, err
 	}
 	for k, v := range headers {
 		switch v := v.(type) {
@@ -346,17 +351,17 @@ func httpRequest(method string, caBundle string, clientKey string, clientCert st
 				req.Header.Add(k, w)
 			}
 		default:
-			return -1, nil, nil, fmt.Errorf("invalid header value: %s", k)
+			return response, fmt.Errorf("invalid header value: %s", k)
 		}
 	}
 	resp, err := c.Do(req)
 	if err != nil {
-		return -1, nil, nil, err
+		return response, err
 	}
 	defer resp.Body.Close()
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return -1, nil, nil, err
+		return response, err
 	}
 	respHeaders := make(map[string]any)
 	for k, v := range resp.Header {
@@ -366,11 +371,22 @@ func httpRequest(method string, caBundle string, clientKey string, clientCert st
 			respHeaders[k] = v
 		}
 	}
-	return resp.StatusCode, respHeaders, respBody, nil
+	response.StatusCode = resp.StatusCode
+	response.Status = resp.Status
+	response.Headers = respHeaders
+	response.Body = respBody
+	return response, nil
 }
 
-func httpGet(url string) (int, map[string]any, []byte, error) {
-	return httpRequest(http.MethodGet, "", "", "", nil, nil, url)
+func httpGet(url string) ([]byte, error) {
+	resp, err := httpRequest(http.MethodGet, "", "", "", nil, nil, url)
+	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("http request failed with status code %d", resp.StatusCode)
+	}
+	return resp.Body, nil
 }
 
 func makeFuncInclude(t *template.Template) func(string, any) (string, error) {
