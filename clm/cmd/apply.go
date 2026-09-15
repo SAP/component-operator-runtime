@@ -32,6 +32,8 @@ const applyUsage = `Apply component manifests to Kubernetes cluster`
 type applyOptions struct {
 	valuesSources   []string
 	createNamespace bool
+	targetNamespace string
+	targetName      string
 	timeout         time.Duration
 }
 
@@ -51,6 +53,12 @@ func newApplyCmd() *cobra.Command {
 			name := args[0]
 			manifestSources := args[1:]
 			namespace := c.Flag("namespace").Value.String()
+			if options.targetNamespace == "" {
+				options.targetNamespace = namespace
+			}
+			if options.targetName == "" {
+				options.targetName = name
+			}
 
 			clnt, err := getClient(c.Flag("kubeconfig").Value.String())
 			if err != nil {
@@ -76,7 +84,7 @@ func newApplyCmd() *cobra.Command {
 			release, err := releaseClient.Get(context.TODO(), namespace, name)
 			if err != nil {
 				if apierrors.IsNotFound(err) {
-					release, err = releaseClient.Create(context.TODO(), namespace, name)
+					release, err = releaseClient.Create(context.TODO(), namespace, name, options.targetNamespace, options.targetName)
 					if err != nil {
 						return err
 					}
@@ -87,6 +95,10 @@ func newApplyCmd() *cobra.Command {
 
 			if release.IsDeleting() {
 				return fmt.Errorf("release %s/%s is being deleted; updates are not allowed in this state", release.GetNamespace(), release.GetName())
+			}
+
+			if release.GetTargetNamespace() != options.targetNamespace || release.GetTargetName() != options.targetName {
+				return fmt.Errorf("release %s/%s already exists with different target (namespace: %s, name: %s)", release.GetNamespace(), release.GetName(), release.GetTargetNamespace(), release.GetTargetName())
 			}
 
 			release.Revision += 1
@@ -168,6 +180,8 @@ func newApplyCmd() *cobra.Command {
 	flags := cmd.Flags()
 	flags.StringArrayVarP(&options.valuesSources, "values", "f", nil, "Path to values file in yaml format (can be repeated, values will be merged in order of appearance)")
 	flags.BoolVar(&options.createNamespace, "create-namespace", false, "Create release namespace if not existing")
+	flags.StringVar(&options.targetNamespace, "target-namespace", "", "Target deployment namespace for the release (defaults to the release namespace)")
+	flags.StringVar(&options.targetName, "target-name", "", "Target deployment name for the release (defaults to the release name)")
 	flags.DurationVar(&options.timeout, "timeout", 0, "Time to wait for the operation to complete (default is to wait forever)")
 
 	return cmd
