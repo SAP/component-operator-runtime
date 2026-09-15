@@ -14,7 +14,7 @@ require (
 	github.com/onsi/gomega v1.43.0
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/client_golang v1.24.1
-	github.com/sap/go-generics v0.2.73
+	github.com/sap/go-generics v0.2.74
 	github.com/spf13/cast v1.10.0
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/pflag v1.0.10
@@ -25,8 +25,8 @@ require (
 	k8s.io/client-go v0.37.0
 	k8s.io/kube-aggregator v0.37.0
 	sigs.k8s.io/cli-utils v0.37.2
-	sigs.k8s.io/controller-runtime v0.25.0
-	sigs.k8s.io/controller-runtime/tools/setup-envtest v0.25.0
+	sigs.k8s.io/controller-runtime v0.25.1
+	sigs.k8s.io/controller-runtime/tools/setup-envtest v0.25.1
 	sigs.k8s.io/controller-tools v0.22.0
 	sigs.k8s.io/kustomize/api v0.21.1
 	sigs.k8s.io/kustomize/kyaml v0.21.1
