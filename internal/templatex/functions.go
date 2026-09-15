@@ -8,10 +8,15 @@ package templatex
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"math"
+	"net"
+	"net/http"
 	"strconv"
 	"strings"
 	"text/template"
@@ -62,6 +67,8 @@ func FuncMap() template.FuncMap {
 		"bitwiseXor":               bitwiseXor,
 		"parseIPv4Address":         parseIPv4Address,
 		"formatIPv4Address":        formatIPv4Address,
+		"httpRequest":              httpRequest,
+		"httpGet":                  httpGet,
 		"lookupWithKubeConfig":     makeFuncLookupWithKubeConfig(true),
 		"mustLookupWithKubeConfig": makeFuncLookupWithKubeConfig(false),
 		"lookupListWithKubeConfig": makeFuncLookupListWithKubeConfig(),
@@ -282,6 +289,104 @@ func formatIPv4Address(data any) (string, error) {
 		return "", err
 	}
 	return fmt.Sprintf("%d.%d.%d.%d", i&0xFF000000>>24, i&0x0FF0000>>16, i&0x00FF00>>8, i&0x000000FF), nil
+}
+
+func httpRequest(method string, caBundle string, clientKey string, clientCert string, headers map[string]any, body []byte, url string) (response struct {
+	StatusCode int
+	Status     string
+	Headers    map[string]any
+	Body       []byte
+}, err error) {
+	tr := &http.Transport{
+		DialContext: (&net.Dialer{
+			Timeout:   30 * time.Second,
+			KeepAlive: 30 * time.Second,
+		}).DialContext,
+		ForceAttemptHTTP2:     true,
+		MaxIdleConns:          100,
+		IdleConnTimeout:       90 * time.Second,
+		TLSHandshakeTimeout:   10 * time.Second,
+		ExpectContinueTimeout: 1 * time.Second,
+	}
+	if caBundle != "" {
+		if tr.TLSClientConfig == nil {
+			tr.TLSClientConfig = &tls.Config{}
+		}
+		caCertPool, err := x509.SystemCertPool()
+		if err != nil {
+			return response, err
+		}
+		if !caCertPool.AppendCertsFromPEM([]byte(caBundle)) {
+			return response, fmt.Errorf("failed to append CA bundle")
+		}
+		tr.TLSClientConfig.RootCAs = caCertPool
+	}
+	if clientKey != "" && clientCert != "" {
+		if tr.TLSClientConfig == nil {
+			tr.TLSClientConfig = &tls.Config{}
+		}
+		cert, err := tls.X509KeyPair([]byte(clientCert), []byte(clientKey))
+		if err != nil {
+			return response, err
+		}
+		tr.TLSClientConfig.Certificates = []tls.Certificate{cert}
+	}
+	c := &http.Client{
+		Transport: tr,
+	}
+	var b io.Reader
+	if len(body) > 0 {
+		b = bytes.NewReader(body)
+	}
+	req, err := http.NewRequest(method, url, b)
+	if err != nil {
+		return response, err
+	}
+	for k, v := range headers {
+		switch v := v.(type) {
+		case string:
+			req.Header.Set(k, v)
+		case []string:
+			for _, w := range v {
+				req.Header.Add(k, w)
+			}
+		default:
+			return response, fmt.Errorf("invalid header value: %s", k)
+		}
+	}
+	resp, err := c.Do(req)
+	if err != nil {
+		return response, err
+	}
+	defer resp.Body.Close()
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return response, err
+	}
+	respHeaders := make(map[string]any)
+	for k, v := range resp.Header {
+		if len(v) == 1 {
+			respHeaders[k] = v[0]
+		} else {
+			respHeaders[k] = v
+		}
+	}
+	response.StatusCode = resp.StatusCode
+	response.Status = resp.Status
+	response.Headers = respHeaders
+	response.Body = respBody
+	return response, nil
+}
+
+func httpGet(url string) ([]byte, error) {
+	resp, err := httpRequest(http.MethodGet, "", "", "", nil, nil, url)
+	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("http request failed with status code %d", resp.StatusCode)
+	}
+	return resp.Body, nil
 }
 
 func makeFuncInclude(t *template.Template) func(string, any) (string, error) {
