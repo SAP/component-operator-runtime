@@ -29,6 +29,7 @@ type ClientFactory struct {
 	name           string
 	controllerName string
 	config         *rest.Config
+	validity       time.Duration
 	scheme         *runtime.Scheme
 	clients        map[string]*Client
 }
@@ -37,6 +38,8 @@ const validity = 15 * time.Minute
 
 func NewClientFactory(name string, controllerName string, config *rest.Config, schemeBuilders []types.SchemeBuilder) (*ClientFactory, error) {
 	scheme := runtime.NewScheme()
+	// note: it would be sufficient to just add the corev1 scheme instead of the whole client-go scheme;
+	// but for convenience, we add all the api groups
 	if err := clientgoscheme.AddToScheme(scheme); err != nil {
 		return nil, err
 	}
@@ -56,6 +59,7 @@ func NewClientFactory(name string, controllerName string, config *rest.Config, s
 		name:           name,
 		controllerName: controllerName,
 		config:         config,
+		validity:       validity,
 		scheme:         scheme,
 		clients:        make(map[string]*Client),
 	}
@@ -116,7 +120,7 @@ func (f *ClientFactory) Get(kubeConfig []byte, impersonationUser string, imperso
 	key := sha256sum(keyData)
 
 	if clnt, ok := f.clients[key]; ok {
-		clnt.validUntil = time.Now().Add(validity)
+		clnt.validUntil = time.Now().Add(f.validity)
 		return clnt, nil
 	}
 
@@ -124,7 +128,7 @@ func (f *ClientFactory) Get(kubeConfig []byte, impersonationUser string, imperso
 	if err != nil {
 		return nil, err
 	}
-	clnt.validUntil = time.Now().Add(validity)
+	clnt.validUntil = time.Now().Add(f.validity)
 	f.clients[key] = clnt
 	metrics.CreatedClients.WithLabelValues(f.controllerName).Inc()
 	metrics.ActiveClients.WithLabelValues(f.controllerName).Set(float64(len(f.clients)))
@@ -134,6 +138,7 @@ func (f *ClientFactory) Get(kubeConfig []byte, impersonationUser string, imperso
 	return clnt, nil
 }
 
+// TODO: this could be repplaced by util.CalculateDigest()
 func sha256sum(data any) string {
 	dataAsJson, err := json.Marshal(data)
 	if err != nil {

@@ -10,8 +10,6 @@ import (
 	"strings"
 )
 
-// TODO: consolidate all the util files into an internal reuse package
-
 /*
 func getString(data map[string]any, key string) (string, bool, bool) {
 	if v, ok := data[key]; ok {
@@ -71,13 +69,6 @@ func getArray(data map[string]any, key string) ([]any, bool, bool) {
 	return nil, false, false
 }
 */
-
-func must[T any](x T, err error) T {
-	if err != nil {
-		panic(err)
-	}
-	return x
-}
 
 func getMap(data map[string]any, key string) (map[string]any, bool, bool) {
 	if v, ok := data[key]; ok {

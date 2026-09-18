@@ -1,0 +1,4 @@
+Some non-K8s relevant content.
+May contain regular go templates, using the standard delimiters.
+Because of using non-standard component delimiters, something
+like {{ name }} is left unrendered. 

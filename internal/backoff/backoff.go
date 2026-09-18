@@ -18,22 +18,10 @@ type Backoff struct {
 	limiter    workqueue.RateLimiter
 }
 
-/*
-Returned backoff does
-- 5 quick roundtrips (exponential, below 1s)
-- then 15 roundtrips at 1s
-- then 30 roundtrips at 2s
-- then rounttrips at maxDelay
-*/
-
-func NewBackoff(maxDelay time.Duration) *Backoff {
+func NewBackoff(limiter workqueue.RateLimiter) *Backoff {
 	return &Backoff{
 		activities: make(map[any]any),
-		limiter: workqueue.NewMaxOfRateLimiter(
-			workqueue.NewItemExponentialFailureRateLimiter(50*time.Millisecond, 1*time.Second),
-			workqueue.NewItemFastSlowRateLimiter(0, 2*time.Second, 20),
-			workqueue.NewItemFastSlowRateLimiter(0, maxDelay, 20+30),
-		),
+		limiter:    limiter,
 	}
 }
 

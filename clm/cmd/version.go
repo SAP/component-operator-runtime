@@ -13,6 +13,7 @@ import (
 
 	kyaml "sigs.k8s.io/yaml"
 
+	"github.com/sap/component-operator-runtime/internal/util"
 	"github.com/sap/component-operator-runtime/internal/version"
 )
 
@@ -45,9 +46,9 @@ func newVersionCmd() *cobra.Command {
 			case "short":
 				fmt.Printf("%s\n", buildInfo.Version)
 			case "yaml":
-				fmt.Printf("%s", string(must(kyaml.Marshal(buildInfo))))
+				fmt.Printf("%s", string(util.Must(kyaml.Marshal(buildInfo))))
 			case "json":
-				fmt.Printf("%s\n", string(must(json.MarshalIndent(buildInfo, "", "  "))))
+				fmt.Printf("%s\n", string(util.Must(json.MarshalIndent(buildInfo, "", "  "))))
 			default:
 				panic("this cannot happen")
 			}

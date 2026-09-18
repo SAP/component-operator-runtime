@@ -13,12 +13,14 @@ import (
 	"strings"
 	"time"
 
+	legacyerrors "github.com/pkg/errors"
+
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	apitypes "k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	legacyerrors "github.com/pkg/errors"
+	"github.com/sap/component-operator-runtime/internal/util"
 	"github.com/sap/component-operator-runtime/internal/walk"
 	"github.com/sap/component-operator-runtime/pkg/types"
 )
@@ -71,7 +73,7 @@ func (r *ConfigMapReference) digest() string {
 		// note: we can't panic here because this might be called in case of not-found situations
 		return ""
 	}
-	return calculateDigest(r.data)
+	return util.CalculateDigest(r.data)
 }
 
 // Return the previously loaded configmap data.
@@ -135,7 +137,7 @@ func (r *ConfigMapKeyReference) digest() string {
 		// note: we can't panic here because this might be called in case of not-found situations
 		return ""
 	}
-	return sha256hex([]byte(r.value))
+	return util.Sha256hex([]byte(r.value))
 }
 
 // Return the previously loaded value of the configmap key.
@@ -181,7 +183,7 @@ func (r *SecretReference) digest() string {
 		// note: we can't panic here because this might be called in case of not-found situations
 		return ""
 	}
-	return calculateDigest(r.data)
+	return util.CalculateDigest(r.data)
 }
 
 // Return the previously loaded secret data.
@@ -245,7 +247,7 @@ func (r *SecretKeyReference) digest() string {
 		// note: we can't panic here because this might be called in case of not-found situations
 		return ""
 	}
-	return sha256hex(r.value)
+	return util.Sha256hex(r.value)
 }
 
 // Return the previously loaded value of the secret key.
@@ -280,8 +282,8 @@ func resolveReferences[T Component](ctx context.Context, clnt client.Client, hoo
 	// TODO: including spec into the digest is actually not required (since generation is included)
 	digestData["spec"] = spec
 	if err := walk.Walk(spec, func(x any, path []string, tag reflect.StructTag) error {
-		// note: this must() is ok because marshalling []string should always work
-		rawPath := must(json.Marshal(path))
+		// note: this Must() is ok because marshalling []string should always work
+		rawPath := util.Must(json.Marshal(path))
 		switch r := x.(type) {
 		case *ConfigMapReference:
 			if r == nil {
@@ -340,5 +342,5 @@ func resolveReferences[T Component](ctx context.Context, clnt client.Client, hoo
 	}); err != nil {
 		return "", err
 	}
-	return calculateDigest(digestData), nil
+	return util.CalculateDigest(digestData), nil
 }

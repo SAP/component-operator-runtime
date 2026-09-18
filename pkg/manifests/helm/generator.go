@@ -33,7 +33,8 @@ type HelmGenerator struct {
 
 var _ manifests.Generator = &HelmGenerator{}
 
-// TODO: add a way to pass custom template functions
+// TODO: add a HelmGeneratorOptions variable to all HelmGenerator constructors
+// TODO: add Decryptor and AdditionalTemplateFuncs to HelmGeneratorOptions
 
 // Create a new HelmGenerator.
 // The client parameter is deprecated (ignored) and will be removed in a future release.

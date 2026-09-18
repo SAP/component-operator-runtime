@@ -23,10 +23,11 @@ package operator
 
 import (
 	"flag"
+	"fmt"
 
-	legacyerrors "github.com/pkg/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
+	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -91,6 +92,7 @@ func (o *Operator) GetName() string {
 }
 
 func (o *Operator) InitScheme(scheme *runtime.Scheme) {
+	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 	utilruntime.Must(operator{{ .groupVersion }}.AddToScheme(scheme))
 }
 
@@ -112,7 +114,7 @@ func (o *Operator) Setup(mgr ctrl.Manager) error {
 	// Replace this by a real resource generator (e.g. HelmGenerator or KustomizeGenerator, or your own one).
 	resourceGenerator, err := manifests.NewDummyGenerator()
 	if err != nil {
-		return legacyerrors.Wrap(err, "error initializing resource generator")
+		return fmt.Errorf("error initializing resource generator: %w", err)
 	}
 
 	if err := component.NewReconciler[*operator{{ .groupVersion }}.{{ .kind }}](
@@ -120,7 +122,7 @@ func (o *Operator) Setup(mgr ctrl.Manager) error {
 		resourceGenerator,
 		component.ReconcilerOptions{},
 	).SetupWithManager(mgr); err != nil {
-		return legacyerrors.Wrapf(err, "unable to create controller")
+		return fmt.Errorf("unable to create controller: %w", err)
 	}
 
 	{{- if or .validatingWebhookEnabled .mutatingWebhookEnabled }}

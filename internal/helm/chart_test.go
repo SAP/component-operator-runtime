@@ -11,6 +11,8 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/sap/go-generics/slices"
+
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	utilyaml "k8s.io/apimachinery/pkg/util/yaml"
 	"k8s.io/apimachinery/pkg/version"
@@ -23,7 +25,6 @@ import (
 	. "github.com/onsi/gomega"
 
 	"github.com/sap/component-operator-runtime/internal/helm"
-	"github.com/sap/go-generics/slices"
 )
 
 var _ = Describe("testing: chart.go", func() {

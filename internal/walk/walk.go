@@ -17,7 +17,8 @@ type WalkFunc func(x any, path []string, tag reflect.StructTag) error
 
 // Walk through x recursively (using reflection), and apply f to each node. In detail, this means:
 //   - slices,arrays and maps will be traversed element by element (note that the order is not predictable in case of maps)
-//   - structs will be traversed field by field (only exported fields).
+//   - structs will be traversed field by field (only exported fields)
+//   - the traversal happens in depth-first order, and the callback is called for each node before traversing its children (i.e. pre-order traversal).
 //
 // The walk function will be supplied with the following input:
 //   - pointer nodes will be passed as such

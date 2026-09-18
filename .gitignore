@@ -24,13 +24,7 @@ testbin/*
 *.swo
 *~
 .DS_Store
-.vscode
+.vscode/launch.json
 
 # temp stuff
 /tmp
-
-# Hugo artifacts
-.hugo_build.lock
-/website/resources
-/website/node_modules
-/website/public

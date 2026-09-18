@@ -46,6 +46,20 @@ const (
 )
 
 type KustomizationOptions struct {
+	// If defined, only files with the given suffix are considered as templates
+	TemplateSuffix *string
+	// If defined, the given left delimiter will be used to parse go templates; otherwise, defaults to '{{'
+	LeftTemplateDelimiter *string
+	// If defined, the given right delimiter will be used to parse go templates; otherwise, defaults to '}}'
+	RightTemplateDelimiter *string
+	// If defined, used to decrypt files
+	Decryptor manifests.Decryptor
+	// If defined, used to provide additional template functions
+	AdditionalTemplateFuncs template.FuncMap
+}
+
+type KustomizationConfiguration struct {
+	// If defined, only files with the given suffix are considered as templates
 	TemplateSuffix *string
 	// If defined, the given left delimiter will be used to parse go templates; otherwise, defaults to '{{'
 	LeftTemplateDelimiter *string
@@ -55,20 +69,21 @@ type KustomizationOptions struct {
 	IncludedFiles []string
 	// If defined, paths to referenced kustomizations
 	IncludedKustomizations []string
-	// If defined, used to decrypt files
-	Decryptor manifests.Decryptor
+	// If defined, default values for the templates
+	Values map[string]any
 }
 
 type RenderContext struct {
-	LocalClient       client.Client
-	Client            client.Client
-	DiscoveryClient   discovery.DiscoveryInterface
-	Component         component.Component
-	ComponentDigest   string
-	ComponentRevision int64
-	Namespace         string
-	Name              string
-	Parameters        map[string]any
+	LocalClient          client.Client
+	LocalDiscoveryClient discovery.DiscoveryInterface
+	Client               client.Client
+	DiscoveryClient      discovery.DiscoveryInterface
+	Component            component.Component
+	ComponentDigest      string
+	ComponentRevision    int64
+	Namespace            string
+	Name                 string
+	Values               map[string]any
 }
 
 type Kustomization struct {
@@ -76,10 +91,29 @@ type Kustomization struct {
 	files          map[string][]byte
 	nonTemplates   map[string][]byte
 	templates      map[string]*template.Template
+	values         map[string]any
 	kustomizations []*Kustomization
 }
 
-// TODO: add a way to pass custom template functions
+// ParseKustomization() returns the parsed content of kustomizationPath in fsys; if kustomizationPath is empty or '.', then the whole fsys
+// is read. If fsys is nil, then the local filesystem / is used. When traversing kustomizationPath, only regular files are considered,
+// symlinks are not followed. By default, all files except .component-config.yaml and .component-ignore are considered as templates,
+// and the resulting path of the rendered file is set to the path of the template file, relative to kustomizationPath.
+// The effective options are the result of merging .component-config.yaml in kustomizationPath with the given options; thus .component-config.yaml
+// takes precedence over the given options. If .component-config.yaml is not present, then the given options are used as-is.
+// If a templateSuffix is specified in options, then only files with that suffix are considered as templates, and the suffix is stripped
+// from the resulting output filename. In all cases, templates can be called by their name from other templates (e.g. using the include function),
+// and the name of the template is the path of the file, relative to kustomizationPath (not stripping the template suffix if present).
+// All files under kustomizationPath are accessible through the readFile, existsFile and listFiles template functions.
+// Files outside kustomizationPath can be made available for readFile, existsFile and listFiles by listing them as includedFiles in the effective options.
+// Note that the paths in includedFiles must be relative to kustomizationPath, and must not be subpaths of kustomizationPath.
+// If kustomizationPath contains a .kustomization.yaml referencing other kustomizations, then the according kustomization directories
+// must be declared as kustomizations in the effective options, as relative paths to kustomizationPath. Note that such sub-kustomizations
+// are parsed with empty options; that is, neither the options supplied to this kustomization, nor the content of .compponent-config.yaml in this
+// kustomizationPath are passed to the sub-kustomization. Of course the sub-kustomization can contain its own .component-config.yaml.
+// Alternative template delimiters (other than {{ and }}) can be specified in the effective options. If no alternative delimiters are specified,
+// then the default delimiters are used. All files in kustomizationPath (plus those in includedFiles) are subject to the given decryptor,
+// if prsesent.
 
 func ParseKustomization(fsys fs.FS, kustomizationPath string, options KustomizationOptions) (*Kustomization, error) {
 	kustomization, err := parseKustomization(fsys, kustomizationPath, options, nil)
@@ -91,16 +125,6 @@ func ParseKustomization(fsys fs.FS, kustomizationPath string, options Kustomizat
 }
 
 func parseKustomization(fsys fs.FS, kustomizationPath string, options KustomizationOptions, visitedKustomizationPaths []string) (*Kustomization, error) {
-	if options.TemplateSuffix == nil {
-		options.TemplateSuffix = new("")
-	}
-	if options.LeftTemplateDelimiter == nil {
-		options.LeftTemplateDelimiter = new("")
-	}
-	if options.RightTemplateDelimiter == nil {
-		options.RightTemplateDelimiter = new("")
-	}
-
 	if fsys == nil {
 		fsys = os.DirFS("/")
 		absoluteKustomizationPath, err := filepath.Abs(kustomizationPath)
@@ -125,20 +149,22 @@ func parseKustomization(fsys fs.FS, kustomizationPath string, options Kustomizat
 		return nil, fmt.Errorf("path %s is not a directory", kustomizationPath)
 	}
 
+	config, err := readConfig(fsys, filepath.Join(kustomizationPath, componentConfigFilename), &options)
+	if err != nil {
+		return nil, err
+	}
+
+	ignore, err := readIgnore(fsys, filepath.Join(kustomizationPath, componentIgnoreFilename))
+	if err != nil {
+		return nil, err
+	}
+
 	k := Kustomization{
 		path:         kustomizationPath,
 		files:        make(map[string][]byte),
 		nonTemplates: make(map[string][]byte),
 		templates:    make(map[string]*template.Template),
-	}
-
-	if err := readOptions(fsys, filepath.Clean(filepath.Join(kustomizationPath, componentConfigFilename)), &options); err != nil {
-		return nil, err
-	}
-
-	ignore, err := readIgnore(fsys, filepath.Clean(filepath.Join(kustomizationPath, componentIgnoreFilename)))
-	if err != nil {
-		return nil, err
+		values:       config.Values,
 	}
 
 	var t *template.Template
@@ -166,39 +192,40 @@ func parseKustomization(fsys fs.FS, kustomizationPath string, options Kustomizat
 		if filepath.Base(name) == componentConfigFilename || filepath.Base(name) == componentIgnoreFilename {
 			continue
 		}
-		if ignore != nil && ignore.Match(filepath.SplitList(name), false) {
+		if ignore != nil && ignore.Match(strings.Split(name, "/"), false) {
 			continue
 		}
-		if strings.HasSuffix(name, *options.TemplateSuffix) {
+		if strings.HasSuffix(name, *config.TemplateSuffix) {
 			if t == nil {
 				t = template.New(name)
-				t.Delims(*options.LeftTemplateDelimiter, *options.RightTemplateDelimiter)
+				t.Delims(*config.LeftTemplateDelimiter, *config.RightTemplateDelimiter)
 				t.Option("missingkey=zero").
+					Funcs(options.AdditionalTemplateFuncs).
 					Funcs(sprig.TxtFuncMap()).
 					Funcs(templatex.FuncMap()).
 					Funcs(templatex.FuncMapForTemplate(nil)).
 					Funcs(templatex.FuncMapForLocalClient(nil)).
 					Funcs(templatex.FuncMapForClient(nil)).
-					Funcs(funcMapForContext(nil, nil, nil, nil, "", 0, "", ""))
+					Funcs(funcMapForContext(nil, nil, nil, nil, nil, nil, "", 0, "", ""))
 			} else {
 				t = t.New(name)
 			}
 			if _, err := t.Parse(string(raw)); err != nil {
 				return nil, err
 			}
-			k.templates[strings.TrimSuffix(name, *options.TemplateSuffix)] = t
+			k.templates[strings.TrimSuffix(name, *config.TemplateSuffix)] = t
 		} else {
 			k.nonTemplates[name] = raw
 		}
 	}
 
-	// TODO: check that k.nonTemplates and k.templates are disjoint
+	// TODO: check that k.nonTemplates and k.templates are disjoint (which can only happen if options.TemplateSuffix is specified)
 
-	for _, path := range options.IncludedFiles {
+	for _, path := range config.IncludedFiles {
 		if filepath.IsAbs(path) {
 			return nil, fmt.Errorf("include path (%s) must not be absolute", path)
 		}
-		absolutePath := filepath.Clean(filepath.Join(kustomizationPath, path))
+		absolutePath := filepath.Join(kustomizationPath, path)
 		if isSubdirectory(absolutePath, kustomizationPath) {
 			return nil, fmt.Errorf("include path (%s) must not be in the kustomization path (%s)", path, kustomizationPath)
 		}
@@ -220,7 +247,8 @@ func parseKustomization(fsys fs.FS, kustomizationPath string, options Kustomizat
 						return nil, err
 					}
 				}
-				k.files[path] = raw
+				// TODO: is this the right way to adjust the file path?
+				k.files[path+file[len(absolutePath):]] = raw
 			}
 		} else {
 			raw, err := fs.ReadFile(fsys, absolutePath)
@@ -237,11 +265,11 @@ func parseKustomization(fsys fs.FS, kustomizationPath string, options Kustomizat
 		}
 	}
 
-	for _, path := range options.IncludedKustomizations {
+	for _, path := range config.IncludedKustomizations {
 		if filepath.IsAbs(path) {
 			return nil, fmt.Errorf("include path (%s) must be absolute", path)
 		}
-		absolutePath := filepath.Clean(filepath.Join(kustomizationPath, path))
+		absolutePath := filepath.Join(kustomizationPath, path)
 		if isSubdirectory(absolutePath, kustomizationPath) {
 			// this is actually redundant; the same is checked through via visitedKustomizationPaths when calling parseKustomization();
 			// but we keep it to maintain symmetry with the IncludedFiles handling, and because of the better error message
@@ -262,6 +290,16 @@ func (k *Kustomization) Path() string {
 }
 
 func (k *Kustomization) Render(context RenderContext, fsys kustfsys.FileSystem) error {
+	localServerVersion, err := context.LocalDiscoveryClient.ServerVersion()
+	if err != nil {
+		return err
+	}
+	_, localServerGroupsWithResources, err := context.LocalDiscoveryClient.ServerGroupsAndResources()
+	if err != nil {
+		return err
+	}
+	localServerGroupsWithResources = normalizeServerGroupsWithResources(localServerGroupsWithResources)
+
 	serverVersion, err := context.DiscoveryClient.ServerVersion()
 	if err != nil {
 		return err
@@ -272,7 +310,7 @@ func (k *Kustomization) Render(context RenderContext, fsys kustfsys.FileSystem) 
 	}
 	serverGroupsWithResources = normalizeServerGroupsWithResources(serverGroupsWithResources)
 
-	data := context.Parameters
+	data := manifests.MergeMaps(k.values, context.Values)
 
 	for n, f := range k.nonTemplates {
 		if err := fsys.WriteFile(filepath.Join(k.path, n), f); err != nil {
@@ -291,7 +329,7 @@ func (k *Kustomization) Render(context RenderContext, fsys kustfsys.FileSystem) 
 				Funcs(templatex.FuncMapForTemplate(t0)).
 				Funcs(templatex.FuncMapForLocalClient(context.LocalClient)).
 				Funcs(templatex.FuncMapForClient(context.Client)).
-				Funcs(funcMapForContext(k.files, serverVersion, serverGroupsWithResources, context.Component, context.ComponentDigest, context.ComponentRevision, context.Namespace, context.Name))
+				Funcs(funcMapForContext(k.files, localServerVersion, localServerGroupsWithResources, serverVersion, serverGroupsWithResources, context.Component, context.ComponentDigest, context.ComponentRevision, context.Namespace, context.Name))
 		}
 		var buf bytes.Buffer
 		// TODO: templates (accidentally or intentionally) could modify data, or even some of the objects supplied through builtin functions;
@@ -331,20 +369,22 @@ func (k *Kustomization) Render(context RenderContext, fsys kustfsys.FileSystem) 
 	return nil
 }
 
-func funcMapForContext(files map[string][]byte, serverInfo *version.Info, serverGroupsWithResources []*metav1.APIResourceList, component component.Component, componentDigest string, componentRevision int64, namespace string, name string) template.FuncMap {
+func funcMapForContext(files map[string][]byte, localServerInfo *version.Info, localServerGroupsWithResources []*metav1.APIResourceList, serverInfo *version.Info, serverGroupsWithResources []*metav1.APIResourceList, component component.Component, componentDigest string, componentRevision int64, namespace string, name string) template.FuncMap {
 	return template.FuncMap{
 		// TODO: maybe it would it be better to convert component to unstructured;
 		// then calling methods would no longer be possible, and attributes would be in lowercase
-		"listFiles":         makeFuncListFiles(files),
-		"existsFile":        makeFuncExistsFile(files),
-		"readFile":          makeFuncReadFile(files),
-		"component":         makeFuncData(component),
-		"componentDigest":   func() string { return componentDigest },
-		"componentRevision": func() int64 { return componentRevision },
-		"namespace":         func() string { return namespace },
-		"name":              func() string { return name },
-		"kubernetesVersion": func() *version.Info { return serverInfo },
-		"apiResources":      func() []*metav1.APIResourceList { return serverGroupsWithResources },
+		"listFiles":              makeFuncListFiles(files),
+		"existsFile":             makeFuncExistsFile(files),
+		"readFile":               makeFuncReadFile(files),
+		"component":              makeFuncData(component),
+		"componentDigest":        func() string { return componentDigest },
+		"componentRevision":      func() int64 { return componentRevision },
+		"namespace":              func() string { return namespace },
+		"name":                   func() string { return name },
+		"localKubernetesVersion": func() *version.Info { return localServerInfo },
+		"localApiResources":      func() []*metav1.APIResourceList { return localServerGroupsWithResources },
+		"kubernetesVersion":      func() *version.Info { return serverInfo },
+		"apiResources":           func() []*metav1.APIResourceList { return serverGroupsWithResources },
 	}
 }
 
@@ -431,20 +471,39 @@ func generateKustomization(fsys kustfsys.FileSystem, kustomizationPath string) (
 	return rawKustomization, nil
 }
 
-func readOptions(fsys fs.FS, path string, options *KustomizationOptions) error {
-	rawOptions, err := fs.ReadFile(fsys, path)
-	if err != nil {
-		if errors.Is(err, fs.ErrNotExist) {
-			return nil
+func readConfig(fsys fs.FS, path string, options *KustomizationOptions) (*KustomizationConfiguration, error) {
+	config := &KustomizationConfiguration{}
+
+	if rawConfig, err := fs.ReadFile(fsys, path); err == nil {
+		if err := kyaml.Unmarshal(rawConfig, config); err != nil {
+			return nil, err
 		}
-		return err
+	} else {
+		if !errors.Is(err, fs.ErrNotExist) {
+			return nil, err
+		}
 	}
 
-	if err := kyaml.Unmarshal(rawOptions, options); err != nil {
-		return err
+	if config.TemplateSuffix == nil {
+		config.TemplateSuffix = options.TemplateSuffix
+	}
+	if config.TemplateSuffix == nil {
+		config.TemplateSuffix = new("")
+	}
+	if config.LeftTemplateDelimiter == nil {
+		config.LeftTemplateDelimiter = options.LeftTemplateDelimiter
+	}
+	if config.LeftTemplateDelimiter == nil {
+		config.LeftTemplateDelimiter = new("")
+	}
+	if config.RightTemplateDelimiter == nil {
+		config.RightTemplateDelimiter = options.RightTemplateDelimiter
+	}
+	if config.RightTemplateDelimiter == nil {
+		config.RightTemplateDelimiter = new("")
 	}
 
-	return nil
+	return config, nil
 }
 
 func readIgnore(fsys fs.FS, path string) (gitignore.Matcher, error) {
@@ -459,14 +518,15 @@ func readIgnore(fsys fs.FS, path string) (gitignore.Matcher, error) {
 	}
 	defer ignoreFile.Close()
 
-	domain := filepath.SplitList(path)
-	domain = domain[0 : len(domain)-1]
 	scanner := bufio.NewScanner(ignoreFile)
 	for scanner.Scan() {
 		s := scanner.Text()
 		if !strings.HasPrefix(s, "#") && len(strings.TrimSpace(s)) > 0 {
-			patterns = append(patterns, gitignore.ParsePattern(s, domain))
+			patterns = append(patterns, gitignore.ParsePattern(s, nil))
 		}
+	}
+	if err := scanner.Err(); err != nil {
+		return nil, err
 	}
 
 	return gitignore.NewMatcher(patterns), nil
@@ -491,5 +551,5 @@ func normalizeApiResources(apiResources []metav1.APIResource) []metav1.APIResour
 }
 
 func isSubdirectory(subdir string, dir string) bool {
-	return subdir == dir || strings.HasPrefix(subdir, dir+string(filepath.Separator))
+	return subdir == dir || strings.HasPrefix(subdir, dir+"/")
 }

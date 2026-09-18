@@ -33,11 +33,7 @@ import (
 	"strconv"
 	{{- end }}
 
-	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
-	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
-	apiregistrationv1 "k8s.io/kube-aggregator/pkg/apis/apiregistration/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
@@ -56,10 +52,6 @@ var (
 )
 
 func init() {
-	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
-	utilruntime.Must(apiextensionsv1.AddToScheme(scheme))
-	utilruntime.Must(apiregistrationv1.AddToScheme(scheme))
-
 	operator.InitScheme(scheme)
 }
 
@@ -129,7 +121,7 @@ func main() {
 		Scheme: scheme,
 		Client: client.Options{
 			Cache: &client.CacheOptions{
-				DisableFor: append(operator.GetUncacheableTypes(), &apiextensionsv1.CustomResourceDefinition{}, &apiregistrationv1.APIService{}),
+				DisableFor: operator.GetUncacheableTypes(),
 			},
 		},
 		LeaderElection:                enableLeaderElection,

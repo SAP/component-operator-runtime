@@ -26,6 +26,8 @@ func NewClientFor(config *rest.Config, scheme *runtime.Scheme, name string) (*Cl
 	if err != nil {
 		return nil, err
 	}
+	// TODO: a full clientset which contains all builtin groups is actually not needed here;
+	// a clientset for corev1 events, plus discovery would be sufficient
 	clientset, err := kubernetes.NewForConfigAndClient(config, httpClient)
 	if err != nil {
 		return nil, err
