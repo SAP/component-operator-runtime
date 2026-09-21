@@ -43,6 +43,8 @@ functions, plus functions like `include`, `tpl`, `lookup`, and the following:
 | `bitwiseXor <input ...any>` | Perform a bitwise logical 'xor' on the inputs. |
 | `parseIPv4Address <input any>` | Convert a string representation of an IPv4 address into a 32 bit integer. |
 | `formatIPv4Address <input any>` | Convert a 32 bit integer representation of an IPv4 address into a string. |
+| `httpRequest <method, caBundle, clientKey, clientCert string, headers map[string]any, body []byte, url string>` | Perform a generic HTTP request; returns an object with fields `StatusCode int`, `Status string`, `Headers map[string]any`, `Body []byte`. |
+| `httpGet <url string>` | Perform an http GET request; fails on error codes >= 300 and returns the response body as `[]byte`. |
 | `include <name string, input any>` | Render the given named template with the input as data values. |
 | `tpl <template string, input any>` | Render the given template string with the input as data values. |
 | `lookup <apiVersion, kind, namespace, name string>` | Lookup a resource with the target client; return nil on 404. |

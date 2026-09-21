@@ -91,6 +91,9 @@ clm apply NAME SOURCE... [flags]
 |------|-------------|
 | `-f`, `--values` | Path to a values file in YAML format (repeatable; merged in order of appearance) |
 | `--create-namespace` | Create the release namespace if it does not exist |
+| `--target-namespace` | Target namespace for dependent objects; defaults to the release namespace (`--namespace`) |
+| `--target-name` | Target name for rendering of dependent objects; defaults to the release name (`NAME`) |
+| `--field-owner` | Field manager to use for dependent objects; defaults to `clm.cs.sap.com` |
 | `--timeout` | Time to wait for the operation to complete (default is to wait forever) |
 
 `NAME` is a logical release name that uniquely identifies this deployment within the
@@ -191,6 +194,8 @@ clm template NAME SOURCE... [flags]
 | Flag | Description |
 |------|-------------|
 | `-f`, `--values` | Path to a values file in YAML format (repeatable; merged in order of appearance) |
+| `--target-namespace` | Target namespace for dependent objects; defaults to the release namespace (`--namespace`) |
+| `--target-name` | Target name for rendering of dependent objects; defaults to the release name (`NAME`) |
 
 **Example**
 
