@@ -71,6 +71,8 @@ func formatTimestamp(t time.Time) string {
 type releaseDetails struct {
 	Namespace           string `json:"namespace"`
 	Name                string `json:"name"`
+	TargetNamespace     string `json:"targetNamespace"`
+	TargetName          string `json:"targetName"`
 	Revision            int64  `json:"revision"`
 	State               string `json:"state"`
 	NumAllObjects       int64  `json:"numAllObjects"`
@@ -84,6 +86,8 @@ func getReleaseDetails(release *release.Release) *releaseDetails {
 	return &releaseDetails{
 		Namespace:           release.GetNamespace(),
 		Name:                release.GetName(),
+		TargetNamespace:     release.GetTargetNamespace(),
+		TargetName:          release.GetTargetName(),
 		Revision:            release.Revision,
 		State:               string(release.State),
 		NumAllObjects:       int64(len(release.Inventory)),
