@@ -34,6 +34,7 @@ type applyOptions struct {
 	createNamespace bool
 	targetNamespace string
 	targetName      string
+	fieldOwner      string
 	timeout         time.Duration
 }
 
@@ -66,6 +67,7 @@ func newApplyCmd() *cobra.Command {
 			}
 
 			reconciler := reconciler.NewReconciler(fullName, clnt, reconciler.ReconcilerOptions{
+				FieldOwner:   &options.fieldOwner,
 				UpdatePolicy: new(reconciler.UpdatePolicySsaOverride),
 			})
 
@@ -182,6 +184,7 @@ func newApplyCmd() *cobra.Command {
 	flags.BoolVar(&options.createNamespace, "create-namespace", false, "Create release namespace if not existing")
 	flags.StringVar(&options.targetNamespace, "target-namespace", "", "Target deployment namespace for the release (defaults to the release namespace)")
 	flags.StringVar(&options.targetName, "target-name", "", "Target deployment name for the release (defaults to the release name)")
+	flags.StringVar(&options.fieldOwner, "field-owner", fullName, "Name used in managed fields to track field ownership")
 	flags.DurationVar(&options.timeout, "timeout", 0, "Time to wait for the operation to complete (default is to wait forever)")
 
 	return cmd

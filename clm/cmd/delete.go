@@ -24,6 +24,7 @@ import (
 const deleteUsage = `Delete component from Kubernetes cluster`
 
 type deleteOptions struct {
+	// fieldOwner string
 	timeout time.Duration
 }
 
@@ -49,6 +50,7 @@ func newDeleteCmd() *cobra.Command {
 			}
 
 			reconciler := reconciler.NewReconciler(fullName, clnt, reconciler.ReconcilerOptions{
+				// FieldOwner:   &options.fieldOwner,
 				UpdatePolicy: new(reconciler.UpdatePolicySsaOverride),
 			})
 
@@ -144,6 +146,7 @@ func newDeleteCmd() *cobra.Command {
 	}
 
 	flags := cmd.Flags()
+	// flags.StringVar(&options.fieldOwner, "field-owner", fullName, "Name used in managed fields to track field ownership")
 	flags.DurationVar(&options.timeout, "timeout", 0, "Time to wait for the operation to complete (default is to wait forever)")
 
 	return cmd
