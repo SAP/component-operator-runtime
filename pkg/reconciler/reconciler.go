@@ -341,6 +341,10 @@ func (r *Reconciler) Apply(ctx context.Context, inventory *[]*InventoryItem, obj
 				break
 			}
 		}
+		if isManagedByTypes(r.additionalManagedTypes, object) {
+			err = nil
+			break
+		}
 		if err != nil {
 			return false, legacyerrors.Wrapf(err, "error getting rest mapping for object %s", types.ObjectKeyToString(object))
 		}
@@ -358,9 +362,9 @@ func (r *Reconciler) Apply(ctx context.Context, inventory *[]*InventoryItem, obj
 	// which exactly happens if
 	// 1. the object is incorrectly specified and
 	// 2. calling RESTMapping() above returned a NoMatchError (i.e. the type is currently not known to the api server) and
-	// 3. the type belongs to a (new) api service which is part of the inventory
+	// 3. the type belongs to a (new) api service which is part of the inventory or the type is contained in additionalManagedTypes
 	// such entries can cause trouble, e.g. because the duplicate check, or InventoryItem.Match() might not work reliably ...
-	// TODO: should we allow at all that api services and according instances are deployed together?
+	// TODO: should we allow at all that api services / additional managed types and according instances are deployed together?
 
 	// check that there are no duplicate objects
 	// TODO: this could be moved to normalizeObjects()
