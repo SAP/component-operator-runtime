@@ -8,13 +8,13 @@ package clientfactory
 import (
 	"time"
 
-	"k8s.io/client-go/tools/record"
+	"k8s.io/client-go/tools/events"
 
 	"github.com/sap/component-operator-runtime/pkg/cluster"
 )
 
 type Client struct {
 	cluster.Client
-	eventBroadcaster record.EventBroadcaster
+	eventBroadcaster events.EventBroadcaster
 	validUntil       time.Time
 }

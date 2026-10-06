@@ -6,13 +6,10 @@ SPDX-License-Identifier: Apache-2.0
 package events_test
 
 import (
-	"fmt"
 	"time"
 
-	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	apitypes "k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -25,13 +22,28 @@ var _ = Describe("testing: recorder.go", func() {
 
 	var object1 client.Object
 	var object2 client.Object
-	var event1 *Event
-	var event2 *Event
-	var event3 *Event
+	var object3 client.Object
+
+	var event11 *Event
+	var event12 *Event
+	var event13 *Event
+	var event14 *Event
+	var event15 *Event
+	var event16 *Event
+	var event17 *Event
+	var event18 *Event
+	var event19 *Event
+
+	var event21 *Event
+
 	var capture *Capture
 	var recorder *events.DeduplicatingRecorder
 
+	var eventf func(event *Event)
+	var annotatedEventf func(event *Event)
+
 	BeforeEach(func() {
+
 		object1 = &metav1.PartialObjectMetadata{
 			ObjectMeta: metav1.ObjectMeta{
 				UID: "1",
@@ -42,106 +54,228 @@ var _ = Describe("testing: recorder.go", func() {
 				UID: "2",
 			},
 		}
-		event1 = &Event{
-			Type:    corev1.EventTypeNormal,
-			Reason:  "reason1",
-			Message: "message1",
-		}
-		event2 = &Event{
-			Type:    corev1.EventTypeWarning,
-			Reason:  "reason2",
-			Message: "message2",
-		}
-		event3 = &Event{
-			Type:    corev1.EventTypeWarning,
-			Reason:  "reason2",
-			Message: "message2",
-			Annotations: map[string]string{
-				"key": "value",
+		object3 = &metav1.PartialObjectMetadata{
+			ObjectMeta: metav1.ObjectMeta{
+				UID: "3",
 			},
 		}
+
+		event11 = &Event{
+			Regarding: object1,
+		}
+		event12 = &Event{
+			Regarding: object1,
+			Related:   object3,
+		}
+		event13 = &Event{
+			Regarding: object1,
+			Related:   object3,
+			Type:      "type-a",
+		}
+		event14 = &Event{
+			Regarding: object1,
+			Related:   object3,
+			Type:      "type-a",
+			Reason:    "reason-a",
+		}
+		event15 = &Event{
+			Regarding: object1,
+			Related:   object3,
+			Type:      "type-a",
+			Reason:    "reason-a",
+			Action:    "action-a",
+		}
+		event16 = &Event{
+			Regarding: object1,
+			Related:   object3,
+			Type:      "type-a",
+			Reason:    "reason-a",
+			Action:    "action-a",
+			Note:      "note-a",
+		}
+		event17 = &Event{
+			Regarding: object1,
+			Related:   object3,
+			Type:      "type-a",
+			Reason:    "reason-a",
+			Action:    "action-a",
+			Note:      "note-a",
+			Args:      []any{"arg-a1"},
+		}
+		event18 = &Event{
+			Regarding:   object1,
+			Related:     object3,
+			Annotations: map[string]string{"foo": "bar"},
+			Type:        "type-a",
+			Reason:      "reason-a",
+			Action:      "action-a",
+			Note:        "note-a",
+			Args:        []any{"arg-a1"},
+		}
+		event19 = &Event{
+			Regarding:   object1,
+			Related:     object3,
+			Annotations: map[string]string{"foo": "baz"},
+			Type:        "type-a",
+			Reason:      "reason-a",
+			Action:      "action-a",
+			Note:        "note-a",
+			Args:        []any{"arg-a1"},
+		}
+
+		event21 = &Event{
+			Regarding: object2,
+		}
+
 		capture = &Capture{}
 		recorder = events.NewDeduplicatingRecorder(capture, 2000*time.Millisecond)
+
+		eventf = func(event *Event) {
+			recorder.Eventf(event.Regarding, event.Related, event.Type, event.Reason, event.Action, event.Note, event.Args...)
+		}
+		annotatedEventf = func(event *Event) {
+			recorder.AnnotatedEventf(event.Regarding, event.Related, event.Annotations, event.Type, event.Reason, event.Action, event.Note, event.Args...)
+		}
 	})
 
 	It("should deduplicate events for one object", func() {
 		capture.Start()
-		recorder.Event(object1, event1.Type, event1.Reason, event1.Message)
-		Expect(capture.Stop()).To(Equal(captured(object1, event1)))
+		eventf(event11)
+		Expect(capture.Stop()).To(Equal(captured(event11)))
 
 		capture.Start()
-		recorder.Event(object1, event1.Type, event1.Reason, event1.Message)
+		eventf(event11)
 		Expect(capture.Stop()).To(BeNil())
 
 		capture.Start()
-		recorder.Event(object1, event2.Type, event2.Reason, event2.Message)
-		Expect(capture.Stop()).To(Equal(captured(object1, event2)))
+		eventf(event12)
+		Expect(capture.Stop()).To(Equal(captured(event12)))
 
 		capture.Start()
-		recorder.Event(object1, event1.Type, event1.Reason, event1.Message)
-		Expect(capture.Stop()).To(Equal(captured(object1, event1)))
+		eventf(event12)
+		Expect(capture.Stop()).To(BeNil())
+
+		capture.Start()
+		eventf(event13)
+		Expect(capture.Stop()).To(Equal(captured(event13)))
+
+		capture.Start()
+		eventf(event13)
+		Expect(capture.Stop()).To(BeNil())
+
+		capture.Start()
+		eventf(event14)
+		Expect(capture.Stop()).To(Equal(captured(event14)))
+
+		capture.Start()
+		eventf(event14)
+		Expect(capture.Stop()).To(BeNil())
+
+		capture.Start()
+		eventf(event15)
+		Expect(capture.Stop()).To(Equal(captured(event15)))
+
+		capture.Start()
+		eventf(event15)
+		Expect(capture.Stop()).To(BeNil())
+
+		capture.Start()
+		eventf(event16)
+		Expect(capture.Stop()).To(Equal(captured(event16)))
+
+		capture.Start()
+		eventf(event16)
+		Expect(capture.Stop()).To(BeNil())
+
+		capture.Start()
+		eventf(event17)
+		Expect(capture.Stop()).To(Equal(captured(event17)))
+
+		capture.Start()
+		eventf(event17)
+		Expect(capture.Stop()).To(BeNil())
+
+		capture.Start()
+		annotatedEventf(event18)
+		Expect(capture.Stop()).To(Equal(captured(event18)))
+
+		capture.Start()
+		annotatedEventf(event18)
+		Expect(capture.Stop()).To(BeNil())
+
+		capture.Start()
+		annotatedEventf(event19)
+		Expect(capture.Stop()).To(Equal(captured(event19)))
+
+		capture.Start()
+		annotatedEventf(event19)
+		Expect(capture.Stop()).To(BeNil())
 	})
 
 	It("should not deduplicate events for different objects", func() {
 		capture.Start()
-		recorder.Event(object1, event1.Type, event1.Reason, event1.Message)
-		Expect(capture.Stop()).To(Equal(captured(object1, event1)))
+		eventf(event11)
+		Expect(capture.Stop()).To(Equal(captured(event11)))
 
 		capture.Start()
-		recorder.Event(object2, event1.Type, event1.Reason, event1.Message)
-		Expect(capture.Stop()).To(Equal(captured(object2, event1)))
+		eventf(event21)
+		Expect(capture.Stop()).To(Equal(captured(event21)))
 	})
 
-	It("should produce the same results, regardless of using Event(), Eventf() or AnnotatedEventf()", func() {
+	It("should produce the same results, regardless of using Eventf() or AnnotatedEventf()", func() {
 		capture.Start()
-		recorder.Event(object1, event1.Type, event1.Reason, event1.Message)
-		Expect(capture.Stop()).To(Equal(captured(object1, event1)))
+		eventf(event17)
+		Expect(capture.Stop()).To(Equal(captured(event17)))
 
 		capture.Start()
-		recorder.Eventf(object1, event1.Type, event1.Reason, "%s", event1.Message)
+		eventf(event17)
 		Expect(capture.Stop()).To(BeNil())
 
 		capture.Start()
-		recorder.AnnotatedEventf(object1, nil, event1.Type, event1.Reason, "%s", event1.Message)
+		annotatedEventf(event17)
 		Expect(capture.Stop()).To(BeNil())
-	})
-
-	It("should handle event annotations correctly", func() {
-		capture.Start()
-		recorder.AnnotatedEventf(object1, event3.Annotations, event3.Type, event3.Reason, "%s", event3.Message)
-		Expect(capture.Stop()).To(Equal(captured(object1, event3)))
 	})
 
 	It("should forget stored events after epxiration", func() {
 		capture.Start()
-		recorder.Event(object1, event1.Type, event1.Reason, event1.Message)
-		Expect(capture.Stop()).To(Equal(captured(object1, event1)))
+		eventf(event15)
+		Expect(capture.Stop()).To(Equal(captured(event15)))
 
 		time.Sleep(1500 * time.Millisecond)
 
 		capture.Start()
-		recorder.Event(object1, event1.Type, event1.Reason, event1.Message)
+		eventf(event15)
 		Expect(capture.Stop()).To(BeNil())
 
 		time.Sleep(600 * time.Millisecond)
 
 		capture.Start()
-		recorder.Event(object1, event1.Type, event1.Reason, event1.Message)
-		Expect(capture.Stop()).To(Equal(captured(object1, event1)))
+		eventf(event15)
+		Expect(capture.Stop()).To(Equal(captured(event15)))
 	})
 
 })
 
 type Event struct {
+	Regarding   client.Object
+	Related     client.Object
+	Annotations map[string]string
 	Type        string
 	Reason      string
-	Message     string
-	Annotations map[string]string
+	Action      string
+	Note        string
+	Args        []any
 }
 
 type CapturedEvent struct {
-	Event
-	UID apitypes.UID
+	Regarding   runtime.Object
+	Related     runtime.Object
+	Annotations map[string]string
+	Type        string
+	Reason      string
+	Action      string
+	Note        string
+	Args        []any
 }
 
 type Capture struct {
@@ -165,52 +299,47 @@ func (c *Capture) Stop() *CapturedEvent {
 	return c.event
 }
 
-func (c *Capture) Event(object runtime.Object, eventtype, reason, message string) {
+func (c *Capture) Eventf(regarding runtime.Object, related runtime.Object, eventtype string, reason string, action string, note string, args ...any) {
 	if !c.active {
 		panic("Capture not started")
 	}
 	c.event = &CapturedEvent{
-		Event: Event{
-			Type:    eventtype,
-			Reason:  reason,
-			Message: message,
-		},
-		UID: object.(metav1.Object).GetUID(),
+		Regarding:   regarding,
+		Related:     related,
+		Annotations: nil,
+		Type:        eventtype,
+		Reason:      reason,
+		Action:      action,
+		Note:        note,
+		Args:        args,
 	}
 }
 
-func (c *Capture) Eventf(object runtime.Object, eventtype, reason, messageFmt string, args ...any) {
+func (c *Capture) AnnotatedEventf(regarding runtime.Object, related runtime.Object, annotations map[string]string, eventtype string, reason string, action string, note string, args ...any) {
 	if !c.active {
 		panic("Capture not started")
 	}
 	c.event = &CapturedEvent{
-		Event: Event{
-			Type:    eventtype,
-			Reason:  reason,
-			Message: fmt.Sprintf(messageFmt, args...),
-		},
-		UID: object.(metav1.Object).GetUID(),
+		Regarding:   regarding,
+		Related:     related,
+		Annotations: annotations,
+		Type:        eventtype,
+		Reason:      reason,
+		Action:      action,
+		Note:        note,
+		Args:        args,
 	}
 }
 
-func (c *Capture) AnnotatedEventf(object runtime.Object, annotations map[string]string, eventtype, reason, messageFmt string, args ...any) {
-	if !c.active {
-		panic("Capture not started")
-	}
-	c.event = &CapturedEvent{
-		Event: Event{
-			Type:        eventtype,
-			Reason:      reason,
-			Message:     fmt.Sprintf(messageFmt, args...),
-			Annotations: annotations,
-		},
-		UID: object.(metav1.Object).GetUID(),
-	}
-}
-
-func captured(object client.Object, event *Event) *CapturedEvent {
+func captured(event *Event) *CapturedEvent {
 	return &CapturedEvent{
-		Event: *event,
-		UID:   object.GetUID(),
+		Regarding:   event.Regarding,
+		Related:     event.Related,
+		Annotations: event.Annotations,
+		Type:        event.Type,
+		Reason:      event.Reason,
+		Action:      event.Action,
+		Note:        event.Note,
+		Args:        event.Args,
 	}
 }

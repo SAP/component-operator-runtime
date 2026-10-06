@@ -49,6 +49,12 @@ const (
 )
 
 const (
+	objectActionCreate = "Create"
+	objectActionUpdate = "Update"
+	objectActionDelete = "Delete"
+)
+
+const (
 	scopeUnknown = iota
 	scopeNamespaced
 	scopeCluster
@@ -1132,7 +1138,8 @@ func (r *Reconciler) createObject(ctx context.Context, object client.Object, cre
 		}
 		if r.enableEvents {
 			if err == nil {
-				r.client.EventRecorder().Event(object, corev1.EventTypeNormal, objectReasonCreated, "Object successfully created")
+				// TODO: should we populate related (e.g. with the owning component)
+				r.client.EventRecorder().Eventf(object, nil, corev1.EventTypeNormal, objectReasonCreated, objectActionCreate, "Object successfully created")
 			}
 		}
 	}()
@@ -1182,9 +1189,11 @@ func (r *Reconciler) updateObject(ctx context.Context, object client.Object, exi
 		}
 		if r.enableEvents {
 			if err == nil {
-				r.client.EventRecorder().Event(object, corev1.EventTypeNormal, objectReasonUpdated, "Object successfully updated")
+				// TODO: should we populate related (e.g. with the owning component)
+				r.client.EventRecorder().Eventf(object, nil, corev1.EventTypeNormal, objectReasonUpdated, objectActionUpdate, "Object successfully updated")
 			} else {
-				r.client.EventRecorder().Eventf(existingObject, corev1.EventTypeWarning, objectReasonUpdateError, "Error updating object: %s", err)
+				// TODO: should we populate related (e.g. with the owning component)
+				r.client.EventRecorder().Eventf(existingObject, nil, corev1.EventTypeWarning, objectReasonUpdateError, objectActionUpdate, "Error updating object: %s", err)
 			}
 		}
 	}()
@@ -1279,9 +1288,11 @@ func (r *Reconciler) deleteObject(ctx context.Context, key types.ObjectKey, exis
 				return
 			}
 			if err == nil {
-				r.client.EventRecorder().Event(existingObject, corev1.EventTypeNormal, objectReasonDeleted, "Object successfully deleted")
+				// TODO: should we populate related (e.g. with the owning component)
+				r.client.EventRecorder().Eventf(existingObject, nil, corev1.EventTypeNormal, objectReasonDeleted, objectActionDelete, "Object successfully deleted")
 			} else {
-				r.client.EventRecorder().Eventf(existingObject, corev1.EventTypeWarning, objectReasonDeleteError, "Error deleting object: %s", err)
+				// TODO: should we populate related (e.g. with the owning component)
+				r.client.EventRecorder().Eventf(existingObject, nil, corev1.EventTypeWarning, objectReasonDeleteError, objectActionDelete, "Error deleting object: %s", err)
 			}
 		}
 	}()
