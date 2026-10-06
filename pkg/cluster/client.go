@@ -10,11 +10,11 @@ import (
 
 	"k8s.io/client-go/discovery"
 	"k8s.io/client-go/rest"
-	"k8s.io/client-go/tools/record"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/recorder"
 )
 
-func NewClient(clnt client.Client, discoveryClient discovery.DiscoveryInterface, eventRecorder record.EventRecorder, config *rest.Config, httpClient *http.Client) Client {
+func NewClient(clnt client.Client, discoveryClient discovery.DiscoveryInterface, eventRecorder recorder.EventRecorder, config *rest.Config, httpClient *http.Client) Client {
 	return &clientImpl{
 		Client:          clnt,
 		discoveryClient: discoveryClient,
@@ -27,7 +27,7 @@ func NewClient(clnt client.Client, discoveryClient discovery.DiscoveryInterface,
 type clientImpl struct {
 	client.Client
 	discoveryClient discovery.DiscoveryInterface
-	eventRecorder   record.EventRecorder
+	eventRecorder   recorder.EventRecorder
 	config          *rest.Config
 	httpClient      *http.Client
 }
@@ -36,7 +36,7 @@ func (c *clientImpl) DiscoveryClient() discovery.DiscoveryInterface {
 	return c.discoveryClient
 }
 
-func (c *clientImpl) EventRecorder() record.EventRecorder {
+func (c *clientImpl) EventRecorder() recorder.EventRecorder {
 	return c.eventRecorder
 }
 

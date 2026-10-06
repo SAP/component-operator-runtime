@@ -76,6 +76,8 @@ const (
 	ReadyConditionReasonDeletionBlocked    = "DeletionBlocked"
 	ReadyConditionReasonDeletionProcessing = "DeletionProcessing"
 
+	ActionReconcile = "Reconcile"
+
 	triggerBufferSize = 1024
 
 	defaultReapplyInterval = 60 * time.Minute
@@ -146,7 +148,7 @@ type Reconciler[T Component] struct {
 	client cluster.Client
 	// TODO: hookClient could be just a client.Client or even client.Reader
 	hookClient         cluster.Client
-	eventRecorder      events.DeduplicatingRecorder
+	eventRecorder      *events.DeduplicatingRecorder
 	resourceGenerator  manifests.Generator
 	statusAnalyzer     status.StatusAnalyzer
 	options            ReconcilerOptions
@@ -424,9 +426,9 @@ func (r *Reconciler[T]) Reconcile(ctx context.Context, req ctrl.Request) (result
 		// such as the flux notfication recorder; should we therefore send the events asynchronously, or start synchronously and continue asynchronous
 		// after a little while?
 		if state == StateError {
-			r.eventRecorder.AnnotatedEventf(component, eventAnnotations, corev1.EventTypeWarning, reason, "%s", message)
+			r.eventRecorder.AnnotatedEventf(component, nil, eventAnnotations, corev1.EventTypeWarning, reason, ActionReconcile, "%s", message)
 		} else {
-			r.eventRecorder.AnnotatedEventf(component, eventAnnotations, corev1.EventTypeNormal, reason, "%s", message)
+			r.eventRecorder.AnnotatedEventf(component, nil, eventAnnotations, corev1.EventTypeNormal, reason, ActionReconcile, "%s", message)
 		}
 
 		if skipStatusUpdate {
@@ -748,13 +750,13 @@ func (r *Reconciler[T]) SetupWithManagerAndBuilder(mgr ctrl.Manager, blder *ctrl
 		}
 		r.client = clnt
 	}
-	r.eventRecorder = *events.NewDeduplicatingRecorder(r.client.EventRecorder(), 5*time.Minute)
+	r.eventRecorder = events.NewDeduplicatingRecorder(r.client.EventRecorder(), 5*time.Minute)
 
 	discoveryClient, err := discovery.NewDiscoveryClientForConfigAndClient(config, mgr.GetHTTPClient())
 	if err != nil {
 		return legacyerrors.Wrap(err, "error creating discovery client")
 	}
-	r.hookClient = cluster.NewClient(mgr.GetClient(), discoveryClient, mgr.GetEventRecorderFor(r.name), config, mgr.GetHTTPClient())
+	r.hookClient = cluster.NewClient(mgr.GetClient(), discoveryClient, mgr.GetEventRecorder(r.name), config, mgr.GetHTTPClient())
 
 	component := newComponent[T]()
 	r.groupVersionKind, err = apiutil.GVKForObject(component, r.client.Scheme())

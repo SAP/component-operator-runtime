@@ -10,14 +10,14 @@ import (
 	"sync"
 	"time"
 
-	"k8s.io/client-go/tools/record"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/recorder"
 
 	"github.com/sap/component-operator-runtime/internal/util"
 )
 
 type DeduplicatingRecorder struct {
-	recorder   record.EventRecorder
+	recorder   recorder.EventRecorder
 	mutex      sync.Mutex
 	events     map[string]event
 	expiration time.Duration
@@ -28,7 +28,7 @@ type event struct {
 	timestamp time.Time
 }
 
-func NewDeduplicatingRecorder(recorder record.EventRecorder, expiration time.Duration) *DeduplicatingRecorder {
+func NewDeduplicatingRecorder(recorder recorder.EventRecorder, expiration time.Duration) *DeduplicatingRecorder {
 	return &DeduplicatingRecorder{
 		recorder:   recorder,
 		events:     make(map[string]event),
@@ -36,30 +36,27 @@ func NewDeduplicatingRecorder(recorder record.EventRecorder, expiration time.Dur
 	}
 }
 
-func (r *DeduplicatingRecorder) Event(object client.Object, eventType string, reason string, message string) {
-	if r.isDuplicate(object, nil, eventType, reason, message) {
+func (r *DeduplicatingRecorder) Eventf(regarding client.Object, related client.Object, eventType string, reason string, action string, note string, args ...any) {
+	if r.isDuplicate(regarding, related, nil, eventType, reason, action, fmt.Sprintf(note, args...)) {
 		return
 	}
-	r.recorder.Event(object, eventType, reason, message)
+	r.recorder.Eventf(regarding, related, eventType, reason, action, note, args...)
 }
 
-func (r *DeduplicatingRecorder) Eventf(object client.Object, eventType string, reason string, messageFmt string, args ...any) {
-	if r.isDuplicate(object, nil, eventType, reason, fmt.Sprintf(messageFmt, args...)) {
+func (r *DeduplicatingRecorder) AnnotatedEventf(regarding client.Object, related client.Object, annotations map[string]string, eventType string, reason string, action string, note string, args ...any) {
+	if r.isDuplicate(regarding, related, annotations, eventType, reason, action, fmt.Sprintf(note, args...)) {
 		return
 	}
-	r.recorder.Eventf(object, eventType, reason, messageFmt, args...)
+	r.recorder.AnnotatedEventf(regarding, related, annotations, eventType, reason, action, note, args...)
 }
 
-func (r *DeduplicatingRecorder) AnnotatedEventf(object client.Object, annotations map[string]string, eventType string, reason string, messageFmt string, args ...any) {
-	if r.isDuplicate(object, annotations, eventType, reason, fmt.Sprintf(messageFmt, args...)) {
-		return
+func (r *DeduplicatingRecorder) isDuplicate(regarding client.Object, related client.Object, annotations map[string]string, eventType string, reason string, action string, message string) bool {
+	regardingUid := string(regarding.GetUID())
+	relatedUid := ""
+	if related != nil {
+		relatedUid = string(related.GetUID())
 	}
-	r.recorder.AnnotatedEventf(object, annotations, eventType, reason, messageFmt, args...)
-}
-
-func (r *DeduplicatingRecorder) isDuplicate(object client.Object, annotations map[string]string, eventType, reason, message string) bool {
-	uid := string(object.GetUID())
-	digest := util.CalculateDigest(annotations, eventType, reason, message)
+	digest := util.CalculateDigest(relatedUid, annotations, eventType, reason, action, message)
 	now := time.Now()
 	exp := now.Add(-r.expiration)
 
@@ -70,10 +67,10 @@ func (r *DeduplicatingRecorder) isDuplicate(object client.Object, annotations ma
 			delete(r.events, uid)
 		}
 	}
-	if r.events[uid].digest == digest {
+	if r.events[regardingUid].digest == digest {
 		return true
 	} else {
-		r.events[uid] = event{
+		r.events[regardingUid] = event{
 			digest:    digest,
 			timestamp: now,
 		}

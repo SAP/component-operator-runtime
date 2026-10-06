@@ -6,12 +6,12 @@ SPDX-License-Identifier: Apache-2.0
 package cluster_test
 
 import (
-	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/discovery"
 	"k8s.io/client-go/rest"
-	"k8s.io/client-go/tools/record"
+	"k8s.io/client-go/tools/events"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/recorder"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -33,7 +33,7 @@ var _ = Describe("testing: cluster.go", func() {
 		Expect(err).ToNot(HaveOccurred())
 		discoveryClient, err := discovery.NewDiscoveryClientForConfigAndClient(cfg, httpClient)
 		Expect(err).ToNot(HaveOccurred())
-		eventRecorder := record.NewBroadcaster().NewRecorder(nil, corev1.EventSource{})
+		eventRecorder := events.NewBroadcaster(&events.EventSinkImpl{}).NewRecorder(nil, "source").(recorder.EventRecorder)
 
 		clnt := cluster.NewClient(ctrlClient, discoveryClient, eventRecorder, cfg, httpClient)
 		Expect(clnt.Scheme()).To(BeIdenticalTo(scheme))

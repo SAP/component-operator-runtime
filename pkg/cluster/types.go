@@ -10,8 +10,8 @@ import (
 
 	"k8s.io/client-go/discovery"
 	"k8s.io/client-go/rest"
-	"k8s.io/client-go/tools/record"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/recorder"
 )
 
 // The Client interface extends the controller-runtime client by discovery and event recording capabilities.
@@ -20,7 +20,7 @@ type Client interface {
 	// Return a discovery client.
 	DiscoveryClient() discovery.DiscoveryInterface
 	// Return an event recorder.
-	EventRecorder() record.EventRecorder
+	EventRecorder() recorder.EventRecorder
 	// Return a rest config for this client.
 	Config() *rest.Config
 	// Return a http client for this client.

@@ -6,13 +6,14 @@ SPDX-License-Identifier: Apache-2.0
 package clientfactory
 
 import (
-	corev1 "k8s.io/api/core/v1"
+	"context"
+
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes"
-	typedcorev1 "k8s.io/client-go/kubernetes/typed/core/v1"
 	"k8s.io/client-go/rest"
-	"k8s.io/client-go/tools/record"
+	"k8s.io/client-go/tools/events"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/recorder"
 
 	"github.com/sap/component-operator-runtime/pkg/cluster"
 )
@@ -27,14 +28,21 @@ func NewClientFor(config *rest.Config, scheme *runtime.Scheme, name string) (*Cl
 		return nil, err
 	}
 	// TODO: a full clientset which contains all builtin groups is actually not needed here;
-	// a clientset for corev1 events, plus discovery would be sufficient
+	// a clientset for eventsv1 events, plus discovery would be sufficient
 	clientset, err := kubernetes.NewForConfigAndClient(config, httpClient)
 	if err != nil {
 		return nil, err
 	}
-	eventBroadcaster := record.NewBroadcaster()
-	eventBroadcaster.StartRecordingToSink(&typedcorev1.EventSinkImpl{Interface: clientset.CoreV1().Events("")})
-	eventRecorder := eventBroadcaster.NewRecorder(scheme, corev1.EventSource{Component: name})
+	eventBroadcaster := events.NewBroadcaster(&events.EventSinkImpl{Interface: clientset.EventsV1()})
+	// TODO: should we pass through a context instead of using context.TODO(); such that the recording could
+	// be stopped properly?
+	if eventBroadcaster.StartRecordingToSinkWithContext(context.TODO()); err != nil {
+		return nil, err
+	}
+	// note: NewRecorder() currently returns an events.EventRecorderLogger which includes events.EventRecorder,
+	// but not events.AnnotatedEventRecorder; however looking at the implementation reveals that it actually
+	// returns an object including both (at least as of now); so the below cast is safe
+	eventRecorder := eventBroadcaster.NewRecorder(scheme, name).(recorder.EventRecorder)
 	clnt := &Client{
 		Client: cluster.NewClient(
 			ctrlClient,
