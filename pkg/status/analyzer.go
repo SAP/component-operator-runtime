@@ -31,6 +31,7 @@ type statusAnalyzer struct {
 // Create a default StatusAnalyzer implementation.
 // This implementation uses kstatus internally, with the following modifications:
 //   - certain hints about the object's status type can be passed by setting the annotation '<reconcilerName>/status-hint' on the object, as a comma-separated list;
+//     if this list has exactly one value 'always-ready', the object will always be considered ready, regardless of its observed generation or its conditions; this hint cannot be combined with other hints;
 //     if this list contains the value 'has-observed-generation', the object's status (where appropriate) will be enhanced with an observed generation of -1 before passing it to kstatus;
 //     if this list contains the value 'has-ready-condition', the object's status (where appropriate) will be enhanced by a ready condition with 'Unknown' state
 //     if this list contains the value 'conditions=cond[;cond...]', then the listed conditions must be present and true in order to make the object considered ready
@@ -72,6 +73,9 @@ func (s *statusAnalyzer) ComputeStatus(object *unstructured.Unstructured) (Statu
 
 	// parse hints from annotations
 	if hint, ok := object.GetAnnotations()[s.reconcilerName+"/"+types.AnnotationKeySuffixStatusHint]; ok {
+		if strcase.ToKebab(hint) == types.StatusHintAlwaysReady {
+			return CurrentStatus, nil
+		}
 		object = object.DeepCopy()
 		for _, hint := range strings.Split(hint, ",") {
 			var key, value string
@@ -86,7 +90,7 @@ func (s *statusAnalyzer) ComputeStatus(object *unstructured.Unstructured) (Statu
 			switch strcase.ToKebab(key) {
 			case types.StatusHintHasObservedGeneration:
 				if hasValue {
-					return UnknownStatus, fmt.Errorf("status hint %s does not take a value", types.StatusHintHasObservedGeneration)
+					return UnknownStatus, fmt.Errorf("status hint '%s' does not take a value", types.StatusHintHasObservedGeneration)
 				}
 				if obj.Status.ObservedGeneration == nil {
 					if readyCondition != nil && readyCondition.ObservedGeneration != nil {
@@ -103,7 +107,7 @@ func (s *statusAnalyzer) ComputeStatus(object *unstructured.Unstructured) (Statu
 				}
 			case types.StatusHintHasReadyCondition:
 				if hasValue {
-					return UnknownStatus, fmt.Errorf("status hint %s does not take a value", types.StatusHintHasReadyCondition)
+					return UnknownStatus, fmt.Errorf("status hint '%s' does not take a value", types.StatusHintHasReadyCondition)
 				}
 				if readyCondition == nil {
 					// add a ready condition with status 'Unknown' if there is none, but the hint says there will be one
@@ -123,11 +127,13 @@ func (s *statusAnalyzer) ComputeStatus(object *unstructured.Unstructured) (Statu
 				}
 			case types.StatusHintConditions:
 				if !hasValue {
-					return UnknownStatus, fmt.Errorf("status hint %s requires a value", types.StatusHintConditions)
+					return UnknownStatus, fmt.Errorf("status hint '%s' requires a value", types.StatusHintConditions)
 				}
 				extraConditions = append(extraConditions, strings.Split(value, ";")...)
+			case types.StatusHintAlwaysReady:
+				return UnknownStatus, fmt.Errorf("status hint '%s' cannot be combined with other hints", types.StatusHintAlwaysReady)
 			default:
-				return UnknownStatus, fmt.Errorf("unknown status hint %s", key)
+				return UnknownStatus, fmt.Errorf("unknown status hint '%s'", key)
 			}
 		}
 	}
