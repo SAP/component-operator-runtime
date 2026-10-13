@@ -50,6 +50,7 @@ const (
 )
 
 const (
+	StatusHintAlwaysReady           = "always-ready"
 	StatusHintHasObservedGeneration = "has-observed-generation"
 	StatusHintHasReadyCondition     = "has-ready-condition"
 	StatusHintConditions            = "conditions"
