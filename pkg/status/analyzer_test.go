@@ -169,6 +169,8 @@ var _ = Describe("testing: analyzer.go", func() {
 
 		// always-ready, no other conditions
 		Entry(nil, 3, 0, nil, true, false, false, nil, status.CurrentStatus),
+		Entry(nil, 3, 1, []metav1.Condition{{Type: "Ready", Status: metav1.ConditionFalse}}, true, false, false, nil, status.CurrentStatus),
+		Entry(nil, 3, 3, []metav1.Condition{{Type: "Ready", Status: metav1.ConditionUnknown}}, true, false, false, nil, status.CurrentStatus),
 
 		// no conditions, has-observed-generation:true|false, has-ready-condition:false
 		Entry(nil, 3, 0, nil, false, false, false, nil, status.CurrentStatus),
