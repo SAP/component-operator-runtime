@@ -101,6 +101,10 @@ metadata:
     mycomponent-operator.mydomain.io/status-hint: "conditions=Synced;Healthy"
 ```
 
+### `always-ready`
+
+Always consider the object as ready, regardless of its actual status.
+
 ### Combining hints
 
 Hints are combined as a comma-separated list:
@@ -110,6 +114,8 @@ metadata:
   annotations:
     mycomponent-operator.mydomain.io/status-hint: "has-observed-generation,has-ready-condition,conditions=Synced;Healthy"
 ```
+
+Note that `always-ready` cannot be combind with other hints.
 
 ## See also
 
