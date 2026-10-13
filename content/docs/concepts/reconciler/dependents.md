@@ -112,7 +112,7 @@ readiness when vanilla kstatus is insufficient. Supported hints:
   must all be present with status `True`
 - `always-ready` - always treat the object as ready, regardless of the actual status
 
-With the exception of `always-ready` (which can only be used alone), Hints may be combined, e.g.
+With the exception of `always-ready` (which can only be used alone), hints may be combined, e.g.
 `has-observed-generation,has-ready-condition,conditions=Synced;Healthy`.
 
 See [Enhanced Status Detection](../status-detection/).

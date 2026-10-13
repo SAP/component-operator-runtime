@@ -105,6 +105,12 @@ metadata:
 
 Always consider the object as ready, regardless of its actual status.
 
+```yaml
+metadata:
+  annotations:
+    mycomponent-operator.mydomain.io/status-hint: "always-ready"
+```
+
 ### Combining hints
 
 Hints are combined as a comma-separated list:
