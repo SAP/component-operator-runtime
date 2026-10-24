@@ -33,6 +33,7 @@ var _ = Describe("testing: util.go", func() {
 				"b": {
 					"x": 1
 				},
+				"n": 1,
 				"u": [
 					1
 				],
@@ -60,6 +61,8 @@ var _ = Describe("testing: util.go", func() {
 					"x": 2,
 					"z": 2
 				},
+				"n": null,
+				"o": null,
 				"u": 2,
 				"x": 2,
 				"z": 2
@@ -77,6 +80,8 @@ var _ = Describe("testing: util.go", func() {
 				"b": {
 					"x": 1
 				},
+				"n": null,
+				"o": null,
 				"u": 2,
 				"v": [
 					1
@@ -117,6 +122,7 @@ var _ = Describe("testing: util.go", func() {
 				"b": {
 					"x": 1
 				},
+				"n": 1,
 				"u": [
 					1
 				],
@@ -144,6 +150,8 @@ var _ = Describe("testing: util.go", func() {
 					"x": 2,
 					"z": 2
 				},
+				"n": null,
+				"o": null,
 				"u": 2,
 				"x": 2,
 				"z": 2
@@ -161,6 +169,184 @@ var _ = Describe("testing: util.go", func() {
 				"b": {
 					"x": 1
 				},
+				"n": null,
+				"o": null,
+				"u": 2,
+				"v": [
+					1
+				],
+				"x": 2,
+				"y": 1,
+				"z": 2
+			},
+			"b": {
+				"x": 1
+			},
+			"u": 2,
+			"v": [
+				1
+			],
+			"x": 2,
+			"y": 1,
+			"z": 2
+		}`,
+		),
+	)
+
+	DescribeTable("testing: CoalesceMaps()",
+		func(xs, ys, rs string) {
+			x := jsonUnmarshal(xs)
+			y := jsonUnmarshal(ys)
+			Expect(manifests.CoalesceMaps(x, y)).To(Equal(jsonUnmarshal(rs)))
+			Expect(x).To(Equal(jsonUnmarshal(xs)))
+			Expect(y).To(Equal(jsonUnmarshal(ys)))
+		},
+
+		Entry(nil,
+			`{
+			"a": {
+				"a": {
+					"x": 1
+				},
+				"b": {
+					"x": 1
+				},
+				"n": 1,
+				"u": [
+					1
+				],
+				"v": [
+					1
+				],
+				"x": 1,
+				"y": 1
+			},
+			"b": {
+				"x": 1
+			},
+			"u": [
+				1
+			],
+			"v": [
+				1
+			],
+			"x": 1,
+			"y": 1
+		}`,
+			`{
+			"a": {
+				"a": {
+					"x": 2,
+					"z": 2
+				},
+				"n": null,
+				"o": null,
+				"u": 2,
+				"x": 2,
+				"z": 2
+			},
+			"u": 2,
+			"x": 2,
+			"z": 2
+		}`,
+			`{
+			"a": {
+				"a": {
+					"x": 2,
+					"z": 2
+				},
+				"b": {
+					"x": 1
+				},
+				"o": null,
+				"u": 2,
+				"v": [
+					1
+				],
+				"x": 2,
+				"y": 1,
+				"z": 2
+			},
+			"b": {
+				"x": 1
+			},
+			"u": 2,
+			"v": [
+				1
+			],
+			"x": 2,
+			"y": 1,
+			"z": 2
+		}`,
+		),
+	)
+
+	DescribeTable("testing: CoalesceMapInto()",
+		func(xs, ys, rs string) {
+			x := jsonUnmarshal(xs)
+			y := jsonUnmarshal(ys)
+			manifests.CoalesceMapInto(x, y)
+			Expect(x).To(Equal(jsonUnmarshal(rs)))
+			Expect(y).To(Equal(jsonUnmarshal(ys)))
+		},
+
+		Entry(nil,
+			`{
+			"a": {
+				"a": {
+					"x": 1
+				},
+				"b": {
+					"x": 1
+				},
+				"n": 1,
+				"u": [
+					1
+				],
+				"v": [
+					1
+				],
+				"x": 1,
+				"y": 1
+			},
+			"b": {
+				"x": 1
+			},
+			"u": [
+				1
+			],
+			"v": [
+				1
+			],
+			"x": 1,
+			"y": 1
+		}`,
+			`{
+			"a": {
+				"a": {
+					"x": 2,
+					"z": 2
+				},
+				"n": null,
+				"o": null,
+				"u": 2,
+				"x": 2,
+				"z": 2
+			},
+			"u": 2,
+			"x": 2,
+			"z": 2
+		}`,
+			`{
+			"a": {
+				"a": {
+					"x": 2,
+					"z": 2
+				},
+				"b": {
+					"x": 1
+				},
+				"o": null,
 				"u": 2,
 				"v": [
 					1

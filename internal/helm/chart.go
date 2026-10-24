@@ -275,13 +275,14 @@ func (c *Chart) render(name string, t0 *template.Template, capabilities *Capabil
 	}
 	capabilities = capabilities.DeepCopy()
 	release = release.DeepCopy()
-	values = manifests.MergeMaps(c.values, values)
+	mergedValues := manifests.MergeMaps(c.values, values)
+	coalescedValues := manifests.CoalesceMaps(c.values, values)
 
 	data := make(map[string]any)
 	data["Chart"] = metadata
 	data["Capabilities"] = capabilities
 	data["Release"] = release
-	data["Values"] = values
+	data["Values"] = coalescedValues
 	data["Files"] = c.files
 
 	for _, dep := range c.metadata.Dependencies {
@@ -293,7 +294,7 @@ func (c *Chart) render(name string, t0 *template.Template, capabilities *Capabil
 		// otherwise if any of the tags is false, the dependency will be disabled
 		haveMatchingTag := false
 		for _, tag := range dep.Tags {
-			if v, exists, ok := digBool(values, "tags", tag); ok {
+			if v, exists, ok := digBool(coalescedValues, "tags", tag); ok {
 				if v {
 					enabled = true
 				} else if !haveMatchingTag {
@@ -310,7 +311,7 @@ func (c *Chart) render(name string, t0 *template.Template, capabilities *Capabil
 		// and the first matching condition path will terminate the evaluation of further condition paths
 		if dep.Condition != "" {
 			for _, cond := range strings.Split(dep.Condition, ",") {
-				if v, exists, ok := digBool(values, cond); ok {
+				if v, exists, ok := digBool(coalescedValues, cond); ok {
 					enabled = v
 					break
 				} else if exists {
@@ -324,12 +325,12 @@ func (c *Chart) render(name string, t0 *template.Template, capabilities *Capabil
 		}
 
 		depChart := c.subCharts[dep.Name]
-		depValues, _, _ := getMap(values, dep.Alias)
+		depValues, _, _ := getMap(mergedValues, dep.Alias)
 		if depValues == nil {
 			depValues = make(map[string]any)
 		}
 
-		if v, exists, ok := getMap(values, "global"); ok {
+		if v, exists, ok := getMap(mergedValues, "global"); ok {
 			if w, exists, ok := getMap(depValues, "global"); ok {
 				depValues["global"] = manifests.MergeMaps(w, v)
 			} else if exists {
@@ -341,7 +342,7 @@ func (c *Chart) render(name string, t0 *template.Template, capabilities *Capabil
 			return nil, fmt.Errorf("values key 'global' exists but is not a map")
 		}
 
-		if v, exists, ok := getMap(values, "tags"); ok {
+		if v, exists, ok := getMap(mergedValues, "tags"); ok {
 			if w, exists, ok := getMap(depValues, "tags"); ok {
 				depValues["tags"] = manifests.MergeMaps(w, v)
 			} else if exists {

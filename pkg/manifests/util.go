@@ -23,7 +23,7 @@ func MergeMaps(x, y map[string]any) map[string]any {
 	return x
 }
 
-// Deep-merge second map (y) over first map (x) with the usual logic.
+// Deep-merge second map (y) into first map (x) with the usual logic.
 // The first map will be changed (unless y is empty or nil), the second map will not be changed.
 // The first map must not be nil, the second map is allowed to be nil.
 func MergeMapInto(x map[string]any, y map[string]any) {
@@ -32,6 +32,45 @@ func MergeMapInto(x map[string]any, y map[string]any) {
 			if v, ok := x[k].(map[string]any); ok {
 				if w, ok := y[k].(map[string]any); ok {
 					MergeMapInto(v, w)
+				} else {
+					x[k] = w
+				}
+			} else {
+				x[k] = y[k]
+			}
+		} else {
+			x[k] = y[k]
+		}
+	}
+}
+
+// Deep-coalesce two maps and return the result. That means: other than in MergeMaps(),
+// keys existing in x and being null in y will be removed in the result.
+// The first map (x) must be deeply JSON (i.e. consist deeply of JSON values only).
+// The maps given as input will not be changed.
+// Both maps can be passed as nil.
+func CoalesceMaps(x, y map[string]any) map[string]any {
+	if x == nil {
+		x = make(map[string]any)
+	} else {
+		x = runtime.DeepCopyJSON(x)
+	}
+	CoalesceMapInto(x, y)
+	return x
+}
+
+// Deep-coalesce second map (y) into first map (x). That means: other than in MergeMapInto(),
+// keys existing in x and being null in y will be removed in x.
+// The first map will be changed (unless y is empty or nil), the second map will not be changed.
+// The first map must not be nil, the second map is allowed to be nil.
+func CoalesceMapInto(x map[string]any, y map[string]any) {
+	for k := range y {
+		if _, ok := x[k]; ok {
+			if y[k] == nil {
+				delete(x, k)
+			} else if v, ok := x[k].(map[string]any); ok {
+				if w, ok := y[k].(map[string]any); ok {
+					CoalesceMapInto(v, w)
 				} else {
 					x[k] = w
 				}
