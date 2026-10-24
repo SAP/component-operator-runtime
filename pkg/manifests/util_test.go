@@ -102,6 +102,31 @@ var _ = Describe("testing: util.go", func() {
 			"z": 2
 		}`,
 		),
+
+		Entry(nil,
+			`{
+			"a": {
+				"b": 1,
+				"c": 2
+			}
+		}`,
+			`{
+			"a": {
+				"b": null,
+				"c": 3,
+				"d": 4,
+				"e": null
+			}
+		}`,
+			`{
+			"a": {
+				"b": null,
+				"c": 3,
+				"d": 4,
+				"e": null
+			}
+		}`,
+		),
 	)
 
 	DescribeTable("testing: MergeMapInto()",
@@ -277,6 +302,30 @@ var _ = Describe("testing: util.go", func() {
 			"x": 2,
 			"y": 1,
 			"z": 2
+		}`,
+		),
+
+		Entry(nil,
+			`{
+			"a": {
+				"b": 1,
+				"c": 2
+			}
+		}`,
+			`{
+			"a": {
+				"b": null,
+				"c": 3,
+				"d": 4,
+				"e": null
+			}
+		}`,
+			`{
+			"a": {
+				"c": 3,
+				"d": 4,
+				"e": null
+			}
 		}`,
 		),
 	)
