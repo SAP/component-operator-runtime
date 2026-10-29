@@ -7,7 +7,7 @@ require (
 	github.com/drone/envsubst v1.0.3
 	github.com/go-git/go-git v4.7.0+incompatible
 	github.com/go-logr/logr v1.4.4
-	github.com/gobwas/glob v1.0.0
+	github.com/gobwas/glob v1.1.0
 	github.com/google/uuid v1.6.0
 	github.com/iancoleman/strcase v0.3.0
 	github.com/onsi/ginkgo/v2 v2.33.0
