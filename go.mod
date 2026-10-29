@@ -1,6 +1,6 @@
 module github.com/sap/component-operator-runtime
 
-go 1.27.1
+go 1.27.3
 
 require (
 	github.com/Masterminds/sprig/v3 v3.3.0
@@ -10,27 +10,27 @@ require (
 	github.com/gobwas/glob v1.1.0
 	github.com/google/uuid v1.6.0
 	github.com/iancoleman/strcase v0.3.0
-	github.com/onsi/ginkgo/v2 v2.33.0
+	github.com/onsi/ginkgo/v2 v2.33.1
 	github.com/onsi/gomega v1.44.0
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/client_golang v1.25.0
-	github.com/sap/go-generics v0.2.77
+	github.com/sap/go-generics v0.2.79
 	github.com/spf13/cast v1.10.0
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/pflag v1.0.10
-	k8s.io/api v0.37.1
-	k8s.io/apiextensions-apiserver v0.37.1
-	k8s.io/apimachinery v0.37.1
-	k8s.io/cli-runtime v0.37.1
-	k8s.io/client-go v0.37.1
-	k8s.io/kube-aggregator v0.37.1
+	k8s.io/api v0.37.2
+	k8s.io/apiextensions-apiserver v0.37.2
+	k8s.io/apimachinery v0.37.2
+	k8s.io/cli-runtime v0.37.2
+	k8s.io/client-go v0.37.2
+	k8s.io/kube-aggregator v0.37.2
 	sigs.k8s.io/cli-utils v0.37.2
 	sigs.k8s.io/controller-runtime v0.25.2
 	sigs.k8s.io/controller-runtime/tools/setup-envtest v0.25.2
 	sigs.k8s.io/controller-tools v0.23.0
-	sigs.k8s.io/kustomize/api v0.21.2
-	sigs.k8s.io/kustomize/kyaml v0.21.2
-	sigs.k8s.io/structured-merge-diff/v7 v7.0.0
+	sigs.k8s.io/kustomize/api v0.21.3
+	sigs.k8s.io/kustomize/kyaml v0.21.3
+	sigs.k8s.io/structured-merge-diff/v7 v7.0.1
 	sigs.k8s.io/yaml v1.6.0
 )
 
@@ -53,18 +53,10 @@ require (
 	github.com/go-logr/zapr v1.3.0 // indirect
 	github.com/go-openapi/jsonpointer v1.0.0 // indirect
 	github.com/go-openapi/jsonreference v1.0.0 // indirect
-	github.com/go-openapi/swag v0.27.1 // indirect
-	github.com/go-openapi/swag/cmdutils v0.27.1 // indirect
 	github.com/go-openapi/swag/conv v0.27.1 // indirect
-	github.com/go-openapi/swag/fileutils v0.27.1 // indirect
 	github.com/go-openapi/swag/jsonutils v0.27.1 // indirect
-	github.com/go-openapi/swag/loading v0.27.1 // indirect
-	github.com/go-openapi/swag/mangling v0.27.1 // indirect
-	github.com/go-openapi/swag/netutils v0.27.1 // indirect
 	github.com/go-openapi/swag/pools v0.27.1 // indirect
-	github.com/go-openapi/swag/stringutils v0.27.1 // indirect
 	github.com/go-openapi/swag/typeutils v0.27.1 // indirect
-	github.com/go-openapi/swag/yamlutils v0.27.1 // indirect
 	github.com/go-task/slim-sprig/v3 v3.0.0 // indirect
 	github.com/gobuffalo/flect v1.0.3 // indirect
 	github.com/google/btree v1.1.3 // indirect
@@ -116,10 +108,10 @@ require (
 	gopkg.in/src-d/go-billy.v4 v4.3.2 // indirect
 	gopkg.in/src-d/go-git.v4 v4.13.1 // indirect
 	gopkg.in/warnings.v0 v0.1.2 // indirect
-	k8s.io/code-generator v0.37.1 // indirect
+	k8s.io/code-generator v0.37.2 // indirect
 	k8s.io/gengo/v2 v2.0.0-20260408192533-25e2208e0dc3 // indirect
 	k8s.io/klog/v2 v2.140.0 // indirect
-	k8s.io/kube-openapi v0.0.0-20260721132016-d427ff9ee9ad // indirect
+	k8s.io/kube-openapi v0.0.0-20261001230523-97fa35140926 // indirect
 	k8s.io/utils v0.0.0-20260626114624-be93311217bd // indirect
 	sigs.k8s.io/json v0.0.0-20250730193827-2d320260d730 // indirect
 	sigs.k8s.io/randfill v1.0.0 // indirect
