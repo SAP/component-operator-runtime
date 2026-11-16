@@ -10,14 +10,14 @@ require (
 	github.com/gobwas/glob v1.1.0
 	github.com/google/uuid v1.6.0
 	github.com/iancoleman/strcase v0.3.0
-	github.com/onsi/ginkgo/v2 v2.33.0
+	github.com/onsi/ginkgo/v2 v2.34.0
 	github.com/onsi/gomega v1.44.0
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/client_golang v1.25.0
 	github.com/sap/go-generics v0.2.77
 	github.com/spf13/cast v1.10.0
 	github.com/spf13/cobra v1.10.2
-	github.com/spf13/pflag v1.0.10
+	github.com/spf13/pflag v1.1.0
 	k8s.io/api v0.37.1
 	k8s.io/apiextensions-apiserver v0.37.1
 	k8s.io/apimachinery v0.37.1
